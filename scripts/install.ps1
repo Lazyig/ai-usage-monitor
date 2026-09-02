@@ -1,6 +1,7 @@
-# ai-usage-agent installer for Windows (PowerShell 5+).
-#   irm https://SERVER/downloads/install.ps1 | iex   -> then run Install-AiUsageAgent -Server https://SERVER -Token aum_xxx
-# or: powershell -c "& { $(irm https://SERVER/downloads/install.ps1) } -Server https://SERVER -Token aum_xxx"
+# ai-usage-agent installer for Windows (PowerShell 5+). The script takes parameters, so run it as a
+# script block (plain `irm | iex` cannot pass -Server/-Token):
+#   powershell -ExecutionPolicy Bypass -c "& ([scriptblock]::Create((irm https://SERVER/downloads/install.ps1))) -Server https://SERVER -Token aum_xxx"
+# or download it and run: .\install.ps1 -Server https://SERVER -Token aum_xxx
 param([string]$Server, [string]$Token, [string]$Prefix = "$env:LOCALAPPDATA\ai-usage-agent")
 $ErrorActionPreference = "Stop"
 if (-not $Server) { throw "-Server required" }
