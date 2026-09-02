@@ -1,0 +1,67 @@
+// Renders the project icon (same geometry as web/public/favicon.svg) to PNG with
+// analytic anti-aliasing: per-pixel coverage from a signed distance to each shape.
+package main
+
+import (
+	"image"
+	"image/color"
+	"image/png"
+	"math"
+	"os"
+)
+
+type rrect struct {
+	x, y, w, h, r float64
+	c0, c1        color.RGBA // vertical gradient top->bottom (c1==c0 for flat)
+}
+
+func (s rrect) dist(px, py float64) float64 {
+	cx, cy := s.x+s.w/2, s.y+s.h/2
+	hx, hy := s.w/2-s.r, s.h/2-s.r
+	dx, dy := math.Abs(px-cx)-hx, math.Abs(py-cy)-hy
+	ox, oy := math.Max(dx, 0), math.Max(dy, 0)
+	return math.Sqrt(ox*ox+oy*oy) + math.Min(math.Max(dx, dy), 0) - s.r
+}
+
+func lerp(a, b color.RGBA, t float64) color.RGBA {
+	f := func(x, y uint8) uint8 { return uint8(float64(x) + (float64(y)-float64(x))*t + 0.5) }
+	return color.RGBA{f(a.R, b.R), f(a.G, b.G), f(a.B, b.B), 255}
+}
+
+func hex(h uint32) color.RGBA { return color.RGBA{uint8(h >> 16), uint8(h >> 8), uint8(h), 255} }
+
+func main() {
+	const N = 512
+	shapes := []rrect{
+		{0, 0, 512, 512, 112, hex(0x1E293B), hex(0x0F172A)},
+		{128, 264, 64, 128, 16, hex(0x2DD4BF), hex(0x2DD4BF)},
+		{232, 184, 64, 208, 16, hex(0xFBBF24), hex(0xFBBF24)},
+		{336, 104, 64, 288, 16, hex(0xA78BFA), hex(0xA78BFA)},
+		{112, 408, 288, 12, 6, hex(0x334155), hex(0x334155)},
+	}
+	img := image.NewNRGBA(image.Rect(0, 0, N, N))
+	for y := 0; y < N; y++ {
+		for x := 0; x < N; x++ {
+			px, py := float64(x)+0.5, float64(y)+0.5
+			var r, g, b, a float64
+			for _, s := range shapes {
+				d := s.dist(px, py)
+				cov := math.Min(1, math.Max(0, 0.5-d)) // 1px anti-aliased edge
+				if cov == 0 {
+					continue
+				}
+				c := lerp(s.c0, s.c1, (py-s.y)/s.h)
+				cr, cg, cb := float64(c.R), float64(c.G), float64(c.B)
+				// source-over
+				r = cr*cov + r*(1-cov)
+				g = cg*cov + g*(1-cov)
+				b = cb*cov + b*(1-cov)
+				a = cov + a*(1-cov)
+			}
+			img.SetNRGBA(x, y, color.NRGBA{uint8(r + 0.5), uint8(g + 0.5), uint8(b + 0.5), uint8(a*255 + 0.5)})
+		}
+	}
+	f, _ := os.Create("icon.png")
+	defer f.Close()
+	png.Encode(f, img)
+}
