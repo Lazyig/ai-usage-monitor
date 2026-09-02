@@ -177,6 +177,142 @@ func (s *Store) RevokeDevice(ctx context.Context, id string) error {
 	return nil
 }
 
+// RotateToken mints a fresh token for an existing device: the old one stops
+// working immediately, the device id and every event stored under it stay put.
+// This is the safe way to "re-register" a machine - creating a second device
+// instead would split one machine's history across two ids.
+//
+// Like CreateDevice, the plaintext token is returned once and never stored.
+// A revoked device is un-revoked by rotating it.
+func (s *Store) RotateToken(ctx context.Context, id string) (string, error) {
+	token, err := NewToken()
+	if err != nil {
+		return "", err
+	}
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE devices SET token_hash = ?, token_created_at = ?, revoked_at = NULL WHERE id = ?`,
+		HashToken(token), nowMillis(), id)
+	if err != nil {
+		return "", fmt.Errorf("store: rotate token: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return "", err
+	}
+	if n == 0 {
+		return "", ErrNotFound
+	}
+	return token, nil
+}
+
+// PurgeEvents deletes every event of one device and flags it for a re-sync, so
+// the next ingest tells the agent to forget its cursors and send everything
+// again. The device and its token are untouched.
+func (s *Store) PurgeEvents(ctx context.Context, id string) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	deleted, err := purgeEventsTx(ctx, tx, id)
+	if err != nil {
+		return 0, err
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE devices SET resync_requested = 1 WHERE id = ?`, id)
+	if err != nil {
+		return 0, fmt.Errorf("store: flag resync: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if n == 0 {
+		return 0, ErrNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return deleted, nil
+}
+
+func purgeEventsTx(ctx context.Context, tx *sql.Tx, id string) (int64, error) {
+	res, err := tx.ExecContext(ctx, `DELETE FROM usage_events WHERE device_id = ?`, id)
+	if err != nil {
+		return 0, fmt.Errorf("store: purge events: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+// DeleteDevice removes a device. purge=false only revokes the token and keeps
+// the events (they still count towards the totals, attributed to a device that
+// can no longer report). purge=true erases the device for good: its events and
+// its row go in one transaction, which is the only way to satisfy the
+// usage_events -> devices foreign key.
+//
+// It returns how many events were deleted (always 0 when purge is false).
+func (s *Store) DeleteDevice(ctx context.Context, id string, purge bool) (int64, error) {
+	if !purge {
+		return 0, s.RevokeDevice(ctx, id)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	deleted, err := purgeEventsTx(ctx, tx, id)
+	if err != nil {
+		return 0, err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM devices WHERE id = ?`, id)
+	if err != nil {
+		return 0, fmt.Errorf("store: delete device: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if n == 0 {
+		return 0, ErrNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return deleted, nil
+}
+
+// ConsumeResync reports whether a re-sync was requested for the device and
+// clears the flag in the same transaction, so exactly one ingest response ever
+// carries it: two agent processes (or a retried request) cannot both be told to
+// rescan, and a crash between the two statements cannot lose the request.
+func (s *Store) ConsumeResync(ctx context.Context, id string) (bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	var flag int64
+	err = tx.QueryRowContext(ctx, `SELECT resync_requested FROM devices WHERE id = ?`, id).Scan(&flag)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, ErrNotFound
+	}
+	if err != nil {
+		return false, err
+	}
+	if flag == 0 {
+		return false, nil
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE devices SET resync_requested = 0 WHERE id = ?`, id); err != nil {
+		return false, fmt.Errorf("store: clear resync: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // TouchDevice records agent metadata and heartbeat timestamps. Empty metadata
 // fields are left untouched. ingest=true also bumps last_ingest.
 func (s *Store) TouchDevice(ctx context.Context, m DeviceMeta, ingest bool, at time.Time) error {

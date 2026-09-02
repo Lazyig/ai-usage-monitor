@@ -83,7 +83,7 @@ func scan(t *testing.T, c collector.Collector, cur collector.Cursor) ([]event.Us
 }
 
 func eventID(sessionID string, offset int64) string {
-	return event.NewEventID(testDevice, event.SourceCodex, sessionID, strconv.FormatInt(offset, 10))
+	return event.NewEventID(event.SourceCodex, sessionID, strconv.FormatInt(offset, 10))
 }
 
 func TestScanMapping(t *testing.T) {

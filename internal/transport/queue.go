@@ -188,6 +188,24 @@ func (q *Queue) Read(it Item) ([]byte, error) {
 	return raw, nil
 }
 
+// Reset drops every queued batch. It is what a resync does with the backlog:
+// those payloads only hold events the server has just thrown away and is about
+// to be sent again from scratch, so replaying them would be pure noise.
+func (q *Queue) Reset() error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	items, err := q.List()
+	if err != nil {
+		return err
+	}
+	for _, it := range items {
+		if err := os.Remove(it.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("transport: clear queue: %w", err)
+		}
+	}
+	return nil
+}
+
 // Remove deletes a delivered batch.
 func (q *Queue) Remove(it Item) error {
 	if err := os.Remove(it.Path); err != nil && !errors.Is(err, os.ErrNotExist) {

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"math"
 	"path/filepath"
 	"testing"
@@ -85,12 +86,17 @@ func TestMigrationsIdempotent(t *testing.T) {
 	if len(devs) != 1 {
 		t.Fatalf("devices after reopen = %d, want 1", len(devs))
 	}
+	// Exactly one row per embedded migration, however many there are by now.
+	files, err := fs.Glob(migrationsFS, "migrations/*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
 	var n int
 	if err := s2.DB().QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Fatalf("schema_migrations rows = %d, want 1", n)
+	if n != len(files) {
+		t.Fatalf("schema_migrations rows = %d, want %d (one per migrations/*.sql)", n, len(files))
 	}
 }
 

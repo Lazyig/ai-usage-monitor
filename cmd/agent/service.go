@@ -265,6 +265,7 @@ func runAsService(dir string, sel selected, ov runOverrides) error {
 			return nil, err
 		}
 		syncDeviceID(dir, &cfg, log.Printf)
+		migrateIDScheme(dir, &cfg, log.Printf)
 		return newAgent(cfg, dir, sel)
 	}}
 	svc, err := service.New(prg, serviceConfig(dir))

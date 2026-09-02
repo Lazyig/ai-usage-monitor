@@ -197,7 +197,7 @@ func TestScanEmitsExpectedEvents(t *testing.T) {
 	if !gem.Timestamp.Equal(baseTime) {
 		t.Fatalf("gemini ts = %v want %v (step join)", gem.Timestamp, baseTime)
 	}
-	wantID := event.NewEventID(testDevice, event.SourceAntigravity, testConvID, "req-gem-0")
+	wantID := event.NewEventID(event.SourceAntigravity, testConvID, "req-gem-0")
 	if gem.EventID != wantID {
 		t.Fatalf("event id = %s want %s", gem.EventID, wantID)
 	}

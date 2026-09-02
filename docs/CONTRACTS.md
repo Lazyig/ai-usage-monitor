@@ -29,6 +29,8 @@ func New(root string) collector.Collector   // root = ~/.gemini/antigravity-cli
 규칙
 - `Scan(ctx, deviceID, cursor)` 는 **재실행해도 안전**해야 한다 (중복 이벤트는 서버가 무시, 누락은 안 됨).
 - cursor 는 수집기 내부 JSON. nil 이면 처음부터. 파일이 줄어들었거나 inode 가 바뀌면 그 파일은 처음부터 다시 읽는다.
+  **기기 ID 는 넣지 않는다**: native key 만으로 전역 유일하고, 기기 ID 는 재등록·whoami 실패로 바뀔 수 있어
+  섞으면 같은 로그가 새 ID 로 재유입돼 이중 계산된다. `Scan` 의 `deviceID` 인자는 `UsageEvent.DeviceID` 채우는 데만 쓴다.
 - `Timestamp` 는 UTC. `Input` 은 캐시 제외(Codex 는 `input - cached` 로 변환).
 - root 가 없으면 에러가 아니라 빈 결과 (도구 미설치 기기).
 - 원본 텍스트(프롬프트·응답)는 절대 이벤트에 넣지 않는다.
@@ -38,6 +40,7 @@ func New(root string) collector.Collector   // root = ~/.gemini/antigravity-cli
 
 - `GET /api/v1/agent/whoami` (Bearer 기기 토큰) → `{"device_id","name"}`. 에이전트는 시작 시 이걸로 기기 ID 를 맞춘다 (토큰 = 기기 식별자).
 - `POST /api/v1/ingest` (Bearer 기기 토큰) body: `{"device":{"id","name","os","arch","agent_version"},"events":[UsageEvent...]}` → `{"accepted":n,"duplicates":n,"rejected":n,"device_id"}`. gzip 본문 허용.
+  응답에 `"resync":true` 가 붙으면(딱 한 번) 서버가 그 기기 데이터를 지웠다는 뜻 — 에이전트는 커서와 오프라인 큐를 비우고 처음부터 다시 수집한다.
 - `GET /api/v1/agent/latest` (토큰 불필요) → 다운로드 가능한 에이전트 버전/체크섬 (자동 업데이트용, 2차)
 
 ## 서버 ↔ SPA

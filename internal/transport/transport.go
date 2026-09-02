@@ -55,6 +55,7 @@ type ingestResponse struct {
 	Accepted   int    `json:"accepted"`
 	Duplicates int    `json:"duplicates"`
 	DeviceID   string `json:"device_id"`
+	Resync     bool   `json:"resync"` // an operator purged this device's data
 }
 
 // WhoAmIResponse is GET /api/v1/agent/whoami: the device the token is bound to.
@@ -146,6 +147,12 @@ type Stats struct {
 	Duplicates int
 	Rejected   int
 	Requests   int
+
+	// Resync is set when any batch of this push came back with "resync": true,
+	// meaning an operator threw away this device's stored events. The caller is
+	// expected to drop its cursors and rescan from the beginning; the server
+	// only ever says it once, so the flag must not be ignored.
+	Resync bool
 }
 
 func (s *Stats) add(o Stats) {
@@ -153,6 +160,7 @@ func (s *Stats) add(o Stats) {
 	s.Duplicates += o.Duplicates
 	s.Rejected += o.Rejected
 	s.Requests += o.Requests
+	s.Resync = s.Resync || o.Resync
 }
 
 func (c *Client) logf(format string, args ...any) {
@@ -467,7 +475,7 @@ func (c *Client) sendOnce(ctx context.Context, payload []byte, count int) (Stats
 		c.logf("ingest: unparsable 2xx response: %v", err)
 		return Stats{Requests: 1}, nil, false
 	}
-	st := Stats{Accepted: out.Accepted, Duplicates: out.Duplicates, Requests: 1}
+	st := Stats{Accepted: out.Accepted, Duplicates: out.Duplicates, Requests: 1, Resync: out.Resync}
 	if count >= 0 {
 		if r := count - out.Accepted - out.Duplicates; r > 0 {
 			st.Rejected = r

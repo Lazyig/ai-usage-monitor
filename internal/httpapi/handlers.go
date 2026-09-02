@@ -24,7 +24,8 @@ type ingestResponse struct {
 	Accepted   int    `json:"accepted"`
 	Duplicates int    `json:"duplicates"`
 	Rejected   int    `json:"rejected"`
-	DeviceID   string `json:"device_id"` // the token's device; agents adopt it
+	DeviceID   string `json:"device_id"`        // the token's device; agents adopt it
+	Resync     bool   `json:"resync,omitempty"` // an operator purged this device: rescan from zero
 }
 
 func (a *api) handleIngest(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +89,19 @@ func (a *api) handleIngest(w http.ResponseWriter, r *http.Request) {
 	}
 	a.forgetDevice(dev.ID) // metadata changed; next lookup re-reads it
 
-	writeJSON(w, http.StatusOK, ingestResponse{Accepted: accepted, Duplicates: duplicates, Rejected: rejected, DeviceID: dev.ID})
+	// Consumed here, after the batch is stored, so exactly one answer carries
+	// it. Heartbeats (empty batches) count: an idle device must hear about a
+	// purge too, and it is the only request it makes.
+	resync, err := a.store.ConsumeResync(r.Context(), dev.ID)
+	if err != nil {
+		// The batch is already stored; failing the request would only make the
+		// agent resend it. The flag stays set and rides the next response.
+		a.log.Error("consume resync", "device", dev.ID, "err", err)
+	}
+
+	writeJSON(w, http.StatusOK, ingestResponse{
+		Accepted: accepted, Duplicates: duplicates, Rejected: rejected, DeviceID: dev.ID, Resync: resync,
+	})
 }
 
 // handleWhoAmI lets an agent learn the device id its token is bound to, so the
@@ -288,18 +301,75 @@ func (a *api) handleCreateDevice(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (a *api) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
+// handleRotateDevice issues a new token for an existing device. Prefer it over
+// deleting and re-creating a device: the id and the history stay put, so the
+// machine keeps one row in the dashboard.
+func (a *api) handleRotateDevice(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := a.store.RevokeDevice(r.Context(), id); err != nil {
+	token, err := a.store.RotateToken(r.Context(), id)
+	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "device not found")
 			return
 		}
-		a.fail(w, "revoke device", err)
+		a.fail(w, "rotate token", err)
+		return
+	}
+	// The old token must stop working now, not when its cache entry expires.
+	a.forgetDevice(id)
+	dev, err := a.store.Device(r.Context(), id)
+	if err != nil {
+		a.fail(w, "rotate token", err)
+		return
+	}
+	// The only time the plaintext token exists outside the agent.
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"id":               dev.ID,
+		"name":             dev.Name,
+		"token":            token,
+		"token_created_at": dev.TokenCreatedAt,
+	})
+}
+
+// handleDeleteDevice revokes the token and, with ?purge=true, erases the device
+// and every event it ever sent.
+func (a *api) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	purge := boolParam(r, "purge")
+	deleted, err := a.store.DeleteDevice(r.Context(), id, purge)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "device not found")
+			return
+		}
+		a.fail(w, "delete device", err)
 		return
 	}
 	a.forgetDevice(id)
+	if purge {
+		writeJSON(w, http.StatusOK, map[string]any{"id": id, "deleted_events": deleted, "purged": true})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "revoked": true})
+}
+
+// handlePurgeDeviceEvents throws away a device's data but keeps the device and
+// its token, and flags it so the next ingest tells the agent to rescan from
+// zero. That is the way to re-sync a machine whose history looks wrong.
+func (a *api) handlePurgeDeviceEvents(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	deleted, err := a.store.PurgeEvents(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "device not found")
+			return
+		}
+		a.fail(w, "purge device events", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id": id, "deleted_events": deleted, "resync_requested": true,
+	})
 }
 
 // --- pricing ---------------------------------------------------------------

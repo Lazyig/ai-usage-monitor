@@ -66,6 +66,7 @@ func cmdRun(args []string) error {
 		return err
 	}
 	syncDeviceID(dir, &cfg, log.Printf)
+	migrateIDScheme(dir, &cfg, log.Printf)
 	ag, err := newAgent(cfg, dir, sel)
 	if err != nil {
 		return err
@@ -165,10 +166,19 @@ func newAgent(cfg agentcfg.Config, dir string, sel selected) (*agent, error) {
 // tick is one full pass: replay anything queued, scan every collector, push,
 // then persist the cursors that were actually covered by that push.
 func (a *agent) tick(ctx context.Context) error {
+	return a.pass(ctx, true)
+}
+
+// pass is one tick. resyncOK guards the single retry a server-requested resync
+// triggers, so the second (from-zero) pass can never ask for another one.
+func (a *agent) pass(ctx context.Context, resyncOK bool) error {
+	resync := false
+
 	if st, err := a.client.Flush(ctx); err != nil {
 		a.noteErr("queue flush", err)
 	} else if st.Requests > 0 {
 		a.lastContact = time.Now()
+		resync = resync || st.Resync
 		a.log.Printf("queue: replayed %d batch(es), accepted=%d duplicates=%d", st.Requests, st.Accepted, st.Duplicates)
 	}
 
@@ -196,17 +206,24 @@ func (a *agent) tick(ctx context.Context) error {
 
 	if len(events) == 0 {
 		// Nothing new: keep the device visible with an occasional empty batch.
+		// An idle device makes no other request, so this is also how it hears
+		// about a resync.
 		if time.Since(a.lastContact) >= heartbeatEvery {
-			if _, err := a.client.PushStats(ctx, nil); err != nil {
+			st, err := a.client.PushStats(ctx, nil)
+			if err != nil {
 				a.noteErr("heartbeat", err)
 			} else {
 				a.lastContact = time.Now()
+				resync = resync || st.Resync
 				a.log.Printf("tick: no new events, heartbeat sent")
 			}
 		} else {
 			a.log.Printf("tick: no new events")
 		}
 		a.saveCursors(next) // file rotations can move a cursor without any events
+		if resync && resyncOK {
+			return errors.Join(errors.Join(scanErr...), a.resync(ctx))
+		}
 		return errors.Join(scanErr...)
 	}
 
@@ -216,6 +233,7 @@ func (a *agent) tick(ctx context.Context) error {
 		a.lastContact = time.Now()
 		a.authWarned = false
 		a.saveCursors(next)
+		resync = resync || st.Resync
 	case transport.Queued(err):
 		// Not delivered, but safely on disk: the cursor may advance.
 		a.saveCursors(next)
@@ -235,7 +253,29 @@ func (a *agent) tick(ctx context.Context) error {
 
 	a.log.Printf("tick: scanned %s (%d events) | accepted=%d duplicates=%d rejected=%d | %s",
 		strings.Join(counts, " "), len(events), st.Accepted, st.Duplicates, st.Rejected, a.queueSummary())
-	return errors.Join(append(scanErr, ignoreHandled(err))...)
+	out := errors.Join(append(scanErr, ignoreHandled(err))...)
+	if resync && resyncOK {
+		return errors.Join(out, a.resync(ctx))
+	}
+	return out
+}
+
+// resync answers a server that threw this device's stored events away. Its
+// cursors now point past history the server no longer has, and the offline
+// queue holds batches it no longer wants, so both go and one full pass runs
+// from zero. Re-sending is safe: an EventID does not depend on the device or on
+// which run produced it, so the server's dedupe settles anything sent twice.
+func (a *agent) resync(ctx context.Context) error {
+	a.log.Printf("server requested a full resync: clearing cursors and the offline queue, rescanning from zero")
+	if err := a.cursors.Reset(); err != nil {
+		return fmt.Errorf("resync: %w", err)
+	}
+	if err := a.client.Queue.Reset(); err != nil {
+		// Not fatal: a stale batch replays as duplicates, it does not corrupt
+		// anything. The rescan below is what actually restores the history.
+		a.log.Printf("warn: resync: clear queue: %v", err)
+	}
+	return a.pass(ctx, false)
 }
 
 // ignoreHandled drops errors the tick already dealt with (queued batches) so a
