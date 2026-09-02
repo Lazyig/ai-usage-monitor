@@ -12,14 +12,30 @@
 //	version
 //
 // Exit codes: 0 ok, 1 runtime error, 2 usage error.
+//
+// Source layout:
+//
+//	main.go        flag plumbing and the subcommand dispatch
+//	cmd_*.go       one file per subcommand: flags in, work handed off
+//	bootstrap.go   config + device identity + migrations -> a ready agent
+//	agent.go       the run loop: scan, push, persist cursors, resync
+//	service.go     OS service registration and lifecycle
+//	collectors.go  which collectors this binary has and which ones to run
+//	report.go      the tables `scan` prints
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+
+	"ai-usage-monitor/internal/agentcfg"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -123,4 +139,19 @@ func parseFlags(fs *flag.FlagSet, args []string) error {
 		return &usageError{err: err}
 	}
 	return nil
+}
+
+// resolveStateDir lets --state-dir win over $AI_USAGE_STATE_DIR and the per-OS
+// default, matching the "flags override env" rule.
+func resolveStateDir(flagValue string) string {
+	if strings.TrimSpace(flagValue) != "" {
+		return flagValue
+	}
+	return agentcfg.StateDir()
+}
+
+// signalContext cancels on SIGINT/SIGTERM so a run in a terminal, a systemd
+// stop and a launchd shutdown all unwind the same way.
+func signalContext() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 }

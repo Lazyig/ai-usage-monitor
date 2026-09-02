@@ -7,14 +7,10 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/signal"
 	"runtime"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
-
-	"github.com/kardianos/service"
 
 	"ai-usage-monitor/internal/agentcfg"
 	"ai-usage-monitor/internal/cursor"
@@ -26,91 +22,9 @@ import (
 // can refresh last_seen. A device with no activity still has to look alive.
 const heartbeatEvery = 5 * time.Minute
 
-// cmdRun collects and pushes on a timer until it is asked to stop.
-func cmdRun(args []string) error {
-	fs := newFlagSet("run")
-	var (
-		once     = fs.Bool("once", false, "do a single collect+push pass and exit")
-		interval = fs.Int("interval", 0, "seconds between passes (default: the configured interval)")
-		server   = fs.String("server", "", "server base URL (overrides the config and $AI_USAGE_SERVER)")
-		token    = fs.String("token", "", "device token (overrides the config and $AI_USAGE_TOKEN)")
-		sources  = fs.String("source", "", "comma separated sources to collect (default: all enabled)")
-		stateDir = fs.String("state-dir", "", "state directory (default: $AI_USAGE_STATE_DIR or the per-OS config dir)")
-	)
-	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: ai-usage-agent run [flags]\n\nCollect local usage and push it to the server.\n\nflags:\n")
-		fs.PrintDefaults()
-	}
-	if err := parseFlags(fs, args); err != nil {
-		return err
-	}
-	if fs.NArg() > 0 {
-		return usagef("run takes no positional arguments (got %q)", fs.Arg(0))
-	}
-
-	sel, err := parseSources(*sources)
-	if err != nil {
-		return &usageError{err: err}
-	}
-	dir := resolveStateDir(*stateDir)
-	ov := runOverrides{server: *server, token: *token, interval: *interval}
-
-	// Under a service manager the process must reach svc.Run() quickly (Windows
-	// gives it 30s), so every slow step happens after that, inside the service.
-	if !*once && !service.Interactive() {
-		return runAsService(dir, sel, ov)
-	}
-
-	cfg, err := loadRunConfig(dir, ov)
-	if err != nil {
-		return err
-	}
-	syncDeviceID(dir, &cfg, log.Printf)
-	migrateIDScheme(dir, &cfg, log.Printf)
-	ag, err := newAgent(cfg, dir, sel)
-	if err != nil {
-		return err
-	}
-
-	ctx, stop := signalContext()
-	defer stop()
-	if *once {
-		return ag.tick(ctx)
-	}
-	return ag.loop(ctx)
-}
-
-// runOverrides are the run flags that take precedence over config.json.
-type runOverrides struct {
-	server, token string
-	interval      int
-}
-
-// loadRunConfig reads config.json (creating defaults) and applies flag overrides.
-func loadRunConfig(dir string, ov runOverrides) (agentcfg.Config, error) {
-	cfg, err := agentcfg.LoadOrCreate(dir)
-	if err != nil {
-		return cfg, err
-	}
-	if ov.server != "" {
-		cfg.ServerURL = ov.server
-	}
-	if ov.token != "" {
-		cfg.DeviceToken = ov.token
-	}
-	if ov.interval > 0 {
-		cfg.IntervalSeconds = ov.interval
-	}
-	if strings.TrimSpace(cfg.ServerURL) == "" {
-		return cfg, usagef("no server configured: run `ai-usage-agent install --server URL --token TOKEN` or set %s", agentcfg.EnvServer)
-	}
-	return cfg, nil
-}
-
 // agent is the long running collect/push machine.
 type agent struct {
 	cfg        agentcfg.Config
-	dir        string
 	cursors    *cursor.Store
 	client     *transport.Client
 	collectors []active
@@ -128,7 +42,10 @@ func newAgent(cfg agentcfg.Config, dir string, sel selected) (*agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	lg := log.New(log.Writer(), "", log.LstdFlags|log.LUTC) // follows the service log file when set
+	// One logger for everything the run loop says: it writes wherever the
+	// standard logger points, which is the terminal for an interactive run and
+	// <state dir>/agent.log once the service has called setupLogFile.
+	lg := log.New(log.Writer(), "", log.LstdFlags|log.LUTC)
 
 	q, err := transport.OpenQueue(agentcfg.QueueDir(dir), transport.DefaultQueueMaxBytes)
 	if err != nil {
@@ -138,7 +55,6 @@ func newAgent(cfg agentcfg.Config, dir string, sel selected) (*agent, error) {
 
 	ag := &agent{
 		cfg:     cfg,
-		dir:     dir,
 		cursors: cur,
 		log:     lg,
 		client: &transport.Client{
@@ -353,10 +269,4 @@ func activeNames(cs []active) []string {
 		out = append(out, string(c.Source))
 	}
 	return out
-}
-
-// signalContext cancels on SIGINT/SIGTERM so a run in a terminal, a systemd
-// stop and a launchd shutdown all unwind the same way.
-func signalContext() (context.Context, context.CancelFunc) {
-	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 }

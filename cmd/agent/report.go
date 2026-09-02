@@ -3,12 +3,14 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
 
+	"ai-usage-monitor/internal/agentcfg"
 	"ai-usage-monitor/internal/event"
 )
 
@@ -208,4 +210,49 @@ func num(v int64) string {
 		return "-" + b.String()
 	}
 	return b.String()
+}
+
+func printScan(w io.Writer, cfg agentcfg.Config, res []scanResult, events []event.UsageEvent, since string, days int) {
+	fmt.Fprintf(w, "device %s (%s)  since=%s  tz=%s\n\n", cfg.DeviceName, cfg.DeviceID, since, time.Now().Location())
+
+	for _, r := range res {
+		status := fmt.Sprintf("%s events", num(int64(r.Kept)))
+		if r.Skipped > 0 {
+			status += fmt.Sprintf(" (%s older than the window)", num(int64(r.Skipped)))
+		}
+		if r.Err != nil {
+			status = "ERROR: " + r.Err.Error()
+		} else if !dirExists(r.Root) {
+			status = "not installed (no " + r.Root + ")"
+		}
+		fmt.Fprintf(w, "  %-13s %-55s %s  [%s]\n", r.Source, r.Root, status, r.Took.Round(time.Millisecond))
+	}
+	fmt.Fprintln(w)
+
+	if len(events) == 0 {
+		fmt.Fprintln(w, "no events in this window.")
+		return
+	}
+
+	rep := newReport()
+	for _, e := range events {
+		rep.add(e)
+	}
+	rep.writeModelTable(w)
+	fmt.Fprintf(w, "\nper day (last %s, local time)\n", pluralDays(days))
+	rep.writeDayTable(w, days)
+	fmt.Fprintf(w, "\n%s events from %s to %s\n",
+		num(int64(rep.grand.Calls)), rep.first.Format(time.RFC3339), rep.last.Format(time.RFC3339))
+}
+
+func pluralDays(n int) string {
+	if n <= 0 {
+		return "all days"
+	}
+	return strconv.Itoa(n) + " days"
+}
+
+func dirExists(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.IsDir()
 }

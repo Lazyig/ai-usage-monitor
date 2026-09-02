@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"log"
+	"strings"
 	"time"
 
 	"ai-usage-monitor/internal/agentcfg"
@@ -9,6 +11,51 @@ import (
 	"ai-usage-monitor/internal/event"
 	"ai-usage-monitor/internal/transport"
 )
+
+// runOverrides are the run flags that take precedence over config.json.
+type runOverrides struct {
+	server, token string
+	interval      int
+}
+
+// loadRunConfig reads config.json (creating defaults) and applies flag overrides.
+func loadRunConfig(dir string, ov runOverrides) (agentcfg.Config, error) {
+	cfg, err := agentcfg.LoadOrCreate(dir)
+	if err != nil {
+		return cfg, err
+	}
+	if ov.server != "" {
+		cfg.ServerURL = ov.server
+	}
+	if ov.token != "" {
+		cfg.DeviceToken = ov.token
+	}
+	if ov.interval > 0 {
+		cfg.IntervalSeconds = ov.interval
+	}
+	if strings.TrimSpace(cfg.ServerURL) == "" {
+		return cfg, usagef("no server configured: run `ai-usage-agent install --server URL --token TOKEN` or set %s", agentcfg.EnvServer)
+	}
+	return cfg, nil
+}
+
+// bootstrap turns a state directory into an agent ready to run: the config with
+// the flag overrides applied, the device id the server knows this token by, the
+// one-off EventID scheme migration, then the collectors, cursors and queue.
+//
+// An interactive `run` and the service both go through here, so a machine
+// behaves the same whether the operator started the agent by hand or systemd
+// did. It is deliberately slow work: the service calls it inside Start, after
+// the service manager has already been answered.
+func bootstrap(dir string, sel selected, ov runOverrides) (*agent, error) {
+	cfg, err := loadRunConfig(dir, ov)
+	if err != nil {
+		return nil, err
+	}
+	syncDeviceID(dir, &cfg, log.Printf)
+	migrateIDScheme(dir, &cfg, log.Printf)
+	return newAgent(cfg, dir, sel)
+}
 
 // syncDeviceID replaces the locally generated device id with the one the server
 // bound to our token, and persists it. Best effort: when the server cannot be
