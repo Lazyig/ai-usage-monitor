@@ -6,16 +6,20 @@ import { useFilters } from '../state/FiltersContext'
 
 const PRESETS: RangePreset[] = ['today', '7d', '30d', 'thisMonth', 'lastMonth', 'all', 'custom']
 
+// Two groups: usage analytics (left) and administration (right). 기기 usage and
+// 기기 관리 share a noun but not a purpose, so they are separate entries.
 const NAV_ITEMS = [
   { to: '/', label: '개요', end: true },
   { to: '/agents', label: '에이전트' },
   { to: '/models', label: '모델' },
   { to: '/projects', label: '프로젝트' },
   { to: '/devices', label: '기기' },
-  { to: '/downloads-page', label: '다운로드' },
+  { divider: true },
+  { to: '/manage/devices', label: '기기 관리' },
   { to: '/events', label: '이벤트' },
   { to: '/pricing', label: '가격표' },
-]
+  { to: '/downloads-page', label: '다운로드' },
+] as const
 
 export function TopBar() {
   const { range, setPreset, setCustomRange, autoRefresh, toggleAutoRefresh, refresh } = useFilters()
@@ -40,11 +44,15 @@ export function TopBar() {
       <div className="topbar-row topbar-brand-row">
         <span className="brand">AI Usage Monitor</span>
         <nav className="nav">
-          {NAV_ITEMS.map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+          {NAV_ITEMS.map((item, i) =>
+            'divider' in item ? (
+              <span key={`divider-${i}`} className="nav-divider" aria-hidden="true" />
+            ) : (
+            <NavLink key={item.to} to={item.to} end={'end' in item ? item.end : undefined} className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
               {item.label}
             </NavLink>
-          ))}
+            ),
+          )}
         </nav>
         <button type="button" className="btn btn-ghost" onClick={logout}>
           로그아웃

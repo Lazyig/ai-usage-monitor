@@ -195,6 +195,14 @@ select {
   flex: 1;
 }
 
+.nav-divider {
+  width: 1px;
+  height: 1.25rem;
+  margin: 0 0.5rem;
+  background: var(--border);
+  align-self: center;
+}
+
 .nav-link {
   padding: 6px 10px;
   border-radius: var(--radius-sm);
@@ -927,32 +935,9 @@ a.btn {
    Underline tabs rather than the top bar's pills, so the page-level switch
    never competes with the global navigation. */
 
-.subtabs {
-  display: flex;
-  gap: 2px;
-  border-bottom: 1px solid var(--border);
-  margin: -4px 0 16px;
-}
 
-.subtab {
-  padding: 7px 12px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  text-decoration: none;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  white-space: nowrap;
-}
 
-.subtab:hover {
-  color: var(--text-primary);
-}
 
-.subtab-active {
-  color: var(--text-primary);
-  font-weight: 600;
-  border-bottom-color: var(--accent);
-}
 
 /* ---- per-agent summary cards (에이전트 페이지) ---- */
 

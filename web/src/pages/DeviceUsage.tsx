@@ -10,7 +10,6 @@ import { ErrorBoundary } from '../components/ErrorBoundary'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { StateContainer } from '../components/StateContainer'
 import { StatTile } from '../components/StatTile'
-import { DEVICE_TABS, SubTabs } from '../components/SubTabs'
 import { TrendChart } from '../components/TrendChart'
 import { useApiData } from '../hooks/useApiData'
 import { tokensOfPoint } from '../lib/chartData'
@@ -140,7 +139,6 @@ export function DeviceUsage() {
       <div className="page-header">
         <h1>기기</h1>
       </div>
-      <SubTabs items={DEVICE_TABS} ariaLabel="기기 화면 전환" />
 
       <div className="filters-row">
         <div className="field">
@@ -344,7 +342,7 @@ function DeviceUsageTable({ rows, colorOf }: { rows: DeviceUsageRow[]; colorOf: 
     <>
       <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} initialSortKey="cost" />
       <p className="table-footnote">
-        토큰 재발급·재동기화·삭제 같은 기기 관리는 <Link to="/devices/manage">관리 탭</Link>에서 합니다.
+        토큰 재발급·재동기화·삭제는 상단의 <Link to="/manage/devices">기기 관리</Link> 메뉴에서 합니다.
       </p>
     </>
   )

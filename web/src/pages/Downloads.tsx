@@ -9,7 +9,7 @@ import { formatBytes, formatDateTime } from '../lib/format'
 import { installCommands } from '../lib/installCommands'
 import { useFilters } from '../state/FiltersContext'
 
-const TOKEN_PLACEHOLDER = '<기기 페이지에서 발급받은 토큰>'
+const TOKEN_PLACEHOLDER = '<기기 관리에서 발급받은 토큰>'
 
 const OS_LABELS: Record<string, string> = { linux: 'Linux', darwin: 'macOS', windows: 'Windows' }
 
@@ -171,7 +171,7 @@ function InstallGuideCard() {
           <h3>Linux / macOS</h3>
           <CommandBox command={cmds.unix} highlight={TOKEN_PLACEHOLDER} />
           <ol className="install-steps">
-            <li>Devices 에서 기기 추가 → 토큰 발급</li>
+            <li>기기 관리에서 기기 추가 → 토큰 발급</li>
             <li>아래 명령을 실행</li>
             <li>1분 안에 Devices 에 나타남</li>
           </ol>
@@ -180,7 +180,7 @@ function InstallGuideCard() {
           <h3>Windows (PowerShell)</h3>
           <CommandBox command={cmds.windows} highlight={TOKEN_PLACEHOLDER} />
           <ol className="install-steps">
-            <li>Devices 에서 기기 추가 → 토큰 발급</li>
+            <li>기기 관리에서 기기 추가 → 토큰 발급</li>
             <li>아래 명령을 실행</li>
             <li>1분 안에 Devices 에 나타남</li>
           </ol>

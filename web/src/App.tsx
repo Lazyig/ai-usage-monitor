@@ -33,9 +33,10 @@ function App() {
             <Route path="/agents" element={<Agents />} />
             <Route path="/models" element={<Models />} />
             <Route path="/projects" element={<Projects />} />
-            {/* 기기 splits into two sub-tabs: usage analytics and administration. */}
+            {/* 기기 (usage analytics) and 기기 관리 (administration) are separate top-level entries. */}
             <Route path="/devices" element={<DeviceUsage />} />
-            <Route path="/devices/manage" element={<Devices />} />
+            <Route path="/manage/devices" element={<Devices />} />
+            <Route path="/devices/manage" element={<Navigate to="/manage/devices" replace />} />
             <Route path="/downloads-page" element={<Downloads />} />
             <Route path="/events" element={<Events />} />
             <Route path="/pricing" element={<Pricing />} />
