@@ -1,7 +1,10 @@
 /bin/
 /dist/
 web/node_modules/
-web/dist/
+web/dist/*
+!web/dist/.gitkeep
+cmd/server/kodata/downloads/*
+!cmd/server/kodata/downloads/.gitkeep
 *.db
 *.db-*
 state.json
