@@ -183,7 +183,7 @@ func TestIngest(t *testing.T) {
 			sampleEvent("a1", devID, ts, 1_000_000, 100_000),
 			sampleEvent("a2", devID, ts.Add(time.Hour), 500_000, 0),
 			{EventID: "bad", DeviceID: devID, Source: event.SourceClaudeCode}, // no ts / model -> rejected
-			sampleEvent("a3", "someone-else", ts, 10, 10),                     // wrong device -> rejected
+			sampleEvent("a3", "someone-else", ts, 10, 10),                     // foreign device id -> remapped to the token's device
 		},
 	}
 	w := h.do(http.MethodPost, "/api/v1/ingest", devToken, body)
@@ -192,15 +192,15 @@ func TestIngest(t *testing.T) {
 	}
 	var res ingestResponse
 	h.decode(w, &res)
-	if res.Accepted != 2 || res.Duplicates != 0 || res.Rejected != 2 {
-		t.Fatalf("ingest = %+v, want accepted 2 duplicates 0 rejected 2", res)
+	if res.Accepted != 3 || res.Duplicates != 0 || res.Rejected != 1 || res.DeviceID != devID {
+		t.Fatalf("ingest = %+v, want accepted 3 duplicates 0 rejected 1 device %s", res, devID)
 	}
 
 	// Replaying the batch is idempotent.
 	w = h.do(http.MethodPost, "/api/v1/ingest", devToken, body)
 	h.decode(w, &res)
-	if res.Accepted != 0 || res.Duplicates != 2 {
-		t.Fatalf("replay = %+v, want 0 accepted / 2 duplicates", res)
+	if res.Accepted != 0 || res.Duplicates != 3 {
+		t.Fatalf("replay = %+v, want 0 accepted / 3 duplicates", res)
 	}
 
 	// The heartbeat and the self-reported metadata landed.
@@ -211,24 +211,36 @@ func TestIngest(t *testing.T) {
 		t.Fatalf("devices = %+v", devs.Devices)
 	}
 	d := devs.Devices[0]
-	if d.OS != "darwin" || d.Arch != "arm64" || d.AgentVersion != "0.2.0" || d.EventsTotal != 2 {
+	if d.OS != "darwin" || d.Arch != "arm64" || d.AgentVersion != "0.2.0" || d.EventsTotal != 3 {
 		t.Fatalf("device after ingest = %+v", d)
 	}
 	if d.LastSeen == nil || d.LastIngest == nil {
 		t.Fatalf("heartbeat missing: %+v", d)
 	}
 
-	// A batch claiming another device is refused outright.
+	// The token is the identity: a batch claiming another device id is still
+	// stored under the token's device, and the response says which id that is.
 	otherID, _ := h.newDevice("linux")
 	mismatch := map[string]any{
 		"device": map[string]string{"id": otherID},
 		"events": []event.UsageEvent{},
 	}
-	if w := h.do(http.MethodPost, "/api/v1/ingest", devToken, mismatch); w.Code != http.StatusForbidden {
-		t.Errorf("device mismatch = %d, want 403", w.Code)
+	if w := h.do(http.MethodPost, "/api/v1/ingest", devToken, mismatch); w.Code != http.StatusOK {
+		t.Errorf("device mismatch = %d, want 200", w.Code)
+	} else {
+		var out struct {
+			DeviceID string `json:"device_id"`
+		}
+		_ = json.Unmarshal(w.Body.Bytes(), &out)
+		if out.DeviceID == "" || out.DeviceID == otherID {
+			t.Errorf("ingest device_id = %q, want the token's device", out.DeviceID)
+		}
 	}
-	if w := h.do(http.MethodPost, "/api/v1/ingest", devToken, map[string]any{"events": []any{}}); w.Code != http.StatusBadRequest {
-		t.Errorf("missing device.id = %d, want 400", w.Code)
+	if w := h.do(http.MethodPost, "/api/v1/ingest", devToken, map[string]any{"events": []any{}}); w.Code != http.StatusOK {
+		t.Errorf("missing device.id = %d, want 200", w.Code)
+	}
+	if w := h.do(http.MethodGet, "/api/v1/agent/whoami", devToken, nil); w.Code != http.StatusOK {
+		t.Errorf("whoami = %d, want 200", w.Code)
 	}
 	if w := h.do(http.MethodPost, "/api/v1/ingest", devToken, "{not json"); w.Code != http.StatusBadRequest {
 		t.Errorf("bad JSON = %d, want 400", w.Code)

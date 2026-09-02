@@ -52,8 +52,15 @@ type ingestRequest struct {
 // ingestResponse is the server's reply. Anything neither accepted nor a
 // duplicate is counted as rejected by the caller.
 type ingestResponse struct {
-	Accepted   int `json:"accepted"`
-	Duplicates int `json:"duplicates"`
+	Accepted   int    `json:"accepted"`
+	Duplicates int    `json:"duplicates"`
+	DeviceID   string `json:"device_id"`
+}
+
+// WhoAmIResponse is GET /api/v1/agent/whoami: the device the token is bound to.
+type WhoAmIResponse struct {
+	DeviceID string `json:"device_id"`
+	Name     string `json:"name"`
 }
 
 // HealthResponse is GET /health.
@@ -314,6 +321,39 @@ func (c *Client) rewriteDevice(payload []byte) []byte {
 		return payload
 	}
 	return out
+}
+
+// WhoAmI asks the server which device this token belongs to. Agents call it at
+// startup and adopt the returned id so EventIDs match the server from the first
+// batch (a locally generated id would otherwise be remapped server-side, and a
+// reinstall would change it).
+func (c *Client) WhoAmI(ctx context.Context) (WhoAmIResponse, error) {
+	var out WhoAmIResponse
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url("/api/v1/agent/whoami"), nil)
+	if err != nil {
+		return out, fmt.Errorf("transport: whoami request: %w", err)
+	}
+	req.Header.Set("User-Agent", c.userAgent())
+	req.Header.Set("Accept", "application/json")
+	if c.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return out, fmt.Errorf("transport: whoami: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized, resp.StatusCode == http.StatusForbidden:
+		return out, &AuthError{StatusCode: resp.StatusCode, Body: snippet(body)}
+	case resp.StatusCode/100 != 2:
+		return out, fmt.Errorf("transport: whoami: HTTP %d: %s", resp.StatusCode, snippet(body))
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return out, fmt.Errorf("transport: whoami: %w", err)
+	}
+	return out, nil
 }
 
 // Health queries GET /health. It never sends the device token.

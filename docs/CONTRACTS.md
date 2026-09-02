@@ -36,7 +36,8 @@ func New(root string) collector.Collector   // root = ~/.gemini/antigravity-cli
 
 ## 서버 ↔ 에이전트
 
-- `POST /api/v1/ingest` (Bearer 기기 토큰) body: `{"device":{"id","name","os","arch","agent_version"},"events":[UsageEvent...]}` → `{"accepted":n,"duplicates":n}`
+- `GET /api/v1/agent/whoami` (Bearer 기기 토큰) → `{"device_id","name"}`. 에이전트는 시작 시 이걸로 기기 ID 를 맞춘다 (토큰 = 기기 식별자).
+- `POST /api/v1/ingest` (Bearer 기기 토큰) body: `{"device":{"id","name","os","arch","agent_version"},"events":[UsageEvent...]}` → `{"accepted":n,"duplicates":n,"rejected":n,"device_id"}`. gzip 본문 허용.
 - `GET /api/v1/agent/latest` (토큰 불필요) → 다운로드 가능한 에이전트 버전/체크섬 (자동 업데이트용, 2차)
 
 ## 서버 ↔ SPA

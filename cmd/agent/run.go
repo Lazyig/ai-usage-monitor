@@ -68,6 +68,7 @@ func cmdRun(args []string) error {
 		return usagef("no server configured: run `ai-usage-agent install --server URL --token TOKEN` or set %s", agentcfg.EnvServer)
 	}
 
+	syncDeviceID(dir, &cfg, log.Printf)
 	ag, err := newAgent(cfg, dir, sel)
 	if err != nil {
 		return err

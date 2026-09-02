@@ -102,6 +102,7 @@ func install(dir, server, token, name string, interval int) error {
 	if err := agentcfg.Save(dir, cfg); err != nil {
 		return err
 	}
+	syncDeviceID(dir, &cfg, func(format string, args ...any) { fmt.Printf(format+"\n", args...) })
 	// Never print the token, not even partially.
 	fmt.Printf("wrote %s (device %s, name %q, interval %ds)\n",
 		agentcfg.ConfigPath(dir), cfg.DeviceID, cfg.DeviceName, cfg.Interval())

@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -19,16 +21,30 @@ type ingestRequest struct {
 }
 
 type ingestResponse struct {
-	Accepted   int `json:"accepted"`
-	Duplicates int `json:"duplicates"`
-	Rejected   int `json:"rejected"`
+	Accepted   int    `json:"accepted"`
+	Duplicates int    `json:"duplicates"`
+	Rejected   int    `json:"rejected"`
+	DeviceID   string `json:"device_id"` // the token's device; agents adopt it
 }
 
 func (a *api) handleIngest(w http.ResponseWriter, r *http.Request) {
 	dev, _ := deviceFrom(r.Context())
 
+	// Agents gzip the batch. The decompressed stream is capped as well so a
+	// small compressed body cannot expand without bound.
+	var body io.Reader = r.Body
+	if strings.EqualFold(r.Header.Get("Content-Encoding"), "gzip") {
+		zr, err := gzip.NewReader(r.Body)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid gzip body")
+			return
+		}
+		defer zr.Close()
+		body = io.LimitReader(zr, MaxBodyBytes*8)
+	}
+
 	var req ingestRequest
-	dec := json.NewDecoder(r.Body)
+	dec := json.NewDecoder(body)
 	if err := dec.Decode(&req); err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
@@ -38,14 +54,10 @@ func (a *api) handleIngest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	if req.Device.ID == "" {
-		writeError(w, http.StatusBadRequest, "device.id is required")
-		return
-	}
-	if req.Device.ID != dev.ID {
-		writeError(w, http.StatusForbidden, "device does not match token")
-		return
-	}
+	// The token is the identity. Whatever id the agent put in device.id is
+	// informational: everything is stored under the token's device, and the
+	// response tells the agent which id to use from now on.
+	req.Device.ID = dev.ID
 	if len(req.Events) > MaxBatchEvents {
 		writeError(w, http.StatusBadRequest, "batch too large: at most 5000 events")
 		return
@@ -56,10 +68,8 @@ func (a *api) handleIngest(w http.ResponseWriter, r *http.Request) {
 	good := make([]event.UsageEvent, 0, len(req.Events))
 	rejected := 0
 	for _, e := range req.Events {
-		if e.DeviceID == "" {
-			e.DeviceID = dev.ID
-		}
-		if e.DeviceID != dev.ID || !e.Valid() {
+		e.DeviceID = dev.ID
+		if !e.Valid() {
 			rejected++
 			continue
 		}
@@ -78,7 +88,14 @@ func (a *api) handleIngest(w http.ResponseWriter, r *http.Request) {
 	}
 	a.forgetDevice(dev.ID) // metadata changed; next lookup re-reads it
 
-	writeJSON(w, http.StatusOK, ingestResponse{Accepted: accepted, Duplicates: duplicates, Rejected: rejected})
+	writeJSON(w, http.StatusOK, ingestResponse{Accepted: accepted, Duplicates: duplicates, Rejected: rejected, DeviceID: dev.ID})
+}
+
+// handleWhoAmI lets an agent learn the device id its token is bound to, so the
+// ids it bakes into EventIDs match the server from the very first batch.
+func (a *api) handleWhoAmI(w http.ResponseWriter, r *http.Request) {
+	dev, _ := deviceFrom(r.Context())
+	writeJSON(w, http.StatusOK, map[string]any{"device_id": dev.ID, "name": dev.Name})
 }
 
 // --- query parameters ------------------------------------------------------

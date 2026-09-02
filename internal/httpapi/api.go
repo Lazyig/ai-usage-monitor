@@ -69,6 +69,7 @@ func New(st *store.Store, pr *Pricing, opt Options) http.Handler {
 
 	// Collection (device token).
 	mux.Handle("POST /api/v1/ingest", a.device(http.HandlerFunc(a.handleIngest)))
+	mux.Handle("GET /api/v1/agent/whoami", a.device(http.HandlerFunc(a.handleWhoAmI)))
 
 	// Queries and administration (admin token).
 	mux.Handle("GET /api/v1/summary", a.admin(http.HandlerFunc(a.handleSummary)))
