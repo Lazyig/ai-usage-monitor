@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { createDevice, deleteDevice, getDevices, purgeDevice, purgeDeviceEvents, rotateDevice } from '../api/client'
 import type { Device } from '../api/types'
 import { Badge } from '../components/Badge'
+import { Card } from '../components/Card'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { type Column, DataTable } from '../components/DataTable'
 import { StateContainer } from '../components/StateContainer'
@@ -196,8 +197,7 @@ export function Devices() {
         </li>
       </ul>
 
-      <div className="card section">
-        <h2>기기 추가</h2>
+      <Card className="section" title="기기 추가">
         <form className="field-row" onSubmit={onCreate}>
           <div className="field">
             <label htmlFor="device-name">이름</label>
@@ -208,7 +208,7 @@ export function Devices() {
           </button>
         </form>
         {createError && <p className="login-error">{createError}</p>}
-      </div>
+      </Card>
 
       {newToken &&
         (() => {

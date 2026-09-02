@@ -16,9 +16,11 @@ import type { NameType, ValueType } from 'recharts/types/component/DefaultToolti
 import { getBreakdown, getTimeseries } from '../api/client'
 import type { BreakdownRow, Source, TimeseriesSeries } from '../api/types'
 import { Badge } from '../components/Badge'
+import { Card } from '../components/Card'
 import { ChartTooltip } from '../components/ChartTooltip'
 import { type Column, DataTable } from '../components/DataTable'
 import { ErrorBoundary } from '../components/ErrorBoundary'
+import { SegmentedControl } from '../components/SegmentedControl'
 import { StateContainer } from '../components/StateContainer'
 import { costOfPoint, formatBucketLabel, mergeSeries, tokensOfPoint } from '../lib/chartData'
 import { colorForKey, labelForKey, TOKEN_CLASS_COLORS, TOKEN_CLASS_LABELS, TOKEN_CLASS_ORDER } from '../lib/colors'
@@ -125,71 +127,79 @@ export function Models() {
         </div>
       </div>
 
-      <div className="panel-title-row">
-        <div className="chart-toggle" role="group" aria-label="지표 전환">
-          <button type="button" className={`chip${metric === 'cost' ? ' chip-active' : ''}`} onClick={() => setMetric('cost')}>
-            비용
-          </button>
-          <button type="button" className={`chip${metric === 'tokens' ? ' chip-active' : ''}`} onClick={() => setMetric('tokens')}>
-            토큰
-          </button>
-          <button type="button" className={`chip${metric === 'both' ? ' chip-active' : ''}`} onClick={() => setMetric('both')}>
-            둘 다
-          </button>
+      <Card
+        className="section"
+        title="모델별 비용·토큰"
+        controls={
+          <>
+            <SegmentedControl
+              ariaLabel="지표 전환"
+              value={metric}
+              onChange={setMetric}
+              options={[
+                { value: 'cost', label: '비용' },
+                { value: 'tokens', label: '토큰' },
+                { value: 'both', label: '둘 다' },
+              ]}
+            />
+            {canExpand && (
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setShowAll((v) => !v)}>
+                {showAll ? `상위 ${TOP_N}개만 보기` : `전체 보기 (${allRows.length}개)`}
+              </button>
+            )}
+          </>
+        }
+      >
+        <div className={`grid${metric === 'both' ? ' grid-cols-2' : ''}`}>
+          {(metric === 'cost' || metric === 'both') && (
+            <div>
+              <h3>모델별 비용{costTruncated ? ` (상위 ${TOP_N}개)` : ''}</h3>
+              <StateContainer
+                loading={state.status === 'loading'}
+                error={state.status === 'error' ? state.message : null}
+                empty={state.status === 'success' && visibleCostRows.length === 0}
+                emptyMessage="가격이 알려진 모델 사용 내역이 없습니다."
+              >
+                {visibleCostRows.length > 0 && <ModelCostBarChart rows={visibleCostRows} />}
+              </StateContainer>
+            </div>
+          )}
+          {(metric === 'tokens' || metric === 'both') && (
+            <div>
+              <h3>모델별 토큰 사용량{tokenTruncated ? ` (상위 ${TOP_N}개)` : ''}</h3>
+              <StateContainer
+                loading={state.status === 'loading'}
+                error={state.status === 'error' ? state.message : null}
+                empty={state.status === 'success' && visibleTokenRows.length === 0}
+                emptyMessage="해당 기간에 데이터가 없습니다."
+              >
+                {visibleTokenRows.length > 0 && (
+                  <>
+                    <ModelTokenBarChart rows={visibleTokenRows} grandTotal={grandTotalTokens} />
+                    <TokenClassLegend />
+                  </>
+                )}
+              </StateContainer>
+            </div>
+          )}
         </div>
-        {canExpand && (
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => setShowAll((v) => !v)}>
-            {showAll ? `상위 ${TOP_N}개만 보기` : `전체 보기 (${allRows.length}개)`}
-          </button>
-        )}
-      </div>
+      </Card>
 
-      <div className={`grid${metric === 'both' ? ' grid-cols-2' : ''}`}>
-        {(metric === 'cost' || metric === 'both') && (
-          <div className="chart-card">
-            <h2>모델별 비용{costTruncated ? ` (상위 ${TOP_N}개)` : ''}</h2>
-            <StateContainer
-              loading={state.status === 'loading'}
-              error={state.status === 'error' ? state.message : null}
-              empty={state.status === 'success' && visibleCostRows.length === 0}
-              emptyMessage="가격이 알려진 모델 사용 내역이 없습니다."
-            >
-              {visibleCostRows.length > 0 && <ModelCostBarChart rows={visibleCostRows} />}
-            </StateContainer>
-          </div>
-        )}
-        {(metric === 'tokens' || metric === 'both') && (
-          <div className="chart-card">
-            <h2>모델별 토큰 사용량{tokenTruncated ? ` (상위 ${TOP_N}개)` : ''}</h2>
-            <StateContainer
-              loading={state.status === 'loading'}
-              error={state.status === 'error' ? state.message : null}
-              empty={state.status === 'success' && visibleTokenRows.length === 0}
-              emptyMessage="해당 기간에 데이터가 없습니다."
-            >
-              {visibleTokenRows.length > 0 && (
-                <>
-                  <ModelTokenBarChart rows={visibleTokenRows} grandTotal={grandTotalTokens} />
-                  <TokenClassLegend />
-                </>
-              )}
-            </StateContainer>
-          </div>
-        )}
-      </div>
-
-      <div className="chart-card">
-        <div className="panel-title-row">
-          <h2>모델별 사용량 추이 (상위 {TOP_TIMESERIES_MODELS}개)</h2>
-          <div className="chart-toggle" role="group" aria-label="추이 차트 값 전환">
-            <button type="button" className={`chip${tsMode === 'cost' ? ' chip-active' : ''}`} onClick={() => setTsMode('cost')}>
-              비용
-            </button>
-            <button type="button" className={`chip${tsMode === 'tokens' ? ' chip-active' : ''}`} onClick={() => setTsMode('tokens')}>
-              토큰
-            </button>
-          </div>
-        </div>
+      <Card
+        className="section"
+        title={`모델별 사용량 추이 (상위 ${TOP_TIMESERIES_MODELS}개)`}
+        controls={
+          <SegmentedControl
+            ariaLabel="추이 차트 값 전환"
+            value={tsMode}
+            onChange={setTsMode}
+            options={[
+              { value: 'cost', label: '비용' },
+              { value: 'tokens', label: '토큰' },
+            ]}
+          />
+        }
+      >
         <ErrorBoundary label="차트를 표시할 수 없습니다">
           <StateContainer
             loading={timeseriesState.status === 'loading'}
@@ -202,7 +212,7 @@ export function Models() {
             )}
           </StateContainer>
         </ErrorBoundary>
-      </div>
+      </Card>
 
       <h2>전체 모델</h2>
       <StateContainer

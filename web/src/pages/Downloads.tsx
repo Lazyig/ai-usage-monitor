@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ApiError, getDownloadsManifest } from '../api/client'
 import type { DownloadFile, DownloadsManifest } from '../api/types'
+import { Card } from '../components/Card'
 import { type Column, DataTable } from '../components/DataTable'
 import { StateContainer } from '../components/StateContainer'
 import { describeError } from '../lib/errors'
@@ -9,6 +10,12 @@ import { installCommands } from '../lib/installCommands'
 import { useFilters } from '../state/FiltersContext'
 
 const TOKEN_PLACEHOLDER = '<기기 페이지에서 발급받은 토큰>'
+
+const OS_LABELS: Record<string, string> = { linux: 'Linux', darwin: 'macOS', windows: 'Windows' }
+
+function osLabel(os: string): string {
+  return OS_LABELS[os] ?? os
+}
 
 type LoadState =
   | { status: 'loading' }
@@ -40,31 +47,6 @@ export function Downloads() {
     }
   }, [refreshKey])
 
-  const columns: Column<DownloadFile>[] = [
-    { key: 'name', header: '파일', render: (f) => <span className="mono">{f.name}</span>, sortValue: (f) => f.name },
-    { key: 'os', header: 'OS', render: (f) => f.os, sortValue: (f) => f.os },
-    { key: 'arch', header: 'Arch', render: (f) => f.arch, sortValue: (f) => f.arch },
-    { key: 'size', header: '크기', align: 'right', render: (f) => formatBytes(f.size), sortValue: (f) => f.size },
-    {
-      key: 'sha256',
-      header: 'SHA256',
-      render: (f) => (
-        <span className="mono" title={f.sha256}>
-          {f.sha256.slice(0, 12)}…
-        </span>
-      ),
-    },
-    {
-      key: 'download',
-      header: '',
-      render: (f) => (
-        <a className="btn btn-sm" href={`/downloads/${encodeURIComponent(f.name)}`}>
-          다운로드
-        </a>
-      ),
-    },
-  ]
-
   return (
     <div>
       <div className="page-header">
@@ -76,51 +58,139 @@ export function Downloads() {
           <p>아직 빌드된 에이전트가 없습니다. CI가 첫 릴리스를 만들면 여기에 표시됩니다.</p>
         </div>
       ) : (
-        <StateContainer
-          loading={state.status === 'loading'}
-          error={state.status === 'error' ? state.message : null}
-          empty={state.status === 'success' && state.data.files.length === 0}
-          emptyMessage="아직 빌드된 파일이 없습니다."
+        <Card
+          className="section"
+          title="에이전트 다운로드"
+          controls={
+            state.status === 'success' ? (
+              <span className="card-meta">
+                버전 {state.data.version} · 빌드 {formatDateTime(state.data.built_at)}
+              </span>
+            ) : undefined
+          }
         >
-          {state.status === 'success' && (
-            <>
-              <p>
-                버전 <strong>{state.data.version}</strong> · 빌드 시각 {formatDateTime(state.data.built_at)}
-              </p>
-              <DataTable columns={columns} rows={state.data.files} rowKey={(f) => f.name} initialSortKey="name" initialSortDir="asc" />
-              <InstallSnippets />
-            </>
-          )}
-        </StateContainer>
+          <StateContainer
+            loading={state.status === 'loading'}
+            error={state.status === 'error' ? state.message : null}
+            empty={state.status === 'success' && state.data.files.length === 0}
+            emptyMessage="아직 빌드된 파일이 없습니다."
+          >
+            {state.status === 'success' && <DownloadsTable files={state.data.files} />}
+          </StateContainer>
+        </Card>
       )}
+
+      {state.status === 'success' && <InstallGuideCard />}
     </div>
   )
 }
 
-/** Copy-paste install one-liners for both platforms, using a placeholder
- * token since this page (unlike the Devices page right after issuance)
- * isn't tied to any one device. */
-function InstallSnippets() {
+function DownloadsTable({ files }: { files: DownloadFile[] }) {
+  const columns: Column<DownloadFile>[] = [
+    {
+      key: 'os',
+      header: 'OS',
+      render: (f) => <span className="tz-badge">{osLabel(f.os)}</span>,
+      sortValue: (f) => `${osLabel(f.os)}_${f.arch}`,
+    },
+    { key: 'arch', header: 'Arch', render: (f) => f.arch, sortValue: (f) => f.arch },
+    { key: 'name', header: '파일', render: (f) => <span className="mono">{f.name}</span>, sortValue: (f) => f.name },
+    { key: 'size', header: '크기', align: 'right', render: (f) => formatBytes(f.size), sortValue: (f) => f.size },
+    {
+      key: 'sha256',
+      header: 'SHA256',
+      render: (f) => (
+        <span className="sha-cell">
+          <span className="mono" title={f.sha256}>
+            {f.sha256.slice(0, 10)}…
+          </span>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            onClick={() => navigator.clipboard?.writeText(f.sha256)}
+            title="SHA256 전체 복사"
+          >
+            복사
+          </button>
+        </span>
+      ),
+    },
+    {
+      key: 'download',
+      header: '',
+      render: (f) => (
+        <a className="btn btn-sm btn-secondary" href={`/downloads/${encodeURIComponent(f.name)}`}>
+          <span aria-hidden="true">↓</span> 다운로드
+        </a>
+      ),
+    },
+  ]
+  return <DataTable columns={columns} rows={files} rowKey={(f) => f.name} initialSortKey="os" initialSortDir="asc" />
+}
+
+/** Splits a command string around a placeholder substring so the
+ * placeholder can be highlighted in a distinct color; the rest of the
+ * command renders as plain monospace text. */
+function CommandBox({ command, highlight }: { command: string; highlight: string }) {
+  const idx = command.indexOf(highlight)
+  const before = idx >= 0 ? command.slice(0, idx) : command
+  const after = idx >= 0 ? command.slice(idx + highlight.length) : ''
+  return (
+    <div className="command-box-wrap">
+      <pre className="command-box">
+        {before}
+        {idx >= 0 && <span className="token-placeholder">{highlight}</span>}
+        {after}
+      </pre>
+      <button
+        type="button"
+        className="btn btn-sm command-box-copy"
+        onClick={() => navigator.clipboard?.writeText(command)}
+        aria-label="명령 복사"
+      >
+        복사
+      </button>
+    </div>
+  )
+}
+
+/** Copy-paste install guide for both platforms, using a placeholder token
+ * since this page (unlike the Devices page right after issuance) isn't tied
+ * to any one device. */
+function InstallGuideCard() {
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const cmds = installCommands(origin, TOKEN_PLACEHOLDER)
   return (
-    <div className="card section" style={{ marginTop: 16 }}>
-      <h2>설치</h2>
-      <p>기기 페이지에서 토큰을 발급한 뒤 아래 명령의 {TOKEN_PLACEHOLDER} 를 실제 토큰으로 바꿔 실행하세요.</p>
-      <p style={{ marginTop: 10, marginBottom: 2 }}>Linux / macOS</p>
-      <div className="copy-box-row">
-        <code>{cmds.unix}</code>
-        <button type="button" className="btn btn-sm" onClick={() => navigator.clipboard?.writeText(cmds.unix)}>
-          복사
-        </button>
+    <Card
+      className="section"
+      title="에이전트 설치"
+      subtitle="아래 명령으로 에이전트를 설치하면 사용량을 자동으로 수집해 이 대시보드에 보고합니다."
+    >
+      <div className="install-tabs">
+        <div className="install-panel">
+          <h3>Linux / macOS</h3>
+          <CommandBox command={cmds.unix} highlight={TOKEN_PLACEHOLDER} />
+          <ol className="install-steps">
+            <li>Devices 에서 기기 추가 → 토큰 발급</li>
+            <li>아래 명령을 실행</li>
+            <li>1분 안에 Devices 에 나타남</li>
+          </ol>
+        </div>
+        <div className="install-panel">
+          <h3>Windows (PowerShell)</h3>
+          <CommandBox command={cmds.windows} highlight={TOKEN_PLACEHOLDER} />
+          <ol className="install-steps">
+            <li>Devices 에서 기기 추가 → 토큰 발급</li>
+            <li>아래 명령을 실행</li>
+            <li>1분 안에 Devices 에 나타남</li>
+          </ol>
+          <p className="install-note">관리자 PowerShell 에서 실행하세요.</p>
+        </div>
       </div>
-      <p style={{ marginTop: 10, marginBottom: 2 }}>Windows (PowerShell)</p>
-      <div className="copy-box-row">
-        <code>{cmds.windows}</code>
-        <button type="button" className="btn btn-sm" onClick={() => navigator.clipboard?.writeText(cmds.windows)}>
-          복사
-        </button>
-      </div>
-    </div>
+      <p className="install-note">
+        <span className="token-placeholder">{TOKEN_PLACEHOLDER}</span> 자리에는 실제 토큰이 들어갑니다 — 기기를 추가하면 Devices
+        페이지에 토큰이 포함된 실제 명령이 표시됩니다.
+      </p>
+    </Card>
   )
 }

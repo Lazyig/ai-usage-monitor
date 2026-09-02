@@ -4,7 +4,7 @@ import { PRESET_LABELS, TIMEZONE, addDays, type RangePreset } from '../lib/dateR
 import { useAuth } from '../state/AuthContext'
 import { useFilters } from '../state/FiltersContext'
 
-const PRESETS: RangePreset[] = ['today', '7d', '30d', 'thisMonth', 'lastMonth', 'custom']
+const PRESETS: RangePreset[] = ['today', '7d', '30d', 'thisMonth', 'lastMonth', 'all', 'custom']
 
 const NAV_ITEMS = [
   { to: '/', label: '개요', end: true },
