@@ -5,9 +5,12 @@ import { Badge } from '../components/Badge'
 import { type Column, DataTable } from '../components/DataTable'
 import { StateContainer } from '../components/StateContainer'
 import { useApiData } from '../hooks/useApiData'
+import { describeError } from '../lib/errors'
 
-function fmtRate(v: number | undefined): string {
-  return v === undefined ? '—' : `$${v.toFixed(2)}`
+/** Any pricing rate field can legitimately be `null` (unknown) or absent
+ * entirely — never call `.toFixed` without checking both. */
+function fmtRate(v: number | null | undefined): string {
+  return v === null || v === undefined ? '—' : `$${v.toFixed(2)}`
 }
 
 export function Pricing() {
@@ -22,7 +25,7 @@ export function Pricing() {
       await reloadPricing()
       state.reload()
     } catch (err) {
-      setReloadError(err instanceof Error ? err.message : '가격표 재로드에 실패했습니다.')
+      setReloadError(describeError(err))
     } finally {
       setReloading(false)
     }
@@ -34,7 +37,7 @@ export function Pricing() {
       header: '매칭 패턴',
       render: (r) => (
         <span className="mono">
-          {r.match} {r.estimated && <Badge kind="estimated" />}
+          {r.match} {r.estimated && <Badge kind="estimated" />} {r.alias_of && <Badge kind="alias" title={`→ ${r.alias_of}`} />}
         </span>
       ),
       sortValue: (r) => r.match,
@@ -63,6 +66,10 @@ export function Pricing() {
         </button>
       </div>
       {reloadError && <p className="login-error">{reloadError}</p>}
+      <p className="text-muted">
+        입력/출력 단가가 <strong>—</strong>로 표시되는 모델은 단가를 알 수 없어 비용 합계에서 <Badge kind="unknown" /> (단가 미상)으로 집계됩니다.{' '}
+        <Badge kind="estimated" />는 alias 단가로 추정 계산된 모델, <Badge kind="alias" />는 다른 모델의 단가를 그대로 사용하는 별칭입니다.
+      </p>
 
       <StateContainer
         loading={state.status === 'loading'}

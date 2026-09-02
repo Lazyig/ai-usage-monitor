@@ -5,6 +5,7 @@ import type { SummaryDeviceRow, SummaryModelRow, SummarySourceRow } from '../api
 import { Badge } from '../components/Badge'
 import { ChartTooltip } from '../components/ChartTooltip'
 import { type Column, DataTable } from '../components/DataTable'
+import { ErrorBoundary } from '../components/ErrorBoundary'
 import { StateContainer } from '../components/StateContainer'
 import { StatTile } from '../components/StatTile'
 import { useApiData } from '../hooks/useApiData'
@@ -31,48 +32,51 @@ export function Overview() {
         <h1>개요</h1>
       </div>
 
-      <StateContainer
-        loading={summaryState.status === 'loading'}
-        error={summaryState.status === 'error' ? summaryState.message : null}
-      >
-        {summaryState.status === 'success' && (
-          <div className="stat-tiles">
-            <StatTile
-              label="총 비용"
-              value={formatUsd(summaryState.data.totals.cost_usd)}
-              hint={
-                summaryState.data.totals.cost_known_ratio < COST_KNOWN_THRESHOLD ? (
-                  <Badge kind="warning">가격 반영 {formatPercent(summaryState.data.totals.cost_known_ratio)}</Badge>
-                ) : (
-                  `가격 반영 ${formatPercent(summaryState.data.totals.cost_known_ratio)}`
-                )
-              }
-              warn={summaryState.data.totals.cost_known_ratio < COST_KNOWN_THRESHOLD}
-            />
-            <StatTile label="이벤트" value={formatFull(summaryState.data.totals.events)} />
-            <StatTile
-              label="입력 토큰"
-              value={formatCompact(summaryState.data.totals.input)}
-              title={formatFull(summaryState.data.totals.input)}
-            />
-            <StatTile
-              label="출력 토큰"
-              value={formatCompact(summaryState.data.totals.output)}
-              title={formatFull(summaryState.data.totals.output)}
-            />
-            <StatTile
-              label="캐시 읽기"
-              value={formatCompact(summaryState.data.totals.cache_read)}
-              title={formatFull(summaryState.data.totals.cache_read)}
-            />
-            <StatTile
-              label="캐시 쓰기"
-              value={formatCompact(summaryState.data.totals.cache_write)}
-              title={formatFull(summaryState.data.totals.cache_write)}
-            />
-          </div>
-        )}
-      </StateContainer>
+      <ErrorBoundary label="통계 타일을 표시할 수 없습니다">
+        <StateContainer
+          loading={summaryState.status === 'loading'}
+          error={summaryState.status === 'error' ? summaryState.message : null}
+          onRetry={summaryState.reload}
+        >
+          {summaryState.status === 'success' && (
+            <div className="stat-tiles">
+              <StatTile
+                label="총 비용"
+                value={formatUsd(summaryState.data.totals.cost_usd)}
+                hint={
+                  summaryState.data.totals.cost_known_ratio < COST_KNOWN_THRESHOLD ? (
+                    <Badge kind="warning">가격 반영 {formatPercent(summaryState.data.totals.cost_known_ratio)}</Badge>
+                  ) : (
+                    `가격 반영 ${formatPercent(summaryState.data.totals.cost_known_ratio)}`
+                  )
+                }
+                warn={summaryState.data.totals.cost_known_ratio < COST_KNOWN_THRESHOLD}
+              />
+              <StatTile label="이벤트" value={formatFull(summaryState.data.totals.events)} />
+              <StatTile
+                label="입력 토큰"
+                value={formatCompact(summaryState.data.totals.input)}
+                title={formatFull(summaryState.data.totals.input)}
+              />
+              <StatTile
+                label="출력 토큰"
+                value={formatCompact(summaryState.data.totals.output)}
+                title={formatFull(summaryState.data.totals.output)}
+              />
+              <StatTile
+                label="캐시 읽기"
+                value={formatCompact(summaryState.data.totals.cache_read)}
+                title={formatFull(summaryState.data.totals.cache_read)}
+              />
+              <StatTile
+                label="캐시 쓰기"
+                value={formatCompact(summaryState.data.totals.cache_write)}
+                title={formatFull(summaryState.data.totals.cache_write)}
+              />
+            </div>
+          )}
+        </StateContainer>
+      </ErrorBoundary>
 
       <div className="chart-card">
         <div className="panel-title-row">
@@ -86,36 +90,56 @@ export function Overview() {
             </button>
           </div>
         </div>
-        <StateContainer
-          loading={timeseriesState.status === 'loading'}
-          error={timeseriesState.status === 'error' ? timeseriesState.message : null}
-          empty={timeseriesState.status === 'success' && timeseriesState.data.series.length === 0}
-        >
-          {timeseriesState.status === 'success' && <TimeseriesChart series={timeseriesState.data.series} mode={chartMode} />}
-        </StateContainer>
+        <ErrorBoundary label="차트를 표시할 수 없습니다">
+          <StateContainer
+            loading={timeseriesState.status === 'loading'}
+            error={timeseriesState.status === 'error' ? timeseriesState.message : null}
+            onRetry={timeseriesState.reload}
+            empty={timeseriesState.status === 'success' && timeseriesState.data.series.length === 0}
+          >
+            {timeseriesState.status === 'success' && <TimeseriesChart series={timeseriesState.data.series} mode={chartMode} />}
+          </StateContainer>
+        </ErrorBoundary>
       </div>
 
-      <StateContainer
-        loading={summaryState.status === 'loading'}
-        error={summaryState.status === 'error' ? summaryState.message : null}
-      >
-        {summaryState.status === 'success' && (
-          <div className="grid grid-cols-3">
-            <div>
-              <h2>소스별</h2>
-              <SourceTable rows={summaryState.data.by_source} />
-            </div>
-            <div>
-              <h2>기기별</h2>
-              <DeviceTable rows={summaryState.data.by_device} />
-            </div>
-            <div>
-              <h2>모델별</h2>
-              <ModelTable rows={summaryState.data.by_model} />
-            </div>
-          </div>
-        )}
-      </StateContainer>
+      <div className="grid grid-cols-3">
+        <div>
+          <h2>소스별</h2>
+          <ErrorBoundary label="소스별 표를 표시할 수 없습니다">
+            <StateContainer
+              loading={summaryState.status === 'loading'}
+              error={summaryState.status === 'error' ? summaryState.message : null}
+              onRetry={summaryState.reload}
+            >
+              {summaryState.status === 'success' && <SourceTable rows={summaryState.data.by_source} />}
+            </StateContainer>
+          </ErrorBoundary>
+        </div>
+        <div>
+          <h2>기기별</h2>
+          <ErrorBoundary label="기기별 표를 표시할 수 없습니다">
+            <StateContainer
+              loading={summaryState.status === 'loading'}
+              error={summaryState.status === 'error' ? summaryState.message : null}
+              onRetry={summaryState.reload}
+            >
+              {summaryState.status === 'success' && <DeviceTable rows={summaryState.data.by_device} />}
+            </StateContainer>
+          </ErrorBoundary>
+        </div>
+        <div>
+          <h2>모델별</h2>
+          <ErrorBoundary label="모델별 표를 표시할 수 없습니다">
+            <StateContainer
+              loading={summaryState.status === 'loading'}
+              error={summaryState.status === 'error' ? summaryState.message : null}
+              onRetry={summaryState.reload}
+            >
+              {summaryState.status === 'success' && <ModelTable rows={summaryState.data.by_model} />}
+            </StateContainer>
+          </ErrorBoundary>
+        </div>
+      </div>
     </div>
   )
 }

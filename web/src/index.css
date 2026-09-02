@@ -427,6 +427,38 @@ select {
   color: var(--status-good);
 }
 
+.badge-revoked {
+  background: color-mix(in srgb, var(--status-critical) 18%, transparent);
+  color: var(--status-critical);
+}
+
+.badge-alias {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+/* ---- inline toast (revoke confirmation, etc.) ---- */
+
+.toast-success {
+  background: color-mix(in srgb, var(--status-good) 14%, transparent);
+  border: 1px solid var(--status-good);
+  color: var(--status-good);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 13px;
+  margin: 8px 0;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+
 /* ---- tables ---- */
 
 .table-scroll {

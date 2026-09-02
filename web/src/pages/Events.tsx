@@ -4,6 +4,7 @@ import type { Device, Source, UsageEventDTO } from '../api/types'
 import { type Column, DataTable } from '../components/DataTable'
 import { StateContainer } from '../components/StateContainer'
 import { labelForKey } from '../lib/colors'
+import { describeError } from '../lib/errors'
 import { formatCompact, formatDateTime, formatFull, formatUsd } from '../lib/format'
 import { useFilters } from '../state/FiltersContext'
 
@@ -50,7 +51,7 @@ export function Events() {
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        setError(err instanceof Error ? err.message : String(err))
+        setError(describeError(err))
         setStatus('error')
       })
     return () => {
@@ -58,9 +59,12 @@ export function Events() {
     }
   }, [range.from, range.to, source, device, model, refreshKey])
 
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
+
   async function loadMore() {
     if (!nextCursor) return
     setLoadingMore(true)
+    setLoadMoreError(null)
     try {
       const r = await getEvents({
         from: range.from,
@@ -73,6 +77,8 @@ export function Events() {
       })
       setEvents((prev) => [...prev, ...r.events])
       setNextCursor(r.next_cursor)
+    } catch (err) {
+      setLoadMoreError(describeError(err))
     } finally {
       setLoadingMore(false)
     }
@@ -127,6 +133,11 @@ export function Events() {
 
       <StateContainer loading={status === 'loading'} error={status === 'error' ? error : null} empty={status === 'success' && events.length === 0}>
         <DataTable columns={columns} rows={events} rowKey={(e) => e.event_id} />
+        {loadMoreError && (
+          <p className="login-error" role="alert" style={{ textAlign: 'center', marginTop: 8 }}>
+            추가 이벤트를 불러오지 못했습니다: {loadMoreError}
+          </p>
+        )}
         {nextCursor && (
           <div style={{ textAlign: 'center', marginTop: 12 }}>
             <button type="button" className="btn" onClick={loadMore} disabled={loadingMore}>

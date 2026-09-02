@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { describeError } from '../lib/errors'
 
 export type ApiState<T> =
   | { status: 'loading' }
@@ -22,7 +23,7 @@ export function useApiData<T>(fetcher: () => Promise<T>, deps: unknown[]): ApiSt
         if (!cancelled) setState({ status: 'success', data })
       })
       .catch((err: unknown) => {
-        if (!cancelled) setState({ status: 'error', message: err instanceof Error ? err.message : String(err) })
+        if (!cancelled) setState({ status: 'error', message: describeError(err) })
       })
     return () => {
       cancelled = true
