@@ -1,8 +1,8 @@
 // Single fetch wrapper for the admin API. Adds the Bearer token, surfaces
 // 401s to the auth layer, and (when VITE_MOCK=1) transparently serves
 // deterministic fake data shaped exactly like docs/API.md instead of
-// touching the network — see mock.ts.
-import { mockRequest } from './mock'
+// touching the network — see mock/handlers.ts.
+import { mockRequest } from './mock/handlers'
 import type {
   BreakdownGroupBy,
   BreakdownResponse,
@@ -21,11 +21,12 @@ import type {
   TimeseriesBucket,
   TimeseriesResponse,
 } from './types'
+import { readStored, removeStored, writeStored } from '../lib/storage'
 
 const MOCK = import.meta.env.VITE_MOCK === '1'
 const TOKEN_KEY = 'aum_admin_token'
 
-let authToken: string | null = typeof localStorage !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null
+let authToken: string | null = readStored(TOKEN_KEY)
 let unauthorizedHandler: (() => void) | null = null
 
 export function getStoredToken(): string | null {
@@ -34,12 +35,12 @@ export function getStoredToken(): string | null {
 
 export function setStoredToken(token: string): void {
   authToken = token
-  localStorage.setItem(TOKEN_KEY, token)
+  writeStored(TOKEN_KEY, token)
 }
 
 export function clearStoredToken(): void {
   authToken = null
-  localStorage.removeItem(TOKEN_KEY)
+  removeStored(TOKEN_KEY)
 }
 
 /** Registered once by AuthContext; called whenever any request gets a 401. */
@@ -57,6 +58,14 @@ export class ApiError extends Error {
 }
 
 type Params = Record<string, string | undefined>
+
+/** Endpoint functions declare their params with real types (numbers stay
+ * numbers); this stringifies them on the way out so no call site has to. */
+function toParams(params: object): Params {
+  const out: Params = {}
+  for (const [k, v] of Object.entries(params)) out[k] = v === undefined ? undefined : String(v)
+  return out
+}
 
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'DELETE'
@@ -127,36 +136,40 @@ export function verifyToken(token: string): Promise<DevicesResponse> {
 
 // ---- read endpoints -------------------------------------------------------
 
+/** The `from`/`to`/`tz` window every aggregate endpoint accepts. `to` is
+ * exclusive; both default server-side to "the last 30 days". */
 export interface RangeParams {
   from?: string
   to?: string
   tz?: string
 }
 
-export function getSummary(params: RangeParams & { source?: string; device?: string }): Promise<SummaryResponse> {
-  return request('/api/v1/summary', { params: params as Params })
+/** The narrowing filters shared by summary/timeseries/breakdown/events. */
+export interface FilterParams {
+  source?: string
+  device?: string
+}
+
+export function getSummary(params: RangeParams & FilterParams): Promise<SummaryResponse> {
+  return request('/api/v1/summary', { params: toParams(params) })
 }
 
 export function getTimeseries(
-  params: RangeParams & { bucket?: TimeseriesBucket; group_by?: GroupBy; source?: string; device?: string },
+  params: RangeParams & FilterParams & { bucket?: TimeseriesBucket; group_by?: GroupBy },
 ): Promise<TimeseriesResponse> {
-  return request('/api/v1/timeseries', { params: params as Params })
+  return request('/api/v1/timeseries', { params: toParams(params) })
 }
 
 export function getBreakdown(
-  params: RangeParams & { group_by: BreakdownGroupBy; source?: string; device?: string; limit?: number },
+  params: RangeParams & FilterParams & { group_by: BreakdownGroupBy; limit?: number },
 ): Promise<BreakdownResponse> {
-  return request('/api/v1/breakdown', {
-    params: { ...params, limit: params.limit !== undefined ? String(params.limit) : undefined } as Params,
-  })
+  return request('/api/v1/breakdown', { params: toParams(params) })
 }
 
 export function getEvents(
-  params: RangeParams & { source?: string; device?: string; model?: string; limit?: number; cursor?: string },
+  params: RangeParams & FilterParams & { model?: string; limit?: number; cursor?: string },
 ): Promise<EventsResponse> {
-  return request('/api/v1/events', {
-    params: { ...params, limit: params.limit !== undefined ? String(params.limit) : undefined } as Params,
-  })
+  return request('/api/v1/events', { params: toParams(params) })
 }
 
 export function getDevices(): Promise<DevicesResponse> {
