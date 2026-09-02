@@ -37,6 +37,8 @@ if [ -n "$want" ]; then
   [ "$got" = "$want" ] || { echo "sha256 mismatch: got $got want $want" >&2; exit 1; }
   echo "sha256 ok"
 fi
+# Stop a running service first so the restart picks up the new binary cleanly.
+if [ -x "$PREFIX/ai-usage-agent" ]; then "$PREFIX/ai-usage-agent" stop >/dev/null 2>&1 || true; fi
 install -m 0755 "$tmp/$name" "$PREFIX/ai-usage-agent"
 echo "installed $PREFIX/ai-usage-agent ($("$PREFIX/ai-usage-agent" version 2>/dev/null || echo unknown))"
 
