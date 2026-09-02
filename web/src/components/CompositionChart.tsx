@@ -1,3 +1,4 @@
+import type { ReactElement, ReactNode } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { TooltipProps } from 'recharts'
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent'
@@ -6,6 +7,10 @@ import { formatPercent } from '../lib/format'
 export interface CompositionRow {
   key: string
   label: string
+  /** Extra numeric fields merged into the bar's datum. They are not drawn —
+   * they exist so a custom `tooltip` can show quantities that are not
+   * segments (a subset count, a share of some wider total, …). */
+  extra?: Record<string, number>
 }
 
 export interface CompositionSegment {
@@ -23,6 +28,16 @@ interface CompositionChartProps {
   formatValue: (v: number) => string
   /** Width reserved for the row labels on the y axis. */
   labelWidth?: number
+  /** Defaults to a height that gives each row a comfortable band. */
+  height?: number
+  maxBarSize?: number
+  barRadius?: [number, number, number, number]
+  /** A 2px surface-coloured stroke separates touching segments. Off for
+   * charts whose bars are thin enough that it would eat the bar. */
+  barStroke?: boolean
+  /** Replaces the default composition tooltip (per-segment value + share +
+   * total) for charts that need to report something else. */
+  tooltip?: ReactElement
 }
 
 interface Datum {
@@ -33,14 +48,24 @@ interface Datum {
 
 /**
  * Horizontal stacked bars answering "what is this made of" — one bar per row
- * (agent or device), one segment per member of the other dimension. Segments
- * are separated by a 2px surface-colored stroke rather than touching, and the
- * tooltip carries the exact per-segment values, the row total and each
- * segment's share of it.
+ * (agent, device or model), one segment per member of the other dimension.
+ * The default tooltip carries the exact per-segment values, the row total and
+ * each segment's share of it.
  */
-export function CompositionChart({ rows, segments, value, formatValue, labelWidth = 140 }: CompositionChartProps) {
+export function CompositionChart({
+  rows,
+  segments,
+  value,
+  formatValue,
+  labelWidth = 140,
+  height,
+  maxBarSize = 22,
+  barRadius = [2, 2, 2, 2],
+  barStroke = true,
+  tooltip,
+}: CompositionChartProps) {
   const data: Datum[] = rows.map((row) => {
-    const datum: Datum = { name: row.label, total: 0 }
+    const datum: Datum = { name: row.label, total: 0, ...row.extra }
     for (const seg of segments) {
       const v = value(row.key, seg.key)
       datum[seg.key] = v
@@ -50,7 +75,7 @@ export function CompositionChart({ rows, segments, value, formatValue, labelWidt
   })
 
   return (
-    <ResponsiveContainer width="100%" height={Math.max(160, data.length * 46 + 24)}>
+    <ResponsiveContainer width="100%" height={height ?? Math.max(160, data.length * 46 + 24)}>
       <BarChart data={data} layout="vertical" margin={{ left: 8, right: 16 }}>
         <CartesianGrid stroke="var(--border)" horizontal={false} />
         <XAxis
@@ -69,7 +94,7 @@ export function CompositionChart({ rows, segments, value, formatValue, labelWidt
           width={labelWidth}
         />
         <Tooltip
-          content={<CompositionTooltip segments={segments} formatValue={formatValue} />}
+          content={tooltip ?? <CompositionTooltip segments={segments} formatValue={formatValue} />}
           cursor={{ fill: 'var(--border)', opacity: 0.4 }}
         />
         {segments.map((seg) => (
@@ -79,10 +104,10 @@ export function CompositionChart({ rows, segments, value, formatValue, labelWidt
             name={seg.label}
             stackId="composition"
             fill={seg.color}
-            stroke="var(--surface)"
-            strokeWidth={2}
-            radius={[2, 2, 2, 2]}
-            maxBarSize={22}
+            stroke={barStroke ? 'var(--surface)' : undefined}
+            strokeWidth={barStroke ? 2 : undefined}
+            radius={barRadius}
+            maxBarSize={maxBarSize}
           />
         ))}
       </BarChart>
@@ -101,45 +126,25 @@ function CompositionTooltip({
   const d = payload[0].payload as Datum
   const present = segments.filter((seg) => Number(d[seg.key]) > 0)
   return (
-    <div
-      style={{
-        background: 'var(--surface-raised)',
-        border: '1px solid var(--border)',
-        borderRadius: 6,
-        padding: '8px 10px',
-        fontSize: 12.5,
-        boxShadow: 'var(--shadow)',
-        minWidth: 190,
-      }}
-    >
-      <div style={{ color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
+    <TooltipShell label={label}>
       {present.length === 0 && <div style={{ color: 'var(--text-muted)' }}>데이터 없음</div>}
       {present.map((seg) => (
-        <div key={seg.key} style={{ display: 'flex', gap: 12, justifyContent: 'space-between', color: 'var(--text-primary)' }}>
-          <span>
-            <span
-              style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: seg.color, marginRight: 6 }}
-            />
-            {seg.label}
+        <TooltipRow key={seg.key} gap={12} color={seg.color} label={seg.label}>
+          {formatValue(Number(d[seg.key]))}
+          <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>
+            {d.total > 0 ? formatPercent(Number(d[seg.key]) / d.total, 0) : ''}
           </span>
-          <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-            {formatValue(Number(d[seg.key]))}
-            <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>
-              {d.total > 0 ? formatPercent(Number(d[seg.key]) / d.total, 0) : ''}
-            </span>
-          </span>
-        </div>
+        </TooltipRow>
       ))}
       {present.length > 1 && (
         <>
-          <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0 4px' }} />
-          <div style={{ display: 'flex', gap: 12, justifyContent: 'space-between', fontWeight: 600, color: 'var(--text-primary)' }}>
-            <span>합계</span>
-            <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatValue(d.total)}</span>
-          </div>
+          <TooltipDivider />
+          <TooltipRow gap={12} label="합계" bold>
+            {formatValue(d.total)}
+          </TooltipRow>
         </>
       )}
-    </div>
+    </TooltipShell>
   )
 }
 
@@ -155,4 +160,68 @@ export function CompositionLegend({ segments }: { segments: CompositionSegment[]
       ))}
     </div>
   )
+}
+
+// ---- tooltip building blocks, shared with page-specific tooltips ---------
+
+/** The themed popover every chart tooltip sits in. `minWidth` keeps a
+ * multi-row tooltip from reflowing as the hovered values change width. */
+export function TooltipShell({ label, minWidth = 190, children }: { label?: ReactNode; minWidth?: number; children: ReactNode }) {
+  return (
+    <div
+      style={{
+        background: 'var(--surface-raised)',
+        border: '1px solid var(--border)',
+        borderRadius: 6,
+        padding: '8px 10px',
+        fontSize: 12.5,
+        boxShadow: 'var(--shadow)',
+        ...(minWidth > 0 ? { minWidth } : {}),
+      }}
+    >
+      <div style={{ color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
+      {children}
+    </div>
+  )
+}
+
+/** One `label ......... value` line, optionally with a colour swatch. */
+export function TooltipRow({
+  color,
+  label,
+  gap = 8,
+  bold,
+  muted,
+  children,
+}: {
+  color?: string
+  label: string
+  gap?: number
+  bold?: boolean
+  muted?: boolean
+  children: ReactNode
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap,
+        justifyContent: 'space-between',
+        color: muted ? 'var(--text-secondary)' : 'var(--text-primary)',
+        ...(bold ? { fontWeight: 600 } : {}),
+      }}
+    >
+      <span>
+        {color && (
+          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: color, marginRight: 6 }} />
+        )}
+        {label}
+      </span>
+      <span style={{ fontVariantNumeric: 'tabular-nums' }}>{children}</span>
+    </div>
+  )
+}
+
+export function TooltipDivider() {
+  return <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0 4px' }} />
 }

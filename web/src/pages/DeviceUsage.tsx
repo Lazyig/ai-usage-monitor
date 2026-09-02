@@ -1,33 +1,25 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getBreakdown, getDevices, getTimeseries } from '../api/client'
-import type { BreakdownRow, Device, Source, TimeseriesBucket, TimeseriesSeries } from '../api/types'
+import type { BreakdownRow, Device, Source, TimeseriesBucket } from '../api/types'
 import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
 import { CompositionChart, CompositionLegend, type CompositionSegment } from '../components/CompositionChart'
 import { type Column, DataTable } from '../components/DataTable'
+import { costColumn, countColumn, tokenColumn } from '../components/columns'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { StateContainer } from '../components/StateContainer'
 import { StatTile } from '../components/StatTile'
 import { TrendChart } from '../components/TrendChart'
 import { useApiData } from '../hooks/useApiData'
-import { tokensOfPoint } from '../lib/chartData'
+import { type Metric, METRIC_OPTIONS, bucketOptions, metricFormat, seriesTokens, topBy } from '../lib/chartData'
 import { SOURCE_COLOR_VARS, SOURCE_ORDER, colorForSlot, labelForKey } from '../lib/colors'
-import { rangeDays } from '../lib/dateRange'
+import { HOURLY_MAX_DAYS, hourlyAllowed } from '../lib/dateRange'
 import { formatCompact, formatDateTime, formatFull, formatRelative, formatUsd, isStale } from '../lib/format'
-import { buildMatrix, fetchSourceDeviceMatrix, tokensOf } from '../lib/matrix'
+import { buildMatrix, fetchSourceDeviceMatrix } from '../lib/matrix'
+import { tokensOf } from '../lib/usage'
 import { useFilters } from '../state/FiltersContext'
-
-type Metric = 'cost' | 'tokens'
-
-/** Longest range that still makes sense as hourly bars. */
-const HOURLY_MAX_DAYS = 7
-
-const METRIC_OPTIONS = [
-  { value: 'cost' as const, label: '비용' },
-  { value: 'tokens' as const, label: '토큰' },
-]
 
 /** Past this the trend chart's stacked bands stop being readable, so only the
  * busiest devices get a series. */
@@ -53,11 +45,8 @@ export function DeviceUsage() {
   const [trendMetric, setTrendMetric] = useState<Metric>('cost')
   const [bucket, setBucket] = useState<TimeseriesBucket>('day')
 
-  // An hourly bucket over a month is ~720 bars — unreadable and a large
-  // payload — so it is only offered on short ranges, and a range change that
-  // outgrows it silently falls back to daily.
-  const hourlyAllowed = rangeDays(range.from, range.to) <= HOURLY_MAX_DAYS
-  const effectiveBucket: TimeseriesBucket = hourlyAllowed ? bucket : 'day'
+  const canBucketHourly = hourlyAllowed(range)
+  const effectiveBucket: TimeseriesBucket = canBucketHourly ? bucket : 'day'
 
   const devicesState = useApiData(() => getDevices(), [refreshKey])
   const usageState = useApiData(
@@ -120,19 +109,19 @@ export function DeviceUsage() {
     [mixState, deviceNames],
   )
   const mixSegments: CompositionSegment[] = useMemo(
-    () =>
-      (source ? [source] : SOURCE_ORDER).map((s) => ({ key: s, label: labelForKey(s), color: SOURCE_COLOR_VARS[s] })),
+    () => (source ? [source] : SOURCE_ORDER).map((s) => ({ key: s, label: labelForKey(s), color: SOURCE_COLOR_VARS[s] })),
     [source],
   )
   const mixRows = useMemo(() => (matrix?.devices ?? []).map((d) => ({ key: d.id, label: d.name })), [matrix])
 
   // Only the busiest devices get a band in the trend chart.
-  const trendSeries: TimeseriesSeries[] = useMemo(() => {
-    if (trendState.status !== 'success') return []
-    const totalOf = (s: TimeseriesSeries) => s.points.reduce((sum, p) => sum + tokensOfPoint(p), 0)
-    return [...trendState.data.series].sort((a, b) => totalOf(b) - totalOf(a)).slice(0, MAX_TREND_DEVICES)
-  }, [trendState])
+  const trendSeries = useMemo(
+    () => (trendState.status === 'success' ? topBy(trendState.data.series, MAX_TREND_DEVICES, seriesTokens) : []),
+    [trendState],
+  )
   const trendTruncated = trendState.status === 'success' && trendState.data.series.length > trendSeries.length
+
+  const usageError = usageState.status === 'error' ? usageState.message : null
 
   return (
     <div>
@@ -160,11 +149,7 @@ export function DeviceUsage() {
       </div>
 
       <ErrorBoundary label="통계 타일을 표시할 수 없습니다">
-        <StateContainer
-          loading={usageState.status === 'loading'}
-          error={usageState.status === 'error' ? usageState.message : null}
-          onRetry={usageState.reload}
-        >
+        <StateContainer loading={usageState.status === 'loading'} error={usageError} onRetry={usageState.reload}>
           {usageState.status === 'success' && (
             <div className="stat-tiles">
               <StatTile
@@ -203,7 +188,7 @@ export function DeviceUsage() {
                     const cell = matrix.cell(sourceKey as Source, deviceId)
                     return mixMetric === 'cost' ? cell.cost : cell.tokens
                   }}
-                  formatValue={mixMetric === 'cost' ? formatUsd : formatCompact}
+                  formatValue={metricFormat(mixMetric)}
                 />
                 <CompositionLegend segments={mixSegments} />
               </>
@@ -223,15 +208,7 @@ export function DeviceUsage() {
               ariaLabel="추이 단위 전환"
               value={effectiveBucket}
               onChange={setBucket}
-              options={[
-                { value: 'day', label: '일별' },
-                {
-                  value: 'hour',
-                  label: '시간별',
-                  disabled: !hourlyAllowed,
-                  title: hourlyAllowed ? undefined : `시간별 보기는 기간이 ${HOURLY_MAX_DAYS}일 이하일 때만 쓸 수 있습니다.`,
-                },
-              ]}
+              options={bucketOptions(canBucketHourly, HOURLY_MAX_DAYS)}
             />
           </>
         }
@@ -243,14 +220,7 @@ export function DeviceUsage() {
             onRetry={trendState.reload}
             empty={trendState.status === 'success' && trendSeries.length === 0}
           >
-            {trendSeries.length > 0 && (
-              <TrendChart
-                series={trendSeries}
-                mode={trendMetric}
-                labelFor={(key) => nameOf(key)}
-                colorFor={(key) => colorOf(key)}
-              />
-            )}
+            {trendSeries.length > 0 && <TrendChart series={trendSeries} mode={trendMetric} labelFor={nameOf} colorFor={colorOf} />}
           </StateContainer>
         </ErrorBoundary>
       </Card>
@@ -258,7 +228,7 @@ export function DeviceUsage() {
       <h2>기기별 상세</h2>
       <StateContainer
         loading={usageState.status === 'loading' || devicesState.status === 'loading'}
-        error={usageState.status === 'error' ? usageState.message : devicesState.status === 'error' ? devicesState.message : null}
+        error={usageError ?? (devicesState.status === 'error' ? devicesState.message : null)}
         onRetry={usageState.reload}
         empty={usageState.status === 'success' && rows.length === 0}
         emptyMessage="등록된 기기가 없습니다."
@@ -269,9 +239,8 @@ export function DeviceUsage() {
   )
 }
 
-function DeviceUsageTable({ rows, colorOf }: { rows: DeviceUsageRow[]; colorOf: (id: string) => string }) {
-  const tokens = (r: DeviceUsageRow) => (r.usage ? tokensOf(r.usage) : 0)
-  const columns: Column<DeviceUsageRow>[] = [
+function deviceColumns(colorOf: (id: string) => string): Column<DeviceUsageRow>[] {
+  return [
     {
       key: 'name',
       header: '기기',
@@ -292,39 +261,16 @@ function DeviceUsageTable({ rows, colorOf }: { rows: DeviceUsageRow[]; colorOf: 
       sortValue: (r) => (r.meta ? `${r.meta.os}/${r.meta.arch}` : ''),
     },
     { key: 'agent_version', header: '에이전트 버전', render: (r) => r.meta?.agent_version ?? '-', sortValue: (r) => r.meta?.agent_version ?? '' },
-    {
-      key: 'cost',
-      header: '비용',
-      align: 'right',
-      render: (r) => (
-        <span>
-          {r.usage ? formatUsd(r.usage.cost_usd) : formatUsd(0)} {r.usage?.cost_usd === null && <Badge kind="unknown" />}
-        </span>
-      ),
+    // A row with no usage in the range shows $0.00 rather than "—": the device
+    // is known to have spent nothing, which is not the same as unknown price.
+    costColumn('cost', '비용', (r) => (r.usage ? r.usage.cost_usd : 0), {
+      badge: true,
       sortValue: (r) => r.usage?.cost_usd ?? -1,
-    },
-    {
-      key: 'input',
-      header: '입력',
-      align: 'right',
-      render: (r) => <span title={formatFull(r.usage?.input ?? 0)}>{formatCompact(r.usage?.input ?? 0)}</span>,
-      sortValue: (r) => r.usage?.input ?? 0,
-    },
-    {
-      key: 'output',
-      header: '출력',
-      align: 'right',
-      render: (r) => <span title={formatFull(r.usage?.output ?? 0)}>{formatCompact(r.usage?.output ?? 0)}</span>,
-      sortValue: (r) => r.usage?.output ?? 0,
-    },
-    {
-      key: 'total_tokens',
-      header: '토큰 합계',
-      align: 'right',
-      render: (r) => <span title={formatFull(tokens(r))}>{formatCompact(tokens(r))}</span>,
-      sortValue: (r) => tokens(r),
-    },
-    { key: 'events', header: '이벤트', align: 'right', render: (r) => formatFull(r.usage?.events ?? 0), sortValue: (r) => r.usage?.events ?? 0 },
+    }),
+    tokenColumn('input', '입력', (r) => r.usage?.input ?? 0),
+    tokenColumn('output', '출력', (r) => r.usage?.output ?? 0),
+    tokenColumn('total_tokens', '토큰 합계', (r) => (r.usage ? tokensOf(r.usage) : 0)),
+    countColumn('events', '이벤트', (r) => r.usage?.events ?? 0),
     {
       key: 'last_usage',
       header: '최근 사용',
@@ -338,9 +284,12 @@ function DeviceUsageTable({ rows, colorOf }: { rows: DeviceUsageRow[]; colorOf: 
       sortValue: (r) => r.meta?.last_seen ?? '',
     },
   ]
+}
+
+function DeviceUsageTable({ rows, colorOf }: { rows: DeviceUsageRow[]; colorOf: (id: string) => string }) {
   return (
     <>
-      <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} initialSortKey="cost" />
+      <DataTable columns={deviceColumns(colorOf)} rows={rows} rowKey={(r) => r.id} initialSortKey="cost" />
       <p className="table-footnote">
         토큰 재발급·재동기화·삭제는 상단의 <Link to="/manage/devices">기기 관리</Link> 메뉴에서 합니다.
       </p>

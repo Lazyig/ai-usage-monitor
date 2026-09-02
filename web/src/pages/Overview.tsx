@@ -1,32 +1,39 @@
-import { useState } from 'react'
-import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { useState, type ReactNode } from 'react'
 import { getSummary, getTimeseries } from '../api/client'
-import type { SummaryDeviceRow, SummaryModelRow, SummarySourceRow } from '../api/types'
+import type { SummaryDeviceRow, SummaryModelRow, SummaryResponse, SummarySourceRow } from '../api/types'
 import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
-import { ChartTooltip } from '../components/ChartTooltip'
 import { type Column, DataTable } from '../components/DataTable'
+import { costColumn, countColumn, tokenColumn } from '../components/columns'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { StateContainer } from '../components/StateContainer'
 import { StatTile } from '../components/StatTile'
-import { useApiData } from '../hooks/useApiData'
+import { TrendChart } from '../components/TrendChart'
+import { type ApiState, useApiData } from '../hooks/useApiData'
+import { type Metric, METRIC_OPTIONS } from '../lib/chartData'
 import { colorForKey, labelForKey } from '../lib/colors'
-import { costOfPoint, formatBucketLabel, mergeSeries, tokensOfPoint } from '../lib/chartData'
 import { formatCompact, formatFull, formatPercent, formatUsd } from '../lib/format'
+import { tokensOf } from '../lib/usage'
 import { useFilters } from '../state/FiltersContext'
 
+/** Below this share of priced tokens the headline cost is materially
+ * incomplete, so it is flagged rather than presented as the total. */
 const COST_KNOWN_THRESHOLD = 0.95
 
 export function Overview() {
   const { range, refreshKey } = useFilters()
-  const [chartMode, setChartMode] = useState<'cost' | 'tokens'>('cost')
+  const [chartMode, setChartMode] = useState<Metric>('cost')
 
   const summaryState = useApiData(() => getSummary({ from: range.from, to: range.to }), [range.from, range.to, refreshKey])
   const timeseriesState = useApiData(
     () => getTimeseries({ from: range.from, to: range.to, bucket: 'day', group_by: 'source' }),
     [range.from, range.to, refreshKey],
   )
+
+  const summaryError = summaryState.status === 'error' ? summaryState.message : null
+  const totals = summaryState.status === 'success' ? summaryState.data.totals : null
+  const costIncomplete = totals !== null && totals.cost_known_ratio < COST_KNOWN_THRESHOLD
 
   return (
     <div>
@@ -35,46 +42,26 @@ export function Overview() {
       </div>
 
       <ErrorBoundary label="통계 타일을 표시할 수 없습니다">
-        <StateContainer
-          loading={summaryState.status === 'loading'}
-          error={summaryState.status === 'error' ? summaryState.message : null}
-          onRetry={summaryState.reload}
-        >
-          {summaryState.status === 'success' && (
+        <StateContainer loading={summaryState.status === 'loading'} error={summaryError} onRetry={summaryState.reload}>
+          {totals && (
             <div className="stat-tiles">
               <StatTile
                 label="총 비용"
-                value={formatUsd(summaryState.data.totals.cost_usd)}
+                value={formatUsd(totals.cost_usd)}
                 hint={
-                  summaryState.data.totals.cost_known_ratio < COST_KNOWN_THRESHOLD ? (
-                    <Badge kind="warning">가격 반영 {formatPercent(summaryState.data.totals.cost_known_ratio)}</Badge>
+                  costIncomplete ? (
+                    <Badge kind="warning">가격 반영 {formatPercent(totals.cost_known_ratio)}</Badge>
                   ) : (
-                    `가격 반영 ${formatPercent(summaryState.data.totals.cost_known_ratio)}`
+                    `가격 반영 ${formatPercent(totals.cost_known_ratio)}`
                   )
                 }
-                warn={summaryState.data.totals.cost_known_ratio < COST_KNOWN_THRESHOLD}
+                warn={costIncomplete}
               />
-              <StatTile label="이벤트" value={formatFull(summaryState.data.totals.events)} />
-              <StatTile
-                label="입력 토큰"
-                value={formatCompact(summaryState.data.totals.input)}
-                title={formatFull(summaryState.data.totals.input)}
-              />
-              <StatTile
-                label="출력 토큰"
-                value={formatCompact(summaryState.data.totals.output)}
-                title={formatFull(summaryState.data.totals.output)}
-              />
-              <StatTile
-                label="캐시 읽기"
-                value={formatCompact(summaryState.data.totals.cache_read)}
-                title={formatFull(summaryState.data.totals.cache_read)}
-              />
-              <StatTile
-                label="캐시 쓰기"
-                value={formatCompact(summaryState.data.totals.cache_write)}
-                title={formatFull(summaryState.data.totals.cache_write)}
-              />
+              <StatTile label="이벤트" value={formatFull(totals.events)} />
+              <StatTile label="입력 토큰" value={formatCompact(totals.input)} title={formatFull(totals.input)} />
+              <StatTile label="출력 토큰" value={formatCompact(totals.output)} title={formatFull(totals.output)} />
+              <StatTile label="캐시 읽기" value={formatCompact(totals.cache_read)} title={formatFull(totals.cache_read)} />
+              <StatTile label="캐시 쓰기" value={formatCompact(totals.cache_write)} title={formatFull(totals.cache_write)} />
             </div>
           )}
         </StateContainer>
@@ -83,17 +70,7 @@ export function Overview() {
       <Card
         className="section"
         title="소스별 사용량 추이"
-        controls={
-          <SegmentedControl
-            ariaLabel="차트 값 전환"
-            value={chartMode}
-            onChange={setChartMode}
-            options={[
-              { value: 'cost', label: '비용' },
-              { value: 'tokens', label: '토큰' },
-            ]}
-          />
-        }
+        controls={<SegmentedControl ariaLabel="차트 값 전환" value={chartMode} onChange={setChartMode} options={METRIC_OPTIONS} />}
       >
         <ErrorBoundary label="차트를 표시할 수 없습니다">
           <StateContainer
@@ -102,153 +79,99 @@ export function Overview() {
             onRetry={timeseriesState.reload}
             empty={timeseriesState.status === 'success' && timeseriesState.data.series.length === 0}
           >
-            {timeseriesState.status === 'success' && <TimeseriesChart series={timeseriesState.data.series} mode={chartMode} />}
+            {timeseriesState.status === 'success' && (
+              <TrendChart
+                series={timeseriesState.data.series}
+                mode={chartMode}
+                colorFor={colorForKey}
+                height={280}
+                barStroke={false}
+              />
+            )}
           </StateContainer>
         </ErrorBoundary>
       </Card>
 
       <div className="grid grid-cols-3">
-        <div>
-          <h2>소스별</h2>
-          <ErrorBoundary label="소스별 표를 표시할 수 없습니다">
-            <StateContainer
-              loading={summaryState.status === 'loading'}
-              error={summaryState.status === 'error' ? summaryState.message : null}
-              onRetry={summaryState.reload}
-            >
-              {summaryState.status === 'success' && <SourceTable rows={summaryState.data.by_source} />}
-            </StateContainer>
-          </ErrorBoundary>
-        </div>
-        <div>
-          <h2>기기별</h2>
-          <ErrorBoundary label="기기별 표를 표시할 수 없습니다">
-            <StateContainer
-              loading={summaryState.status === 'loading'}
-              error={summaryState.status === 'error' ? summaryState.message : null}
-              onRetry={summaryState.reload}
-            >
-              {summaryState.status === 'success' && <DeviceTable rows={summaryState.data.by_device} />}
-            </StateContainer>
-          </ErrorBoundary>
-        </div>
-        <div>
-          <h2>모델별</h2>
-          <ErrorBoundary label="모델별 표를 표시할 수 없습니다">
-            <StateContainer
-              loading={summaryState.status === 'loading'}
-              error={summaryState.status === 'error' ? summaryState.message : null}
-              onRetry={summaryState.reload}
-            >
-              {summaryState.status === 'success' && <ModelTable rows={summaryState.data.by_model} />}
-            </StateContainer>
-          </ErrorBoundary>
-        </div>
+        <SummaryPanel title="소스별" label="소스별 표를 표시할 수 없습니다" state={summaryState}>
+          {(data) => <SummaryTable columns={SOURCE_COLUMNS} rows={data.by_source} rowKey={(r) => r.key} />}
+        </SummaryPanel>
+        <SummaryPanel title="기기별" label="기기별 표를 표시할 수 없습니다" state={summaryState}>
+          {(data) => <SummaryTable columns={DEVICE_COLUMNS} rows={data.by_device} rowKey={(r) => r.key} />}
+        </SummaryPanel>
+        <SummaryPanel title="모델별" label="모델별 표를 표시할 수 없습니다" state={summaryState}>
+          {(data) => <SummaryTable columns={MODEL_COLUMNS} rows={data.by_model} rowKey={(r) => `${r.source}:${r.key}`} />}
+        </SummaryPanel>
       </div>
     </div>
   )
 }
 
-function TimeseriesChart({ series, mode }: { series: import('../api/types').TimeseriesSeries[]; mode: 'cost' | 'tokens' }) {
-  const { data, keys } = mergeSeries(series, mode === 'cost' ? costOfPoint : tokensOfPoint)
-  if (data.length === 0) return null
+type SummaryState = ApiState<SummaryResponse> & { reload: () => void }
+
+/** One of the three side-by-side summary tables, each wrapped in its own
+ * boundary so a single bad table never takes the row down. */
+function SummaryPanel({
+  title,
+  label,
+  state,
+  children,
+}: {
+  title: string
+  label: string
+  state: SummaryState
+  children: (data: SummaryResponse) => ReactNode
+}) {
   return (
-    <ResponsiveContainer width="100%" height={280}>
-      <BarChart data={data} barCategoryGap={4} margin={{ left: 4, right: 4 }}>
-        <CartesianGrid stroke="var(--border)" vertical={false} />
-        <XAxis
-          dataKey="t"
-          tickFormatter={formatBucketLabel}
-          tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
-          axisLine={{ stroke: 'var(--border-strong)' }}
-          tickLine={false}
-        />
-        <YAxis
-          tickFormatter={(v: number) => (mode === 'cost' ? formatUsd(v) : formatCompact(v))}
-          tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
-          axisLine={false}
-          tickLine={false}
-          width={64}
-        />
-        <Tooltip content={<ChartTooltip formatValue={mode === 'cost' ? formatUsd : formatCompact} />} cursor={{ fill: 'var(--border)', opacity: 0.4 }} />
-        <Legend
-          formatter={(value: string) => <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{labelForKey(value)}</span>}
-        />
-        {keys.map((key, i) => (
-          <Bar key={key} dataKey={key} stackId="usage" fill={colorForKey(key, i)} radius={[2, 2, 2, 2]} maxBarSize={28} />
-        ))}
-      </BarChart>
-    </ResponsiveContainer>
+    <div>
+      <h2>{title}</h2>
+      <ErrorBoundary label={label}>
+        <StateContainer
+          loading={state.status === 'loading'}
+          error={state.status === 'error' ? state.message : null}
+          onRetry={state.reload}
+        >
+          {state.status === 'success' && children(state.data)}
+        </StateContainer>
+      </ErrorBoundary>
+    </div>
   )
 }
 
-function SourceTable({ rows }: { rows: SummarySourceRow[] }) {
-  const columns: Column<SummarySourceRow>[] = [
-    { key: 'key', header: '소스', render: (r) => labelForKey(r.key), sortValue: (r) => labelForKey(r.key) },
-    { key: 'cost', header: '비용', align: 'right', render: (r) => formatUsd(r.cost_usd), sortValue: (r) => r.cost_usd ?? -1 },
-    {
-      key: 'tokens',
-      header: '토큰',
-      align: 'right',
-      render: (r) => (
-        <span title={formatFull(r.input + r.output + r.cache_read + r.cache_write)}>
-          {formatCompact(r.input + r.output + r.cache_read + r.cache_write)}
-        </span>
-      ),
-      sortValue: (r) => r.input + r.output + r.cache_read + r.cache_write,
-    },
-    { key: 'events', header: '이벤트', align: 'right', render: (r) => formatFull(r.events), sortValue: (r) => r.events },
-  ]
+function SummaryTable<T>({ columns, rows, rowKey }: { columns: Column<T>[]; rows: T[]; rowKey: (row: T) => string }) {
   return rows.length === 0 ? (
     <p className="text-muted">데이터가 없습니다.</p>
   ) : (
-    <DataTable columns={columns} rows={rows} rowKey={(r) => r.key} initialSortKey="cost" />
+    <DataTable columns={columns} rows={rows} rowKey={rowKey} initialSortKey="cost" />
   )
 }
 
-function DeviceTable({ rows }: { rows: SummaryDeviceRow[] }) {
-  const columns: Column<SummaryDeviceRow>[] = [
-    { key: 'name', header: '기기', render: (r) => r.name, sortValue: (r) => r.name },
-    { key: 'cost', header: '비용', align: 'right', render: (r) => formatUsd(r.cost_usd), sortValue: (r) => r.cost_usd ?? -1 },
-    {
-      key: 'tokens',
-      header: '토큰',
-      align: 'right',
-      render: (r) => (
-        <span title={formatFull(r.input + r.output + r.cache_read + r.cache_write)}>
-          {formatCompact(r.input + r.output + r.cache_read + r.cache_write)}
-        </span>
-      ),
-      sortValue: (r) => r.input + r.output + r.cache_read + r.cache_write,
-    },
-    { key: 'events', header: '이벤트', align: 'right', render: (r) => formatFull(r.events), sortValue: (r) => r.events },
-  ]
-  return rows.length === 0 ? (
-    <p className="text-muted">데이터가 없습니다.</p>
-  ) : (
-    <DataTable columns={columns} rows={rows} rowKey={(r) => r.key} initialSortKey="cost" />
-  )
-}
+const SOURCE_COLUMNS: Column<SummarySourceRow>[] = [
+  { key: 'key', header: '소스', render: (r) => labelForKey(r.key), sortValue: (r) => labelForKey(r.key) },
+  costColumn('cost', '비용', (r) => r.cost_usd),
+  tokenColumn('tokens', '토큰', tokensOf),
+  countColumn('events', '이벤트', (r) => r.events),
+]
 
-function ModelTable({ rows }: { rows: SummaryModelRow[] }) {
-  const columns: Column<SummaryModelRow>[] = [
-    {
-      key: 'model',
-      header: '모델',
-      render: (r) => (
-        <span>
-          {r.key} {r.estimated && <Badge kind="estimated" />} {r.cost_usd === null && <Badge kind="unknown" />}
-        </span>
-      ),
-      sortValue: (r) => r.key,
-    },
-    { key: 'source', header: '소스', render: (r) => labelForKey(r.source), sortValue: (r) => r.source },
-    { key: 'cost', header: '비용', align: 'right', render: (r) => formatUsd(r.cost_usd), sortValue: (r) => r.cost_usd ?? -1 },
-    { key: 'events', header: '이벤트', align: 'right', render: (r) => formatFull(r.events), sortValue: (r) => r.events },
-  ]
-  return rows.length === 0 ? (
-    <p className="text-muted">데이터가 없습니다.</p>
-  ) : (
-    <DataTable columns={columns} rows={rows} rowKey={(r) => `${r.source}:${r.key}`} initialSortKey="cost" />
-  )
-}
+const DEVICE_COLUMNS: Column<SummaryDeviceRow>[] = [
+  { key: 'name', header: '기기', render: (r) => r.name, sortValue: (r) => r.name },
+  costColumn('cost', '비용', (r) => r.cost_usd),
+  tokenColumn('tokens', '토큰', tokensOf),
+  countColumn('events', '이벤트', (r) => r.events),
+]
+
+const MODEL_COLUMNS: Column<SummaryModelRow>[] = [
+  {
+    key: 'model',
+    header: '모델',
+    render: (r) => (
+      <span>
+        {r.key} {r.estimated && <Badge kind="estimated" />} {r.cost_usd === null && <Badge kind="unknown" />}
+      </span>
+    ),
+    sortValue: (r) => r.key,
+  },
+  { key: 'source', header: '소스', render: (r) => labelForKey(r.source), sortValue: (r) => r.source },
+  costColumn('cost', '비용', (r) => r.cost_usd),
+  countColumn('events', '이벤트', (r) => r.events),
+]

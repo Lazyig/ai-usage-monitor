@@ -63,6 +63,16 @@ export function rangeDays(from: string, to: string): number {
   return Math.max(1, Math.round(ms / 86_400_000))
 }
 
+/** Longest range that still makes sense as hourly bars. An hourly bucket over
+ * a month is ~720 bars — unreadable, and a large payload. */
+export const HOURLY_MAX_DAYS = 7
+
+/** Whether the hourly bucket may be offered for this range. A range change
+ * that outgrows it silently falls the caller back to daily. */
+export function hourlyAllowed(range: DateRange): boolean {
+  return rangeDays(range.from, range.to) <= HOURLY_MAX_DAYS
+}
+
 export const PRESET_LABELS: Record<RangePreset, string> = {
   today: '오늘',
   '7d': '최근 7일',

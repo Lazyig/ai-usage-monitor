@@ -4,6 +4,7 @@
 // and pivots the results.
 import { getBreakdown } from '../api/client'
 import type { BreakdownRow, Source } from '../api/types'
+import { tokensOf } from './usage'
 
 export interface MatrixEntry {
   source: Source
@@ -48,10 +49,6 @@ export const OTHER_DEVICE_ID = '__other__'
 /** Past this the stacked segments stop being distinguishable, so the tail
  * folds into one neutral band instead of cycling hues. */
 const MAX_DEVICES = 7
-
-export function tokensOf(r: { input: number; output: number; cache_read: number; cache_write: number }): number {
-  return r.input + r.output + r.cache_read + r.cache_write
-}
 
 function emptyCell(): MatrixCell {
   return { cost: 0, tokens: 0, events: 0, unpriced: false }

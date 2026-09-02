@@ -8,10 +8,36 @@ import { useApiData } from '../hooks/useApiData'
 import { describeError } from '../lib/errors'
 
 /** Any pricing rate field can legitimately be `null` (unknown) or absent
- * entirely — never call `.toFixed` without checking both. */
+ * entirely — never call `.toFixed` without checking both. Unlike `formatUsd`
+ * these are per-1M-token list prices, always shown at 2 decimals. */
 function fmtRate(v: number | null | undefined): string {
   return v === null || v === undefined ? '—' : `$${v.toFixed(2)}`
 }
+
+/** A per-1M-token rate column; unknown sorts below zero. */
+function rateColumn(key: string, header: string, value: (r: PricingRate) => number | null | undefined): Column<PricingRate> {
+  return { key, header, align: 'right', render: (r) => fmtRate(value(r)), sortValue: (r) => value(r) ?? -1 }
+}
+
+const PRICING_COLUMNS: Column<PricingRate>[] = [
+  {
+    key: 'match',
+    header: '매칭 패턴',
+    render: (r) => (
+      <span className="mono">
+        {r.match} {r.estimated && <Badge kind="estimated" />} {r.alias_of && <Badge kind="alias" title={`→ ${r.alias_of}`} />}
+      </span>
+    ),
+    sortValue: (r) => r.match,
+  },
+  { key: 'provider', header: '제공자', render: (r) => r.provider ?? '-', sortValue: (r) => r.provider ?? '' },
+  rateColumn('input', '입력 ($/1M)', (r) => r.input),
+  rateColumn('output', '출력 ($/1M)', (r) => r.output),
+  rateColumn('cache_read', '캐시 읽기 ($/1M)', (r) => r.cache_read),
+  rateColumn('cache_write', '캐시 쓰기 ($/1M)', (r) => r.cache_write ?? r.cache_write_5m),
+  rateColumn('cache_write_1h', '캐시 쓰기 1h ($/1M)', (r) => r.cache_write_1h),
+  { key: 'alias_of', header: '별칭', render: (r) => r.alias_of ?? '-', sortValue: (r) => r.alias_of ?? '' },
+]
 
 export function Pricing() {
   const state = useApiData(() => getPricing(), [])
@@ -30,32 +56,6 @@ export function Pricing() {
       setReloading(false)
     }
   }
-
-  const columns: Column<PricingRate>[] = [
-    {
-      key: 'match',
-      header: '매칭 패턴',
-      render: (r) => (
-        <span className="mono">
-          {r.match} {r.estimated && <Badge kind="estimated" />} {r.alias_of && <Badge kind="alias" title={`→ ${r.alias_of}`} />}
-        </span>
-      ),
-      sortValue: (r) => r.match,
-    },
-    { key: 'provider', header: '제공자', render: (r) => r.provider ?? '-', sortValue: (r) => r.provider ?? '' },
-    { key: 'input', header: '입력 ($/1M)', align: 'right', render: (r) => fmtRate(r.input), sortValue: (r) => r.input ?? -1 },
-    { key: 'output', header: '출력 ($/1M)', align: 'right', render: (r) => fmtRate(r.output), sortValue: (r) => r.output ?? -1 },
-    { key: 'cache_read', header: '캐시 읽기 ($/1M)', align: 'right', render: (r) => fmtRate(r.cache_read), sortValue: (r) => r.cache_read ?? -1 },
-    {
-      key: 'cache_write',
-      header: '캐시 쓰기 ($/1M)',
-      align: 'right',
-      render: (r) => fmtRate(r.cache_write ?? r.cache_write_5m),
-      sortValue: (r) => r.cache_write ?? r.cache_write_5m ?? -1,
-    },
-    { key: 'cache_write_1h', header: '캐시 쓰기 1h ($/1M)', align: 'right', render: (r) => fmtRate(r.cache_write_1h), sortValue: (r) => r.cache_write_1h ?? -1 },
-    { key: 'alias_of', header: '별칭', render: (r) => r.alias_of ?? '-', sortValue: (r) => r.alias_of ?? '' },
-  ]
 
   return (
     <div>
@@ -78,7 +78,7 @@ export function Pricing() {
         empty={state.status === 'success' && state.data.rates.length === 0}
         emptyMessage="가격표 항목이 없습니다."
       >
-        {state.status === 'success' && <DataTable columns={columns} rows={state.data.rates} rowKey={(r) => r.match} initialSortKey="match" initialSortDir="asc" />}
+        {state.status === 'success' && <DataTable columns={PRICING_COLUMNS} rows={state.data.rates} rowKey={(r) => r.match} initialSortKey="match" initialSortDir="asc" />}
       </StateContainer>
     </div>
   )

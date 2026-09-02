@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react'
 import { getDevices, getEvents } from '../api/client'
 import type { Device, Source, UsageEventDTO } from '../api/types'
 import { type Column, DataTable } from '../components/DataTable'
+import { costColumn, tokenColumn, unsorted } from '../components/columns'
 import { StateContainer } from '../components/StateContainer'
-import { labelForKey } from '../lib/colors'
+import { SOURCE_ORDER, labelForKey } from '../lib/colors'
 import { describeError } from '../lib/errors'
-import { formatCompact, formatDateTime, formatFull, formatUsd } from '../lib/format'
+import { formatDateTime } from '../lib/format'
 import { useFilters } from '../state/FiltersContext'
 
-const SOURCES: Source[] = ['claude_code', 'codex', 'antigravity']
 const PAGE_SIZE = 100
 
 export function Events() {
@@ -84,15 +84,18 @@ export function Events() {
     }
   }
 
+  // The event log is already newest-first from the server and paginates by
+  // cursor, so no column offers client-side sorting — re-sorting one loaded
+  // page would silently misrepresent the whole result set.
   const columns: Column<UsageEventDTO>[] = [
     { key: 'ts', header: '시각', render: (e) => formatDateTime(e.ts) },
     { key: 'source', header: '소스', render: (e) => labelForKey(e.source) },
     { key: 'device', header: '기기', render: (e) => devices.find((d) => d.id === e.device_id)?.name ?? e.device_id.slice(0, 8) },
     { key: 'model', header: '모델', render: (e) => e.model },
     { key: 'project', header: '프로젝트', render: (e) => <span title={e.project}>{e.project ?? '-'}</span> },
-    { key: 'input', header: '입력', align: 'right', render: (e) => <span title={formatFull(e.input)}>{formatCompact(e.input)}</span> },
-    { key: 'output', header: '출력', align: 'right', render: (e) => <span title={formatFull(e.output)}>{formatCompact(e.output)}</span> },
-    { key: 'cost', header: '비용', align: 'right', render: (e) => formatUsd(e.cost_usd) },
+    unsorted(tokenColumn<UsageEventDTO>('input', '입력', (e) => e.input)),
+    unsorted(tokenColumn<UsageEventDTO>('output', '출력', (e) => e.output)),
+    unsorted(costColumn<UsageEventDTO>('cost', '비용', (e) => e.cost_usd)),
     { key: 'confidence', header: '신뢰도', render: (e) => e.confidence },
   ]
 
@@ -107,7 +110,7 @@ export function Events() {
           <label htmlFor="ev-source">소스</label>
           <select id="ev-source" value={source} onChange={(e) => setSource(e.target.value as Source | '')}>
             <option value="">전체</option>
-            {SOURCES.map((s) => (
+            {SOURCE_ORDER.map((s) => (
               <option key={s} value={s}>
                 {labelForKey(s)}
               </option>

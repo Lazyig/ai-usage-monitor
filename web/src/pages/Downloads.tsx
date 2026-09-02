@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ApiError, getDownloadsManifest } from '../api/client'
 import type { DownloadFile, DownloadsManifest } from '../api/types'
+import { OsBadge, osLabel } from '../components/Badge'
 import { Card } from '../components/Card'
 import { type Column, DataTable } from '../components/DataTable'
 import { StateContainer } from '../components/StateContainer'
@@ -10,12 +11,6 @@ import { installCommands } from '../lib/installCommands'
 import { useFilters } from '../state/FiltersContext'
 
 const TOKEN_PLACEHOLDER = '<기기 관리에서 발급받은 토큰>'
-
-const OS_LABELS: Record<string, string> = { linux: 'Linux', darwin: 'macOS', windows: 'Windows' }
-
-function osLabel(os: string): string {
-  return OS_LABELS[os] ?? os
-}
 
 type LoadState =
   | { status: 'loading' }
@@ -90,7 +85,7 @@ function DownloadsTable({ files }: { files: DownloadFile[] }) {
     {
       key: 'os',
       header: 'OS',
-      render: (f) => <span className="tz-badge">{osLabel(f.os)}</span>,
+      render: (f) => <OsBadge os={f.os} />,
       sortValue: (f) => `${osLabel(f.os)}_${f.arch}`,
     },
     { key: 'arch', header: 'Arch', render: (f) => f.arch, sortValue: (f) => f.arch },
