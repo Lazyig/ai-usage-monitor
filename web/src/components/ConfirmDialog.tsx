@@ -10,14 +10,15 @@ interface ConfirmDialogProps {
    * exact text (used for irreversible actions like 완전 삭제). */
   requireText?: string
   busy?: boolean
+  /** Destructive actions get the red confirm button (default); others the primary one. */
+  danger?: boolean
   onConfirm: () => void
   onCancel: () => void
 }
 
-/** Generic modal confirmation dialog for destructive device actions
- * (재동기화 / 완전 삭제). Always styled as a warning since every caller here is
- * a destructive action. */
-export function ConfirmDialog({ title, message, confirmLabel, cancelLabel = '취소', requireText, busy, onConfirm, onCancel }: ConfirmDialogProps) {
+/** Generic modal confirmation dialog for device actions (재발급 / 폐기 / 재동기화 /
+ * 완전 삭제). Replaces the browser's native confirm so it matches the app. */
+export function ConfirmDialog({ title, message, confirmLabel, cancelLabel = '취소', requireText, busy, danger = true, onConfirm, onCancel }: ConfirmDialogProps) {
   const [typed, setTyped] = useState('')
   const canConfirm = !busy && (!requireText || typed === requireText)
 
@@ -47,7 +48,7 @@ export function ConfirmDialog({ title, message, confirmLabel, cancelLabel = '취
           <button type="button" className="btn" onClick={onCancel} disabled={busy}>
             {cancelLabel}
           </button>
-          <button type="button" className="btn btn-danger" onClick={onConfirm} disabled={!canConfirm}>
+          <button type="button" className={danger ? 'btn btn-danger' : 'btn btn-primary'} onClick={onConfirm} disabled={!canConfirm}>
             {busy ? '처리 중…' : confirmLabel}
           </button>
         </div>

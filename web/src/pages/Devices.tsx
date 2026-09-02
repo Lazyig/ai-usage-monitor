@@ -4,6 +4,7 @@ import type { Device } from '../api/types'
 import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
 import { ConfirmDialog } from '../components/ConfirmDialog'
+import { PromptDialog } from '../components/PromptDialog'
 import { type Column, DataTable } from '../components/DataTable'
 import { countColumn, dateTimeColumn } from '../components/columns'
 import { StateContainer } from '../components/StateContainer'
@@ -14,7 +15,7 @@ import { installCommands } from '../lib/installCommands'
 import { useFilters } from '../state/FiltersContext'
 
 interface ConfirmState {
-  kind: 'resync' | 'purge'
+  kind: 'resync' | 'purge' | 'rotate' | 'revoke' | 'rename'
   device: Device
 }
 
@@ -50,15 +51,15 @@ export function Devices() {
     }
   }
 
-  async function onRevoke(id: string, name: string) {
-    if (!window.confirm(`"${name}" 기기의 토큰을 폐기할까요? 이벤트 기록은 유지됩니다.`)) return
-    setRevoking(id)
+  async function performRevoke(d: Device) {
+    setRevoking(d.id)
     setActionError(null)
     setActionNotice(null)
     try {
-      await deleteDevice(id)
+      await deleteDevice(d.id)
       state.reload()
-      setActionNotice('토큰을 폐기했습니다.')
+      setActionNotice(`"${d.name}" 기기의 토큰을 폐기했습니다.`)
+      setConfirmState(null)
     } catch (err) {
       setActionError(describeError(err))
     } finally {
@@ -66,24 +67,23 @@ export function Devices() {
     }
   }
 
-  async function onRename(d: Device) {
-    const next = window.prompt('기기 이름을 입력하세요. 에이전트가 보고하는 호스트명과 별개로 유지됩니다.', d.name)
-    if (next === null) return
-    const name = next.trim()
-    if (!name || name === d.name) return
+  async function performRename(d: Device, name: string) {
+    setConfirming(true)
     setActionError(null)
     setActionNotice(null)
     try {
       await renameDevice(d.id, name)
       setActionNotice(`이름을 "${name}" 으로 바꿨습니다.`)
       state.reload()
+      setConfirmState(null)
     } catch (err) {
       setActionError(describeError(err))
+    } finally {
+      setConfirming(false)
     }
   }
 
-  async function onRotate(d: Device) {
-    if (!window.confirm(`"${d.name}" 기기의 토큰을 재발급할까요? 기존 토큰은 즉시 사용할 수 없게 됩니다.`)) return
+  async function performRotate(d: Device) {
     setRotating(d.id)
     setActionError(null)
     setActionNotice(null)
@@ -91,6 +91,7 @@ export function Devices() {
       const res = await rotateDevice(d.id)
       setNewToken({ name: res.name, token: res.token, id: res.id })
       state.reload()
+      setConfirmState(null)
     } catch (err) {
       setActionError(describeError(err))
     } finally {
@@ -134,15 +135,29 @@ export function Devices() {
       key: 'name',
       header: '이름',
       render: (d) => (
-        <span>
-          {d.name} {!d.revoked_at && isStale(d.last_seen) && <Badge kind="stale" />}{' '}
-          {d.revoked_at && <Badge kind="revoked" title={`폐기 시각: ${formatDateTime(d.revoked_at)}`} />}
-          {d.hostname && d.hostname !== d.name && (
-            <span className="muted" title="에이전트가 보고한 호스트명" style={{ display: 'block', fontSize: '0.8em' }}>
-              {d.hostname}
-            </span>
-          )}
-        </span>
+        <div className="name-cell">
+          <span>
+            {d.name} {!d.revoked_at && isStale(d.last_seen) && <Badge kind="stale" />}{' '}
+            {d.revoked_at && <Badge kind="revoked" title={`폐기 시각: ${formatDateTime(d.revoked_at)}`} />}
+            {d.hostname && d.hostname !== d.name && (
+              <span className="muted name-cell-hostname" title="에이전트가 보고한 호스트명">
+                {d.hostname}
+              </span>
+            )}
+          </span>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={`"${d.name}" 이름 변경`}
+            title="이름 변경"
+            onClick={() => setConfirmState({ kind: 'rename', device: d })}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+            </svg>
+          </button>
+        </div>
       ),
       sortValue: (d) => d.name,
     },
@@ -164,10 +179,7 @@ export function Devices() {
       header: '',
       render: (d) => (
         <div className="action-group">
-          <button type="button" className="btn btn-sm" onClick={() => onRename(d)}>
-            이름 변경
-          </button>
-          <button type="button" className="btn btn-sm" disabled={rotating === d.id} onClick={() => onRotate(d)}>
+          <button type="button" className="btn btn-sm" disabled={rotating === d.id} onClick={() => setConfirmState({ kind: 'rotate', device: d })}>
             {rotating === d.id ? '재발급 중…' : '토큰 재발급'}
           </button>
           <button
@@ -184,7 +196,7 @@ export function Devices() {
               폐기됨
             </button>
           ) : (
-            <button type="button" className="btn btn-sm btn-danger" disabled={revoking === d.id} onClick={() => onRevoke(d.id, d.name)}>
+            <button type="button" className="btn btn-sm btn-danger" disabled={revoking === d.id} onClick={() => setConfirmState({ kind: 'revoke', device: d })}>
               {revoking === d.id ? '폐기 중…' : '토큰 폐기'}
             </button>
           )}
@@ -289,6 +301,39 @@ export function Devices() {
           confirmLabel="재동기화"
           busy={confirming}
           onConfirm={onConfirmAction}
+          onCancel={() => setConfirmState(null)}
+        />
+      )}
+      {confirmState?.kind === 'rotate' && (
+        <ConfirmDialog
+          title="토큰 재발급"
+          message={`"${confirmState.device.name}" 기기의 토큰을 재발급합니다. 기존 토큰은 즉시 사용할 수 없게 되며, 새 토큰으로 에이전트를 다시 설치해야 합니다.`}
+          confirmLabel="재발급"
+          danger={false}
+          busy={rotating === confirmState.device.id}
+          onConfirm={() => performRotate(confirmState.device)}
+          onCancel={() => setConfirmState(null)}
+        />
+      )}
+      {confirmState?.kind === 'revoke' && (
+        <ConfirmDialog
+          title="토큰 폐기"
+          message={`"${confirmState.device.name}" 기기의 토큰을 폐기합니다. 이벤트 기록은 유지되며, 토큰 재발급으로 되살릴 수 있습니다.`}
+          confirmLabel="토큰 폐기"
+          busy={revoking === confirmState.device.id}
+          onConfirm={() => performRevoke(confirmState.device)}
+          onCancel={() => setConfirmState(null)}
+        />
+      )}
+      {confirmState?.kind === 'rename' && (
+        <PromptDialog
+          title="기기 이름 변경"
+          message="에이전트가 보고하는 호스트명과 별개로 유지되는 표시 이름입니다."
+          label="새 이름"
+          initialValue={confirmState.device.name}
+          confirmLabel="변경"
+          busy={confirming}
+          onConfirm={(name) => performRename(confirmState.device, name)}
           onCancel={() => setConfirmState(null)}
         />
       )}

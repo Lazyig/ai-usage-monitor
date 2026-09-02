@@ -800,6 +800,40 @@ a.btn {
   margin: 8px 0;
 }
 
+/* ---- device name cell with inline rename ---- */
+.name-cell {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.name-cell-hostname {
+  display: block;
+  font-size: 0.8em;
+}
+.icon-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.6;
+}
+.icon-btn:hover,
+.icon-btn:focus-visible {
+  opacity: 1;
+  color: var(--accent);
+  border-color: var(--border);
+  background: var(--surface-raised);
+}
+
 /* ---- modal (confirm dialogs) ---- */
 
 .modal-overlay {
