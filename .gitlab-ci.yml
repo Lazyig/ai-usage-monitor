@@ -3,15 +3,29 @@
 #   build:agents   6 agent binaries -> dist/ (+manifest.json) -> GitLab generic packages
 #   build:web      SPA -> web/dist (only when web/package.json exists)
 #   release        ko image of cmd/server with agents + pricing.yaml in kodata (default branch)
+#
+# Speed: test/build:agents/build:web run in parallel (needs: []), release waits for all three.
+# Caches are keyed on lock files so every branch shares them; the runner stores them in the
+# runner's distributed cache. Jobs that only read a cache use
+# policy: pull so they never re-upload it.
 stages:
   - test
   - build
   - release
 
+default:
+  interruptible: true   # a newer push cancels the running pipeline of the same ref
+
+workflow:
+  auto_cancel:
+    on_new_commit: interruptible
+
 variables:
   GOCACHE: "$CI_PROJECT_DIR/.go/cache"
   GOPATH: "$CI_PROJECT_DIR/.go"
   GOFLAGS: "-mod=mod"
+  KOCACHE: "$CI_PROJECT_DIR/.ko/cache"
+  npm_config_cache: "$CI_PROJECT_DIR/.npm"
 
 # tag builds get the tag as version, branch builds get 0.0.0-<sha>.
 # (GitLab does not expand shell ${VAR:-default} syntax in `variables:`, so compute it in the shell.)
@@ -22,16 +36,26 @@ variables:
 .if-default-deploy: &if-default-deploy
   if: ($CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH || $CI_COMMIT_REF_NAME =~ "/gitlab-ci/" || $CI_COMMIT_TAG) && $CI_PIPELINE_SOURCE != 'merge_request_event'
 
-.go-cache: &go-cache
-  key: "go-${CI_COMMIT_REF_SLUG}"
+# Go module download cache: shared by every Go job, written only by `test`.
+.go-mod-cache: &go-mod-cache
+  key:
+    files: [go.sum]
+    prefix: go-mod
   paths:
     - .go/pkg/mod/
-    - .go/cache/
 
 test:
   stage: test
   image: golang:1.26-alpine
-  cache: *go-cache
+  needs: []
+  cache:
+    - <<: *go-mod-cache
+      policy: pull-push
+    - key:
+        files: [go.sum]
+        prefix: go-build-test
+      paths: [.go/cache/]
+      policy: pull-push
   script:
     - go vet ./...
     - go test ./...
@@ -41,9 +65,18 @@ test:
 build:agents:
   stage: build
   image: golang:1.26-alpine
-  cache: *go-cache
+  needs: []
   rules:
     - <<: *if-default-deploy
+  cache:
+    - <<: *go-mod-cache
+      policy: pull
+    # cross-compiled object cache is specific to this job (6 GOOS/GOARCH targets)
+    - key:
+        files: [go.sum]
+        prefix: go-build-agents
+      paths: [.go/cache/]
+      policy: pull-push
   before_script:
     - apk add --no-cache curl
   script:
@@ -61,17 +94,22 @@ build:agents:
 build:web:
   stage: build
   image: node:22-alpine
+  needs: []
   rules:
     - <<: *if-default-deploy
       exists:
         - web/package.json
   cache:
-    key: "npm-${CI_COMMIT_REF_SLUG}"
+    # npm's download cache keyed on the lockfile; `npm ci` then installs offline-first
+    key:
+      files: [web/package-lock.json]
+      prefix: npm
     paths:
-      - web/node_modules/
+      - .npm/
+    policy: pull-push
   script:
     - cd web
-    - npm ci --no-audit --no-fund
+    - npm ci --prefer-offline --no-audit --no-fund
     - npm run build
   artifacts:
     paths:
@@ -88,12 +126,20 @@ release:
   rules:
     - <<: *if-default-deploy
   needs:
+    - job: test
     - job: build:agents
       artifacts: true
     - job: build:web
       artifacts: true
       optional: true
-  cache: *go-cache
+  cache:
+    - <<: *go-mod-cache
+      policy: pull
+    - key:
+        files: [go.sum]
+        prefix: go-build-release
+      paths: [.go/cache/, .ko/cache/]
+      policy: pull-push
   variables:
     KO_DOCKER_REPO: $CI_REGISTRY_IMAGE
     DOCKER_CONFIG: /tmp/.docker
