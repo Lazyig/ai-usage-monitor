@@ -1,0 +1,10 @@
+defaultBaseImage: gcr.io/distroless/static:latest
+builds:
+  - id: server
+    main: ./cmd/server
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Env.VERSION}}
