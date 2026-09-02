@@ -1,4 +1,10 @@
+/* Grouped by the component that owns each class. Within a group, a base rule
+   always precedes its variants, its higher-specificity descendants and its
+   media-query overrides — the file's order is load-bearing, so keep new rules
+   with their group rather than appending at the end. */
+
 /* ---- design tokens (see dataviz skill palette.md for provenance) ---- */
+
 :root {
   color-scheme: light;
 
@@ -76,6 +82,8 @@
   }
 }
 
+/* ---- base elements ---- */
+
 * {
   box-sizing: border-box;
 }
@@ -152,6 +160,12 @@ select {
   margin: 0 auto;
 }
 
+@media (max-width: 768px) {
+  .app-main {
+    padding: 16px 12px 32px;
+  }
+}
+
 .page-header {
   display: flex;
   align-items: baseline;
@@ -161,7 +175,7 @@ select {
   flex-wrap: wrap;
 }
 
-/* ---- topbar ---- */
+/* ---- topbar (brand, nav, range presets, refresh controls) ---- */
 
 .topbar {
   position: sticky;
@@ -180,6 +194,10 @@ select {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.topbar-controls {
+  font-size: 13px;
 }
 
 .brand {
@@ -222,15 +240,39 @@ select {
   color: var(--accent-contrast);
 }
 
-.topbar-controls {
-  font-size: 13px;
-}
-
 .range-presets {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
 }
+
+.custom-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.custom-range input[type='date'] {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+  background: var(--surface-raised);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.auto-refresh-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* ---- chips (range presets, metric toggles) ---- */
 
 .chip {
   border: 1px solid var(--border-strong);
@@ -252,41 +294,6 @@ select {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-contrast);
-}
-
-.custom-range {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.custom-range input[type='date'] {
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  padding: 4px 6px;
-  background: var(--surface-raised);
-}
-
-.tz-badge {
-  font-size: 11.5px;
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 3px 9px;
-  white-space: nowrap;
-}
-
-.spacer {
-  flex: 1;
-}
-
-.auto-refresh-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  cursor: pointer;
 }
 
 /* ---- buttons ---- */
@@ -348,7 +355,55 @@ a.btn {
   text-decoration: none;
 }
 
-/* ---- cards / panels ---- */
+/* ---- forms and page-level filter rows ---- */
+
+.field-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.field input,
+.field select {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 7px 9px;
+  background: var(--surface-raised);
+  min-width: 160px;
+}
+
+.filters-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+
+/* ---- cards, their headers, and the grids they sit in ---- */
 
 .card {
   background: var(--surface);
@@ -356,6 +411,45 @@ a.btn {
   border-radius: var(--radius);
   padding: 16px;
   box-shadow: var(--shadow);
+}
+
+/* Card header (title + right-aligned controls), shared by every chart/table
+   card that has a title and/or controls. */
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.card-heading h2 {
+  margin: 0;
+}
+
+.card-subtitle {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.card-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.card-meta {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Standard stacking margin between top-level cards. */
+.section {
+  margin-bottom: 28px;
 }
 
 .grid {
@@ -390,6 +484,12 @@ a.btn {
   margin-bottom: 20px;
 }
 
+@media (max-width: 768px) {
+  .stat-tiles {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 .stat-tile {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -419,6 +519,101 @@ a.btn {
   margin-top: 4px;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* ---- per-agent summary cards (에이전트 페이지) ---- */
+
+.agent-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.agent-card {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+
+/* An agent with no events in the range still gets a card (fixed color slot,
+   fixed order) — dashed, muted, so "no data" never reads as "zero cost". */
+.agent-card-empty {
+  border-style: dashed;
+  background: transparent;
+}
+
+.agent-card-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 12.5px;
+}
+
+.agent-card-name {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.agent-card-share {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-card-value {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin: 2px 0 8px;
+}
+
+.agent-card-empty .agent-card-value {
+  color: var(--text-muted);
+}
+
+.agent-card-meta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Share bar (proportion of a total, inside a card). */
+.share-track {
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+  overflow: hidden;
+}
+
+.share-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+/* ---- charts (toggle group + legend) ---- */
+
+.chart-toggle {
+  display: flex;
+  gap: 6px;
+}
+
+.legend-row {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 8px;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 5px;
+  vertical-align: -1px;
 }
 
 /* ---- badges ---- */
@@ -460,11 +655,6 @@ a.btn {
   color: var(--status-critical);
 }
 
-.badge-ok {
-  background: color-mix(in srgb, var(--status-good) 18%, transparent);
-  color: var(--status-good);
-}
-
 .badge-revoked {
   background: color-mix(in srgb, var(--status-critical) 18%, transparent);
   color: var(--status-critical);
@@ -475,26 +665,14 @@ a.btn {
   color: var(--accent);
 }
 
-/* ---- inline toast (revoke confirmation, etc.) ---- */
-
-.toast-success {
-  background: color-mix(in srgb, var(--status-good) 14%, transparent);
-  border: 1px solid var(--status-good);
-  color: var(--status-good);
-  border-radius: var(--radius-sm);
-  padding: 8px 12px;
-  font-size: 13px;
-  margin: 8px 0;
-}
-
-.toggle-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  cursor: pointer;
-  margin-bottom: 12px;
+/* Neutral outline pill — the timezone marker and the OS badge. */
+.tz-badge {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 9px;
+  white-space: nowrap;
 }
 
 /* ---- tables ---- */
@@ -557,50 +735,199 @@ a.btn {
   text-align: right;
 }
 
-/* ---- card header (title + right-aligned controls), shared by every
-   chart/table card that has a title and/or controls ---- */
-
-.card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-}
-
-.card-heading h2 {
-  margin: 0;
-}
-
-.card-subtitle {
-  margin: 2px 0 0;
+.table-footnote {
+  margin: 8px 0 0;
   font-size: 12.5px;
   color: var(--text-muted);
 }
 
-.card-controls {
+/* Row of per-record buttons (기기 관리). */
+.action-group {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
-.card-meta {
-  font-size: 12.5px;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-/* ---- inline copy affordance next to truncated text (sha256, etc.) ---- */
-
+/* Inline copy affordance next to truncated text (sha256, etc.). */
 .sha-cell {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
-/* ---- install guide (Downloads page) ---- */
+/* ---- loading / error / empty panels ---- */
+
+.state-panel {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+.state-error {
+  color: var(--status-critical);
+  border-color: var(--status-critical);
+}
+
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: -3px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---- inline toast (revoke confirmation, etc.) ---- */
+
+.toast-success {
+  background: color-mix(in srgb, var(--status-good) 14%, transparent);
+  border: 1px solid var(--status-good);
+  color: var(--status-good);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 13px;
+  margin: 8px 0;
+}
+
+/* ---- modal (confirm dialogs) ---- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, black 45%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 100;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+}
+
+.modal-card h3 {
+  margin: 0 0 10px;
+}
+
+.modal-card p {
+  margin: 0 0 12px;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.modal-card .field {
+  margin-bottom: 4px;
+}
+
+.modal-card .field input {
+  width: 100%;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* ---- login ---- */
+
+.login-screen {
+  min-height: 100svh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 360px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.login-subtitle {
+  margin-bottom: 12px;
+}
+
+.login-card label {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.login-card input {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+  background: var(--surface-raised);
+  margin-bottom: 4px;
+}
+
+.login-card .btn {
+  margin-top: 8px;
+}
+
+/* Also used for inline action failures elsewhere (device actions, paging). */
+.login-error {
+  color: var(--status-critical);
+  font-size: 12.5px;
+}
+
+/* ---- device token copy box (기기 관리) ---- */
+
+.copy-box {
+  background: var(--surface-raised);
+  border: 1px solid var(--status-warning);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin: 12px 0;
+}
+
+.copy-box-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.copy-box code {
+  flex: 1;
+  overflow-x: auto;
+  white-space: pre;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 12.5px;
+}
+
+/* ---- install guide (다운로드 페이지) ---- */
 
 .install-tabs {
   display: grid;
@@ -665,207 +992,7 @@ a.btn {
   right: 6px;
 }
 
-/* ---- state panels ---- */
-
-.state-panel {
-  padding: 32px 16px;
-  text-align: center;
-  color: var(--text-muted);
-  border: 1px dashed var(--border);
-  border-radius: var(--radius);
-}
-
-.state-error {
-  color: var(--status-critical);
-  border-color: var(--status-critical);
-}
-
-.spinner {
-  display: inline-block;
-  width: 16px;
-  height: 16px;
-  margin-right: 8px;
-  border: 2px solid var(--border-strong);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-  vertical-align: -3px;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* ---- login ---- */
-
-.login-screen {
-  min-height: 100svh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-}
-
-.login-card {
-  width: 100%;
-  max-width: 360px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 28px;
-  box-shadow: var(--shadow);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.login-subtitle {
-  margin-bottom: 12px;
-}
-
-.login-card label {
-  font-size: 12.5px;
-  color: var(--text-secondary);
-}
-
-.login-card input {
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  padding: 9px 10px;
-  background: var(--surface-raised);
-  margin-bottom: 4px;
-}
-
-.login-error {
-  color: var(--status-critical);
-  font-size: 12.5px;
-}
-
-.login-card .btn {
-  margin-top: 8px;
-}
-
-/* ---- forms ---- */
-
-.field-row {
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
-  flex-wrap: wrap;
-  margin-bottom: 12px;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.field label {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.field input,
-.field select {
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  padding: 7px 9px;
-  background: var(--surface-raised);
-  min-width: 160px;
-}
-
-/* ---- copy box (device token) ---- */
-
-.copy-box {
-  background: var(--surface-raised);
-  border: 1px solid var(--status-warning);
-  border-radius: var(--radius);
-  padding: 12px;
-  margin: 12px 0;
-}
-
-.copy-box-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.copy-box code {
-  flex: 1;
-  overflow-x: auto;
-  white-space: pre;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  font-size: 12.5px;
-}
-
-/* ---- misc ---- */
-
-.text-muted {
-  color: var(--text-muted);
-}
-
-.mono {
-  font-family: ui-monospace, Consolas, monospace;
-}
-
-.section {
-  margin-bottom: 28px;
-}
-
-.chart-toggle {
-  display: flex;
-  gap: 6px;
-}
-
-.legend-row {
-  display: flex;
-  gap: 14px;
-  flex-wrap: wrap;
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-top: 8px;
-}
-
-.legend-swatch {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-  margin-right: 5px;
-  vertical-align: -1px;
-}
-
-.filters-row {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-  margin-bottom: 12px;
-}
-
-@media (max-width: 768px) {
-  .app-main {
-    padding: 16px 12px 32px;
-  }
-  .stat-tiles {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-/* ---- device action group / help text ---- */
-
-.action-group {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
+/* ---- explanatory help text (기기 관리) ---- */
 
 .help-list {
   list-style: none;
@@ -882,136 +1009,12 @@ a.btn {
   color: var(--text-primary);
 }
 
-/* ---- modal (confirm dialogs) ---- */
+/* ---- text utilities ---- */
 
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: color-mix(in srgb, black 45%, transparent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  z-index: 100;
-}
-
-.modal-card {
-  width: 100%;
-  max-width: 420px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 20px;
-}
-
-.modal-card h3 {
-  margin: 0 0 10px;
-}
-
-.modal-card p {
-  margin: 0 0 12px;
-  color: var(--text-secondary);
-  font-size: 13.5px;
-  line-height: 1.5;
-}
-
-.modal-card .field {
-  margin-bottom: 4px;
-}
-
-.modal-card .field input {
-  width: 100%;
-}
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-/* ---- second-level tabs (기기: 사용량 / 관리) ----
-   Underline tabs rather than the top bar's pills, so the page-level switch
-   never competes with the global navigation. */
-
-
-
-
-
-/* ---- per-agent summary cards (에이전트 페이지) ---- */
-
-.agent-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
-}
-
-.agent-card {
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 14px;
-}
-
-/* An agent with no events in the range still gets a card (fixed color slot,
-   fixed order) — dashed, muted, so "no data" never reads as "zero cost". */
-.agent-card-empty {
-  border-style: dashed;
-  background: transparent;
-}
-
-.agent-card-empty .agent-card-value {
+.text-muted {
   color: var(--text-muted);
 }
 
-.agent-card-head {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  font-size: 12.5px;
-}
-
-.agent-card-name {
-  color: var(--text-secondary);
-  font-weight: 600;
-}
-
-.agent-card-share {
-  margin-left: auto;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.agent-card-value {
-  font-size: 22px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  margin: 2px 0 8px;
-}
-
-.agent-card-meta {
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-/* ---- share bar (proportion of a total, inside a card) ---- */
-
-.share-track {
-  height: 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
-  overflow: hidden;
-}
-
-.share-fill {
-  height: 100%;
-  border-radius: 999px;
-}
-
-.table-footnote {
-  margin: 8px 0 0;
-  font-size: 12.5px;
-  color: var(--text-muted);
+.mono {
+  font-family: ui-monospace, Consolas, monospace;
 }
