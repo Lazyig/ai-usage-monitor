@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-type BadgeKind = 'estimated' | 'unknown' | 'warning' | 'stale' | 'ok'
+type BadgeKind = 'estimated' | 'unknown' | 'warning' | 'stale' | 'ok' | 'revoked' | 'alias'
 
 const LABELS: Record<BadgeKind, string> = {
   estimated: '추정',
@@ -8,6 +8,8 @@ const LABELS: Record<BadgeKind, string> = {
   warning: '주의',
   stale: '응답 없음',
   ok: '정상',
+  revoked: '폐기됨',
+  alias: '별칭',
 }
 
 interface BadgeProps {

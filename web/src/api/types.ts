@@ -131,6 +131,8 @@ export interface Device {
   last_ingest: string
   events_total: number
   token_created_at: string
+  /** Only present once the device's token has been revoked. */
+  revoked_at?: string
 }
 
 export interface DevicesResponse {
@@ -147,16 +149,25 @@ export interface CreateDeviceResponse {
   token: string
 }
 
+export interface DeleteDeviceResponse {
+  id: string
+  revoked: boolean
+}
+
+// Any numeric field can come back as `null` (price unknown) and provider /
+// alias_of / effective_from can be missing entirely depending on the rate's
+// shape in pricing.yaml — never assume they're present.
 export interface PricingRate {
   match: string
   provider?: string
-  input?: number
-  output?: number
-  cache_read?: number
-  cache_write?: number
-  cache_write_5m?: number
-  cache_write_1h?: number
+  input?: number | null
+  output?: number | null
+  cache_read?: number | null
+  cache_write?: number | null
+  cache_write_5m?: number | null
+  cache_write_1h?: number | null
   alias_of?: string
+  effective_from?: string
   estimated: boolean
 }
 

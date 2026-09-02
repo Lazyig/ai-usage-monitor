@@ -7,6 +7,7 @@ import type {
   BreakdownGroupBy,
   BreakdownResponse,
   CreateDeviceResponse,
+  DeleteDeviceResponse,
   DevicesResponse,
   DownloadsManifest,
   EventsResponse,
@@ -161,7 +162,9 @@ export function createDevice(name: string): Promise<CreateDeviceResponse> {
   return request('/api/v1/devices', { method: 'POST', body: { name } })
 }
 
-export function deleteDevice(id: string): Promise<void> {
+/** Revokes a device's token. The server replies `200` with a small JSON body
+ * (`{"id","revoked"}`) or, tolerated here just in case, `204` with none. */
+export function deleteDevice(id: string): Promise<DeleteDeviceResponse | undefined> {
   return request(`/api/v1/devices/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 

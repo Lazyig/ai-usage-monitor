@@ -6,11 +6,13 @@ import type {
   BreakdownResponse,
   BreakdownRow,
   CreateDeviceResponse,
+  DeleteDeviceResponse,
   Device,
   DownloadsManifest,
   EventsResponse,
   GroupBy,
   HealthResponse,
+  PricingRate,
   PricingResponse,
   Source,
   SummaryResponse,
@@ -19,6 +21,12 @@ import type {
   UsageEventDTO,
   UsageTotals,
 } from './types'
+
+// Debug-only toggle (see web/README.md verification notes): set
+// VITE_MOCK_FAIL=summary to make GET /api/v1/summary fail with a 500,
+// so the per-widget error rendering on the Overview page can be eyeballed
+// without a real backend.
+const MOCK_FAIL = import.meta.env.VITE_MOCK_FAIL as string | undefined
 
 // ---- deterministic PRNG -----------------------------------------------
 
@@ -123,6 +131,21 @@ let devices: Device[] = DEVICE_DEFS.map((d) => ({
   token_created_at: new Date(Date.now() - d.tokenAgeDays * 86_400_000).toISOString(),
 }))
 
+// One already-revoked device, exercising the "폐기됨" UI states — never part
+// of DEVICE_DEFS/DATASET since its token no longer ingests anything.
+devices.push({
+  id: '44444444-4444-4444-8444-444444444444',
+  name: 'old-laptop (폐기됨)',
+  os: 'linux',
+  arch: 'amd64',
+  agent_version: '0.2.0',
+  last_seen: new Date(Date.now() - 12 * 86_400_000).toISOString(),
+  last_ingest: new Date(Date.now() - 12 * 86_400_000).toISOString(),
+  events_total: 412,
+  token_created_at: new Date(Date.now() - 90 * 86_400_000).toISOString(),
+  revoked_at: new Date(Date.now() - 5 * 86_400_000).toISOString(),
+})
+
 // ---- synthetic dataset ---------------------------------------------------
 
 interface DayRecord {
@@ -196,11 +219,15 @@ function buildDataset(): DayRecord[] {
 
 const DATASET = buildDataset()
 
-// fill device event totals now that the dataset exists
-devices = devices.map((d) => ({
-  ...d,
-  events_total: DATASET.filter((r) => r.deviceId === d.id).reduce((s, r) => s + r.events, 0),
-}))
+// fill device event totals now that the dataset exists (only for devices
+// that are actually part of the synthetic dataset — leaves e.g. the
+// already-revoked device's manually-set total alone)
+const DATASET_DEVICE_IDS = new Set(DEVICE_DEFS.map((d) => d.id))
+devices = devices.map((d) =>
+  DATASET_DEVICE_IDS.has(d.id)
+    ? { ...d, events_total: DATASET.filter((r) => r.deviceId === d.id).reduce((s, r) => s + r.events, 0) }
+    : d,
+)
 
 // ---- flat event-level rows (for /events), generated lazily -----------
 
@@ -475,21 +502,63 @@ function buildEvents(params: Record<string, string | undefined>): EventsResponse
   return { events: page, next_cursor: nextCursor }
 }
 
+// Real pricing.yaml rows come back with plenty of nulls (unpriced models),
+// and `provider`/`alias_of`/`effective_from` are only present when the
+// underlying rate actually has them — this must never assume any of those
+// keys exist. See docs/API.md's implementation notes for the exact shape.
 function buildPricing(): PricingResponse {
-  const rates = Object.values(MODELS)
+  const derived: PricingRate[] = Object.values(MODELS)
     .flat()
     .filter((m, i, arr) => arr.findIndex((x) => x.model === m.model) === i)
-    .map((m) => ({
-      match: m.model,
-      provider: m.model.startsWith('claude') ? 'anthropic' : m.model.startsWith('gpt') || m.model.includes('codex') ? 'openai' : 'google',
-      input: m.priceUsdPer1M?.input,
-      output: m.priceUsdPer1M?.output,
-      cache_read: m.priceUsdPer1M?.cache_read,
-      cache_write: m.priceUsdPer1M?.cache_write,
-      alias_of: m.model === 'gemini-default' ? 'gemini-3.7-flash' : undefined,
-      estimated: m.estimated,
-    }))
-  return { rates }
+    .map((m) => {
+      const p = m.priceUsdPer1M
+      return {
+        match: m.model,
+        provider: m.model.startsWith('claude') ? 'anthropic' : m.model.startsWith('gpt') || m.model.includes('codex') ? 'openai' : 'google',
+        input: p?.input ?? null,
+        output: p?.output ?? null,
+        cache_read: p?.cache_read ?? null,
+        // Mirrors the real server: `cache_write` is only the generic/legacy
+        // bucket — most current rates carry 5m/1h instead and leave this null.
+        cache_write: null,
+        cache_write_5m: p?.cache_write ?? null,
+        cache_write_1h: p ? Math.round(p.cache_write * 1.6 * 100) / 100 : null,
+        alias_of: m.model === 'gemini-default' ? 'gemini-3.7-flash' : undefined,
+        effective_from: p ? '2026-06-01T00:00:00Z' : undefined,
+        estimated: m.estimated,
+      }
+    })
+
+  // A couple of rows lifted straight from the bug report's real-server
+  // example, to guarantee this exact shape (nulls, a wildcard match,
+  // missing provider/effective_from on the alias) is always exercised.
+  const literal: PricingRate[] = [
+    {
+      match: 'claude-fable-5-1',
+      provider: 'anthropic',
+      input: 10,
+      output: 50,
+      cache_read: 0.25,
+      cache_write: null,
+      cache_write_5m: 12.5,
+      cache_write_1h: 20,
+      effective_from: '2026-08-01T00:00:00Z',
+      estimated: false,
+    },
+    {
+      match: 'gpt-5.6-*',
+      provider: 'openai',
+      input: null,
+      output: null,
+      cache_read: null,
+      cache_write: null,
+      cache_write_5m: null,
+      cache_write_1h: null,
+      estimated: false,
+    },
+  ]
+
+  return { rates: [...literal, ...derived.filter((r) => r.match !== 'gpt-5.6-terra' && r.match !== 'gpt-5.6-sol')] }
 }
 
 function buildManifest(): DownloadsManifest {
@@ -568,11 +637,20 @@ export async function mockRequest<T>(path: string, opts: MockRequestOptions): Pr
   const deviceDeleteMatch = /^\/api\/v1\/devices\/([^/]+)$/.exec(path)
   if (deviceDeleteMatch && method === 'DELETE') {
     const id = deviceDeleteMatch[1]
-    devices = devices.filter((d) => d.id !== id)
-    return delay(undefined as T)
+    const existing = devices.find((d) => d.id === id)
+    if (!existing) throw new MockApiError(404, 'device not found')
+    // Real server behavior: revoke the token but keep the row (events stay
+    // intact) — never remove the device from the list.
+    const revokedAt = new Date().toISOString()
+    devices = devices.map((d) => (d.id === id ? { ...d, revoked_at: d.revoked_at ?? revokedAt } : d))
+    const resp: DeleteDeviceResponse = { id, revoked: true }
+    return delay(resp as unknown as T)
   }
 
-  if (path === '/api/v1/summary') return delay(buildSummary(params) as unknown as T)
+  if (path === '/api/v1/summary') {
+    if (MOCK_FAIL === 'summary') throw new MockApiError(500, 'mock: forced failure via VITE_MOCK_FAIL=summary')
+    return delay(buildSummary(params) as unknown as T)
+  }
   if (path === '/api/v1/timeseries') return delay(buildTimeseries(params) as unknown as T)
   if (path === '/api/v1/breakdown') return delay(buildBreakdown(params) as unknown as T)
   if (path === '/api/v1/events') return delay(buildEvents(params) as unknown as T)
