@@ -3,6 +3,7 @@
 web/node_modules/
 web/dist/*
 !web/dist/.gitkeep
+!web/dist/index.html
 cmd/server/kodata/downloads/*
 !cmd/server/kodata/downloads/.gitkeep
 *.db

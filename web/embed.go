@@ -12,13 +12,16 @@ import (
 //go:embed all:dist
 var dist embed.FS
 
-// Dist returns the built SPA rooted at dist/. Built reports whether index.html exists.
+// Dist returns the SPA rooted at dist/. Built reports whether a real Vite build is
+// present (it always emits an assets/ directory); the committed placeholder
+// index.html alone does not count. The placeholder exists so `go:embed all:dist`
+// always has a match even on a checkout without `npm run build`.
 func Dist() (fsys fs.FS, built bool) {
 	sub, err := fs.Sub(dist, "dist")
 	if err != nil {
 		return nil, false
 	}
-	if _, err := fs.Stat(sub, "index.html"); err != nil {
+	if st, err := fs.Stat(sub, "assets"); err != nil || !st.IsDir() {
 		return sub, false
 	}
 	return sub, true
