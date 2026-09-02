@@ -9,10 +9,12 @@ import (
 
 // handleSPA serves the embedded dashboard. Real files are served as-is and every
 // other path falls back to index.html so the client-side router can take over.
-// /api, /downloads and /health never fall back - they answer JSON 404 instead.
+// /api/, /downloads/ and /health never fall back - they answer JSON 404 instead.
+// The match is on the path segment, not a bare prefix: /downloads-page is an SPA
+// route and must still get index.html.
 func (a *api) handleSPA(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
-	if strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/downloads") || p == "/health" {
+	if strings.HasPrefix(p, "/api/") || p == "/downloads" || strings.HasPrefix(p, "/downloads/") || p == "/health" {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}

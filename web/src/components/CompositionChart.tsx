@@ -97,6 +97,7 @@ export function CompositionChart({
           type="category"
           dataKey="name"
           tick={{ fill: 'var(--text-secondary)', fontSize: isPhone ? 11 : 12 }}
+          tickFormatter={isPhone ? (v: string) => shortenMiddle(String(v), 14) : undefined}
           axisLine={false}
           tickLine={false}
           width={effectiveLabelWidth}
@@ -232,4 +233,13 @@ export function TooltipRow({
 
 export function TooltipDivider() {
   return <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0 4px' }} />
+}
+
+/** "gemini-3.7-flash-control" -> "gemini-…-control": keeps both ends, which is
+ * what distinguishes model names, instead of letting the axis clip the start. */
+function shortenMiddle(s: string, max: number): string {
+  if (s.length <= max) return s
+  const head = Math.ceil((max - 1) / 2)
+  const tail = Math.floor((max - 1) / 2)
+  return `${s.slice(0, head)}…${s.slice(s.length - tail)}`
 }

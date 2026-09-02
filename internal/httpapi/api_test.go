@@ -522,7 +522,7 @@ func TestSPAFallback(t *testing.T) {
 	}
 	h := newHarness(t, Options{AdminToken: adminToken, SPA: dist, SPABuilt: true})
 
-	for _, path := range []string{"/", "/devices", "/models/claude-opus-5"} {
+	for _, path := range []string{"/", "/devices", "/models/claude-opus-5", "/downloads-page", "/manage/devices"} {
 		w := h.do(http.MethodGet, path, "", nil)
 		if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "dashboard") {
 			t.Errorf("%s = %d %q, want index.html", path, w.Code, w.Body.String())

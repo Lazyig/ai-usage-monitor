@@ -590,12 +590,19 @@ a.btn {
 }
 
 .grid-cols-3 {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* the third slot usually holds the widest table (models) */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.35fr);
 }
 
 .grid-cols-2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
+}
+
+/* Grid items default to min-width:auto, so a wide table would stretch its cell
+   past the viewport instead of scrolling inside .table-scroll. */
+.grid > * {
+  min-width: 0;
 }
 
 @media (max-width: 900px) {
@@ -818,6 +825,7 @@ a.btn {
 
 .table-scroll {
   overflow-x: auto;
+  max-width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
@@ -926,12 +934,14 @@ a.btn {
      width) — force a compact vertical stack instead so the action column
      stays narrow. */
   .action-group {
-    flex-direction: column;
-    align-items: stretch;
-    min-width: 108px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    min-width: 200px;
   }
   .action-group .btn {
     width: 100%;
+    white-space: nowrap;
   }
 }
 
