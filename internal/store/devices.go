@@ -109,7 +109,7 @@ func scanDevice(sc interface{ Scan(...any) error }) (Device, error) {
 // DeviceByTokenHash looks a device up by the hash of its bearer token. Revoked
 // devices are returned too; callers decide (ingest rejects them).
 func (s *Store) DeviceByTokenHash(ctx context.Context, hash string) (Device, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT `+deviceCols+` FROM devices d WHERE d.token_hash = ?`, hash)
+	row := s.rdb.QueryRowContext(ctx, `SELECT `+deviceCols+` FROM devices d WHERE d.token_hash = ?`, hash)
 	d, err := scanDevice(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Device{}, ErrNotFound
@@ -119,7 +119,7 @@ func (s *Store) DeviceByTokenHash(ctx context.Context, hash string) (Device, err
 
 // Device returns one device by id (without the event count).
 func (s *Store) Device(ctx context.Context, id string) (Device, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT `+deviceCols+` FROM devices d WHERE d.id = ?`, id)
+	row := s.rdb.QueryRowContext(ctx, `SELECT `+deviceCols+` FROM devices d WHERE d.id = ?`, id)
 	d, err := scanDevice(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Device{}, ErrNotFound
@@ -129,7 +129,7 @@ func (s *Store) Device(ctx context.Context, id string) (Device, error) {
 
 // ListDevices returns every device with its lifetime event count, newest token first.
 func (s *Store) ListDevices(ctx context.Context) ([]Device, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rdb.QueryContext(ctx, `
 		SELECT `+deviceCols+`, (SELECT COUNT(*) FROM usage_events e WHERE e.device_id = d.id)
 		FROM devices d ORDER BY d.token_created_at DESC, d.id`)
 	if err != nil {

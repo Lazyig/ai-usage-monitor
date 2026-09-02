@@ -206,7 +206,7 @@ func (s *Store) aggregate(ctx context.Context, f Filter, keyCol string, bucketMs
 	f.apply(q)
 	q.tail("GROUP BY k, source, model, b, tier")
 
-	rows, err := s.db.QueryContext(ctx, q.sql(), q.args...)
+	rows, err := s.rdb.QueryContext(ctx, q.sql(), q.args...)
 	if err != nil {
 		return nil, err
 	}
@@ -456,7 +456,7 @@ func GroupColumn(groupBy string) (col string, ok bool) {
 }
 
 func (s *Store) deviceNames(ctx context.Context) (map[string]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name FROM devices`)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT id, name FROM devices`)
 	if err != nil {
 		return nil, err
 	}

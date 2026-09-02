@@ -92,7 +92,7 @@ func (s *Store) Events(ctx context.Context, f Filter, limit int, cursor string, 
 	}
 	q.tail(fmt.Sprintf(`ORDER BY ts DESC, event_id DESC LIMIT %d`, limit+1))
 
-	rows, err := s.db.QueryContext(ctx, q.sql(), q.args...)
+	rows, err := s.rdb.QueryContext(ctx, q.sql(), q.args...)
 	if err != nil {
 		return EventPage{}, err
 	}

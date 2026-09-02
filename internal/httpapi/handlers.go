@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -427,7 +428,7 @@ type readiness struct {
 	counts store.Counts
 }
 
-func (a *api) readiness(r *http.Request) readiness {
+func (a *api) readiness(r *http.Request, withCounts bool) readiness {
 	rd := readiness{ok: true, checks: map[string]string{}}
 	note := func(name string, err string) {
 		if err == "" {
@@ -437,12 +438,17 @@ func (a *api) readiness(r *http.Request) readiness {
 		rd.checks[name] = err
 		rd.ok = false
 	}
-	c, err := a.store.Counts(r.Context())
-	if err != nil {
+	pingCtx, cancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
+	defer cancel()
+	if err := a.store.Ping(pingCtx); err != nil {
 		note("database", "unavailable: "+err.Error())
 	} else {
-		rd.counts = c
 		note("database", "")
+		if withCounts {
+			if c, err := a.store.Counts(r.Context()); err == nil {
+				rd.counts = c
+			}
+		}
 	}
 	if len(a.pricing.Rates()) == 0 {
 		note("pricing", "no rates loaded")
@@ -469,7 +475,7 @@ func (a *api) handleLive(w http.ResponseWriter, _ *http.Request) {
 // handleReady gates traffic: 503 until database, pricing and frontend are all
 // good, and again once the process starts draining.
 func (a *api) handleReady(w http.ResponseWriter, r *http.Request) {
-	rd := a.readiness(r)
+	rd := a.readiness(r, false)
 	status := http.StatusOK
 	if !rd.ok {
 		status = http.StatusServiceUnavailable
@@ -479,7 +485,7 @@ func (a *api) handleReady(w http.ResponseWriter, r *http.Request) {
 
 // handleHealth is the human-facing summary: readiness plus row counts.
 func (a *api) handleHealth(w http.ResponseWriter, r *http.Request) {
-	rd := a.readiness(r)
+	rd := a.readiness(r, true)
 	status := http.StatusOK
 	if !rd.ok {
 		status = http.StatusServiceUnavailable

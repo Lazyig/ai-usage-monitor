@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // pure-Go driver, registers "sqlite"
@@ -41,7 +42,8 @@ type Pricer interface {
 
 // Store owns the SQLite handle.
 type Store struct {
-	db *sql.DB
+	db  *sql.DB // the single writer (and the reader for in-memory databases)
+	rdb *sql.DB // read-only pool: WAL lets readers run beside the writer
 }
 
 // Open opens (creating if needed) the SQLite database at path and applies all
@@ -72,7 +74,22 @@ func Open(path string) (*Store, error) {
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(0)
 
-	s := &Store{db: db}
+	// Reads get their own small pool so a dashboard load (five aggregations at
+	// once) and the readiness probe never queue behind ingest writes or each
+	// other. An in-memory database is per-connection, so tests keep one handle.
+	rdb := db
+	if !strings.Contains(path, ":memory:") && !strings.Contains(path, "mode=memory") {
+		rdb, err = sql.Open("sqlite", dsn+"&_pragma=query_only(1)")
+		if err != nil {
+			db.Close()
+			return nil, fmt.Errorf("store: open reader: %w", err)
+		}
+		rdb.SetMaxOpenConns(4)
+		rdb.SetMaxIdleConns(4)
+		rdb.SetConnMaxLifetime(0)
+	}
+
+	s := &Store{db: db, rdb: rdb}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := s.migrate(ctx); err != nil {
@@ -86,7 +103,19 @@ func Open(path string) (*Store, error) {
 func (s *Store) DB() *sql.DB { return s.db }
 
 // Close closes the database.
-func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Close() error {
+	if s.rdb != nil && s.rdb != s.db {
+		s.rdb.Close()
+	}
+	return s.db.Close()
+}
+
+// Ping is the readiness check: a trivial read on the reader pool, so it reflects
+// whether requests can be served without measuring how busy the writer is.
+func (s *Store) Ping(ctx context.Context) error {
+	var one int
+	return s.rdb.QueryRowContext(ctx, `SELECT 1`).Scan(&one)
+}
 
 // migrate applies every migrations/*.sql file, in filename order, exactly once.
 func (s *Store) migrate(ctx context.Context) error {
@@ -158,10 +187,10 @@ type Counts struct {
 // Counts returns row counts for /health.
 func (s *Store) Counts(ctx context.Context) (Counts, error) {
 	var c Counts
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM usage_events`).Scan(&c.Events); err != nil {
+	if err := s.rdb.QueryRowContext(ctx, `SELECT COUNT(*) FROM usage_events`).Scan(&c.Events); err != nil {
 		return c, err
 	}
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM devices WHERE revoked_at IS NULL`).Scan(&c.Devices); err != nil {
+	if err := s.rdb.QueryRowContext(ctx, `SELECT COUNT(*) FROM devices WHERE revoked_at IS NULL`).Scan(&c.Devices); err != nil {
 		return c, err
 	}
 	return c, nil
