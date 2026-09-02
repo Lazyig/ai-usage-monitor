@@ -31,13 +31,13 @@ const (
 // Input excludes cache tokens, CacheRead/CacheWrite* are separate, and Output
 // includes reasoning. Collectors convert other providers' conventions on the way in.
 type UsageEvent struct {
-	EventID   string     `json:"event_id"` // sha256(device|source|native key) - idempotency key
-	DeviceID  string     `json:"device_id"`
-	Source    Source     `json:"source"`
-	Timestamp time.Time  `json:"ts"` // UTC
-	Model     string     `json:"model"`
-	SessionID string     `json:"session_id,omitempty"`
-	Project   string     `json:"project,omitempty"` // cwd or workspace URI
+	EventID   string    `json:"event_id"` // sha256(device|source|native key) - idempotency key
+	DeviceID  string    `json:"device_id"`
+	Source    Source    `json:"source"`
+	Timestamp time.Time `json:"ts"` // UTC
+	Model     string    `json:"model"`
+	SessionID string    `json:"session_id,omitempty"`
+	Project   string    `json:"project,omitempty"` // cwd or workspace URI
 
 	Input        int64 `json:"input"`
 	Output       int64 `json:"output"`
