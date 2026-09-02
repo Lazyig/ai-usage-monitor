@@ -3,6 +3,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import type { TooltipProps } from 'recharts'
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent'
 import { formatPercent } from '../lib/format'
+import { PHONE_QUERY, useMediaQuery } from '../hooks/useMediaQuery'
 
 export interface CompositionRow {
   key: string
@@ -64,6 +65,12 @@ export function CompositionChart({
   barStroke = true,
   tooltip,
 }: CompositionChartProps) {
+  const isPhone = useMediaQuery(PHONE_QUERY)
+  const tickFontSize = isPhone ? 10 : 11
+  // Row labels (agent/device/model names) can otherwise eat most of a
+  // phone-width chart, leaving no room for the bars themselves.
+  const effectiveLabelWidth = isPhone ? Math.min(labelWidth, 88) : labelWidth
+
   const data: Datum[] = rows.map((row) => {
     const datum: Datum = { name: row.label, total: 0, ...row.extra }
     for (const seg of segments) {
@@ -81,17 +88,18 @@ export function CompositionChart({
         <XAxis
           type="number"
           tickFormatter={formatValue}
-          tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+          tick={{ fill: 'var(--text-muted)', fontSize: tickFontSize }}
           axisLine={false}
           tickLine={false}
+          interval={isPhone ? 'preserveStartEnd' : undefined}
         />
         <YAxis
           type="category"
           dataKey="name"
-          tick={{ fill: 'var(--text-secondary)', fontSize: 12 }}
+          tick={{ fill: 'var(--text-secondary)', fontSize: isPhone ? 11 : 12 }}
           axisLine={false}
           tickLine={false}
-          width={labelWidth}
+          width={effectiveLabelWidth}
         />
         <Tooltip
           content={tooltip ?? <CompositionTooltip segments={segments} formatValue={formatValue} />}

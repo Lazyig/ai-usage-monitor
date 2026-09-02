@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { NavLink } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
 import { PRESET_LABELS, TIMEZONE, addDays, type RangePreset } from '../lib/dateRange'
 import { useAuth } from '../state/AuthContext'
 import { useFilters } from '../state/FiltersContext'
@@ -24,8 +24,17 @@ const NAV_ITEMS = [
 export function TopBar() {
   const { range, setPreset, setCustomRange, autoRefresh, toggleAutoRefresh, refresh } = useFilters()
   const { logout } = useAuth()
+  const location = useLocation()
+  const navRef = useRef<HTMLElement>(null)
   const [customFrom, setCustomFrom] = useState(range.from)
   const [customTo, setCustomTo] = useState(addDays(range.to, -1))
+
+  // Below 640px .nav becomes a horizontally-scrolling strip (see index.css);
+  // keep the active link scrolled into view after navigating so it's never
+  // left off-screen. `block: 'nearest'` avoids also scrolling the page.
+  useEffect(() => {
+    navRef.current?.querySelector('.nav-link.active')?.scrollIntoView({ block: 'nearest', inline: 'center' })
+  }, [location.pathname])
 
   function handlePresetClick(preset: RangePreset) {
     if (preset === 'custom') {
@@ -43,17 +52,19 @@ export function TopBar() {
     <header className="topbar">
       <div className="topbar-row topbar-brand-row">
         <span className="brand">AI Usage Monitor</span>
-        <nav className="nav">
-          {NAV_ITEMS.map((item, i) =>
-            'divider' in item ? (
-              <span key={`divider-${i}`} className="nav-divider" aria-hidden="true" />
-            ) : (
-            <NavLink key={item.to} to={item.to} end={'end' in item ? item.end : undefined} className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-              {item.label}
-            </NavLink>
-            ),
-          )}
-        </nav>
+        <div className="nav-wrap">
+          <nav className="nav" ref={navRef}>
+            {NAV_ITEMS.map((item, i) =>
+              'divider' in item ? (
+                <span key={`divider-${i}`} className="nav-divider" aria-hidden="true" />
+              ) : (
+              <NavLink key={item.to} to={item.to} end={'end' in item ? item.end : undefined} className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+                {item.label}
+              </NavLink>
+              ),
+            )}
+          </nav>
+        </div>
         <button type="button" className="btn btn-ghost" onClick={logout}>
           로그아웃
         </button>

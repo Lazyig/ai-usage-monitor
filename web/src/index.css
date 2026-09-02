@@ -88,6 +88,10 @@
   box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 html,
 body {
   margin: 0;
@@ -100,6 +104,19 @@ body {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: 14px;
   line-height: 1.5;
+  /* Last-resort backstop against a stray wide element forcing page-level
+     horizontal scroll on phones — every known offender is also fixed at
+     its source (min-width: 0 on scrollable flex children, sticky table
+     columns, etc.). */
+  overflow-x: hidden;
+}
+
+/* Visible, theme-matched focus ring for keyboard navigation (buttons, links,
+   inputs, chips) — browsers' default outline is inconsistent across the
+   dark surfaces used here. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 #root {
@@ -155,6 +172,9 @@ select {
 .app-main {
   flex: 1;
   padding: 20px clamp(12px, 3vw, 32px) 48px;
+  padding-left: max(clamp(12px, 3vw, 32px), env(safe-area-inset-left));
+  padding-right: max(clamp(12px, 3vw, 32px), env(safe-area-inset-right));
+  padding-bottom: max(48px, env(safe-area-inset-bottom));
   max-width: 1400px;
   width: 100%;
   margin: 0 auto;
@@ -163,6 +183,9 @@ select {
 @media (max-width: 768px) {
   .app-main {
     padding: 16px 12px 32px;
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+    padding-bottom: max(32px, env(safe-area-inset-bottom));
   }
 }
 
@@ -184,6 +207,9 @@ select {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   padding: 10px clamp(12px, 3vw, 32px);
+  padding-top: max(10px, env(safe-area-inset-top));
+  padding-left: max(clamp(12px, 3vw, 32px), env(safe-area-inset-left));
+  padding-right: max(clamp(12px, 3vw, 32px), env(safe-area-inset-right));
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -206,11 +232,19 @@ select {
   white-space: nowrap;
 }
 
+/* Wraps .nav so it can become a horizontally-scrolling strip with fade
+   edges on phones without touching the nav's own flex layout. */
+.nav-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
 .nav {
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
-  flex: 1;
+  width: 100%;
 }
 
 .nav-divider {
@@ -272,6 +306,70 @@ select {
   cursor: pointer;
 }
 
+@media (max-width: 640px) {
+  /* Nine nav entries don't fit a phone width — turn the nav into a
+     horizontally-scrolling, snap-aligned strip with a hidden scrollbar and
+     fade edges instead of wrapping into several rows. The active link is
+     kept in view via TopBar's scrollIntoView effect. */
+  .nav-wrap {
+    overflow: hidden;
+  }
+  .nav-wrap::before,
+  .nav-wrap::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 18px;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .nav-wrap::before {
+    left: 0;
+    background: linear-gradient(to right, var(--surface), transparent);
+  }
+  .nav-wrap::after {
+    right: 0;
+    background: linear-gradient(to left, var(--surface), transparent);
+  }
+  .nav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    padding-bottom: 2px;
+  }
+  .nav::-webkit-scrollbar {
+    display: none;
+  }
+  .nav-link {
+    flex: none;
+    scroll-snap-align: start;
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 12px;
+  }
+  .nav-divider {
+    flex: none;
+  }
+
+  /* Custom date-range row: two date inputs + "적용" side by side no longer
+     fit next to the tz badge, so stack them and go full width. */
+  .custom-range {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+  .custom-range input[type='date'] {
+    width: 100%;
+  }
+  .custom-range span {
+    text-align: center;
+  }
+}
+
 /* ---- chips (range presets, metric toggles) ---- */
 
 .chip {
@@ -294,6 +392,20 @@ select {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-contrast);
+}
+
+@media (max-width: 640px) {
+  /* Bigger tap targets for chips and small buttons — 5px/7px vertical
+     padding plus 12.5-13px text falls short of a 40px hit area. */
+  .chip {
+    padding: 10px 14px;
+  }
+  .btn {
+    padding: 10px 14px;
+  }
+  .btn-sm {
+    padding: 9px 12px;
+  }
 }
 
 /* ---- buttons ---- */
@@ -403,6 +515,26 @@ a.btn {
   margin-bottom: 12px;
 }
 
+@media (max-width: 640px) {
+  /* Multiple side-by-side filter fields (소스/기기/모델, …) wrap raggedly at
+     phone widths since each keeps a 160px min-width — stack them full width
+     instead, and let field-row's own children (incl. any trailing button)
+     stretch to match. */
+  .field-row,
+  .filters-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .field {
+    width: 100%;
+  }
+  .field input,
+  .field select {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
 /* ---- cards, their headers, and the grids they sit in ---- */
 
 .card {
@@ -487,6 +619,12 @@ a.btn {
 @media (max-width: 768px) {
   .stat-tiles {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .stat-tiles {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -596,6 +734,7 @@ a.btn {
 .chart-toggle {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
 }
 
 .legend-row {
@@ -731,6 +870,39 @@ a.btn {
   border-bottom: none;
 }
 
+@media (max-width: 900px) {
+  /* Tables at tablet/phone widths regularly need to scroll horizontally
+     (table-scroll) to show every column — keep the identifying first
+     column (name/model/project) pinned so it survives that scroll.
+     Untouched above 900px: desktop tables rarely overflow at all. */
+  .data-table th:first-child,
+  .data-table td:first-child {
+    position: sticky;
+    left: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+  }
+  .data-table th:first-child {
+    z-index: 2;
+  }
+  .data-table td:first-child {
+    z-index: 1;
+  }
+  .data-table tbody tr:hover td:first-child {
+    background: color-mix(in srgb, var(--accent) 6%, transparent);
+  }
+}
+
+@media (max-width: 640px) {
+  /* Compact row height so more of a wide table's rows are visible without
+     scrolling as far vertically. */
+  .data-table th,
+  .data-table td {
+    padding: 6px 8px;
+    font-size: 12.5px;
+  }
+}
+
 .ta-right {
   text-align: right;
 }
@@ -746,6 +918,21 @@ a.btn {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  /* A wrapping row of 4 buttons inside a table cell still tends to size the
+     column to fit them all on one line (table auto-layout uses max-content
+     width) — force a compact vertical stack instead so the action column
+     stays narrow. */
+  .action-group {
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 108px;
+  }
+  .action-group .btn {
+    width: 100%;
+  }
 }
 
 /* Inline copy affordance next to truncated text (sha256, etc.). */
@@ -834,6 +1021,14 @@ a.btn {
   background: var(--surface-raised);
 }
 
+@media (max-width: 640px) {
+  /* 28px is under the 40px tap-target minimum on touch devices. */
+  .icon-btn {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+}
+
 /* ---- modal (confirm dialogs) ---- */
 
 .modal-overlay {
@@ -844,6 +1039,10 @@ a.btn {
   align-items: center;
   justify-content: center;
   padding: 16px;
+  padding-top: max(16px, env(safe-area-inset-top));
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
   z-index: 100;
 }
 
@@ -855,6 +1054,11 @@ a.btn {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 20px;
+  /* Fit within the viewport even with a small keyboard-shrunk viewport
+     height on phones; scroll the card's own content rather than overflow
+     the screen. */
+  max-height: calc(100svh - 32px);
+  overflow-y: auto;
 }
 
 .modal-card h3 {
@@ -891,6 +1095,10 @@ a.btn {
   align-items: center;
   justify-content: center;
   padding: 16px;
+  padding-top: max(16px, env(safe-area-inset-top));
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
 }
 
 .login-card {
@@ -952,6 +1160,10 @@ a.btn {
 
 .copy-box code {
   flex: 1;
+  /* A flex item's default min-width is auto (its content size), which would
+     otherwise force this row — and the whole page — wider than the viewport
+     for a long token/command instead of scrolling inside the code box. */
+  min-width: 0;
   overflow-x: auto;
   white-space: pre;
   background: var(--bg);
@@ -959,6 +1171,10 @@ a.btn {
   border-radius: var(--radius-sm);
   padding: 8px 10px;
   font-size: 12.5px;
+}
+
+.copy-box-row .btn {
+  flex-shrink: 0;
 }
 
 /* ---- install guide (다운로드 페이지) ---- */
@@ -1051,4 +1267,18 @@ a.btn {
 
 .mono {
   font-family: ui-monospace, Consolas, monospace;
+}
+
+/* ---- phone-wide form fix ---- */
+
+@media (max-width: 640px) {
+  /* iOS Safari zooms the page in on focus for any text input under 16px —
+     every text/date/password input and select in the app (filters, the
+     device-add/rename forms, custom date range, login) inherits the 14px
+     body size otherwise. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
 }
