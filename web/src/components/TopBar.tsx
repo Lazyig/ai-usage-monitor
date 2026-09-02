@@ -24,6 +24,24 @@ const NAV_ITEMS = [
 export function TopBar() {
   const { range, setPreset, setCustomRange, autoRefresh, toggleAutoRefresh, refresh } = useFilters()
   const { logout } = useAuth()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const { pathname: drawerPath } = useLocation()
+  // The drawer is a phone-only affordance: close it whenever the route changes
+  // and on Escape, and keep the page from scrolling underneath while it is open.
+  useEffect(() => setMenuOpen(false), [drawerPath])
+  useEffect(() => {
+    if (!menuOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
+  }, [menuOpen])
   const location = useLocation()
   const navRef = useRef<HTMLElement>(null)
   const [customFrom, setCustomFrom] = useState(range.from)
@@ -51,6 +69,18 @@ export function TopBar() {
   return (
     <header className="topbar">
       <div className="topbar-row topbar-brand-row">
+        <button
+          type="button"
+          className="menu-btn"
+          aria-label="메뉴 열기"
+          aria-expanded={menuOpen}
+          aria-controls="app-drawer"
+          onClick={() => setMenuOpen(true)}
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M4 7h16M4 12h16M4 17h16" />
+          </svg>
+        </button>
         <span className="brand">AI Usage Monitor</span>
         <div className="nav-wrap">
           <nav className="nav" ref={navRef}>
@@ -65,10 +95,47 @@ export function TopBar() {
             )}
           </nav>
         </div>
-        <button type="button" className="btn btn-ghost" onClick={logout}>
+        <button type="button" className="btn btn-ghost topbar-logout" onClick={logout}>
           로그아웃
         </button>
       </div>
+      {menuOpen && (
+        <div className="drawer-overlay" role="presentation" onClick={() => setMenuOpen(false)}>
+          <aside id="app-drawer" className="drawer" role="dialog" aria-modal="true" aria-label="메뉴" onClick={(e) => e.stopPropagation()}>
+            <div className="drawer-head">
+              <span className="brand">AI Usage Monitor</span>
+              <button type="button" className="icon-btn drawer-close" aria-label="메뉴 닫기" onClick={() => setMenuOpen(false)}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+            </div>
+            <nav className="drawer-nav">
+              <div className="drawer-group-label">통계</div>
+              {NAV_ITEMS.slice(0, NAV_ITEMS.findIndex((i) => 'divider' in i)).map((item) =>
+                'divider' in item ? null : (
+                  <NavLink key={item.to} to={item.to} end={'end' in item ? item.end : undefined} className={({ isActive }) => (isActive ? 'drawer-link active' : 'drawer-link')}>
+                    {item.label}
+                  </NavLink>
+                ),
+              )}
+              <div className="drawer-group-label">관리</div>
+              {NAV_ITEMS.slice(NAV_ITEMS.findIndex((i) => 'divider' in i) + 1).map((item) =>
+                'divider' in item ? null : (
+                  <NavLink key={item.to} to={item.to} end={'end' in item ? item.end : undefined} className={({ isActive }) => (isActive ? 'drawer-link active' : 'drawer-link')}>
+                    {item.label}
+                  </NavLink>
+                ),
+              )}
+            </nav>
+            <div className="drawer-foot">
+              <button type="button" className="btn" onClick={logout}>
+                로그아웃
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
       <div className="topbar-row topbar-controls">
         <div className="range-presets" role="group" aria-label="기간 선택">
           {PRESETS.map((p) => (
