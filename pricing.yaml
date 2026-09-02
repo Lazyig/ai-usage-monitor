@@ -1,0 +1,78 @@
+# USD per 1M tokens. First matching entry wins (path.Match glob on lowercased model name).
+# Anthropic rates: claude-api skill cache 2026-06-24. Cache read = 10% of input except Fable 5.1 ($0.25),
+# cache write 5m = 1.25x input, 1h = 2x input. Long-context (>200K) surcharge: verify before relying on it.
+- match: "claude-fable-5-1"
+  provider: anthropic
+  input: 10.00
+  output: 50.00
+  cache_read: 0.25
+  cache_write_5m: 12.50
+  cache_write_1h: 20.00
+- match: "claude-fable-5"
+  provider: anthropic
+  input: 10.00
+  output: 50.00
+  cache_read: 1.00
+  cache_write_5m: 12.50
+  cache_write_1h: 20.00
+- match: "claude-opus-5"
+  provider: anthropic
+  input: 5.00
+  output: 25.00
+  cache_read: 0.50
+  cache_write_5m: 6.25
+  cache_write_1h: 10.00
+- match: "claude-opus-4-*"
+  provider: anthropic
+  input: 5.00
+  output: 25.00
+  cache_read: 0.50
+  cache_write_5m: 6.25
+  cache_write_1h: 10.00
+- match: "claude-sonnet-5"
+  provider: anthropic
+  input: 2.00
+  output: 10.00
+  cache_read: 0.20
+  cache_write_5m: 2.50
+  cache_write_1h: 4.00
+- match: "claude-sonnet-4-6"
+  provider: anthropic
+  input: 3.00
+  output: 15.00
+  cache_read: 0.30
+  cache_write_5m: 3.75
+  cache_write_1h: 6.00
+- match: "claude-haiku-4-5"
+  provider: anthropic
+  input: 1.00
+  output: 5.00
+  cache_read: 0.10
+  cache_write_5m: 1.25
+  cache_write_1h: 2.00
+
+# OpenAI — fill from the official pricing page; leaving a field out marks the cost unknown.
+- match: "gpt-5.6-*"
+  provider: openai
+  # input:
+  # cache_read:
+  # output:
+- match: "codex-auto-review"
+  provider: openai   # internal reviewer model, no public price -> tokens only
+
+# Google — fill from the official pricing page.
+- match: "gemini-3.7-flash*"        # gemini-3.7-flash, gemini-3.7-flash-control
+  provider: google
+  # input:
+  # cache_read:
+  # output:
+- match: "gemini-default"           # decision 6: real model unknown -> price as 3.7 flash
+  alias_of: "gemini-3.7-flash"
+- match: "gemini-3.6-flash*"
+  provider: google
+- match: "gemini-3-flash-*"
+  provider: google
+- match: "gemini-3.1-pro-*"
+  provider: google
+- match: "antigravity-internal"     # title/summary calls with no model name recorded
+  provider: google
