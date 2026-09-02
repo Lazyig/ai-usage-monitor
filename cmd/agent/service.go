@@ -4,10 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/kardianos/service"
 
@@ -112,8 +116,20 @@ func install(dir, server, token, name string, interval int) error {
 		manualHint(dir, err)
 		return nil
 	}
-	if err := svc.Install(); err != nil {
-		manualHint(dir, err)
+	// Re-running the installer (e.g. after downloading a newer binary) replaces
+	// the existing registration: stop + uninstall, then install again. The SCM
+	// deletes a Windows service asynchronously, hence the short retry.
+	_ = svc.Stop()
+	_ = svc.Uninstall()
+	var ierr error
+	for attempt := 0; attempt < 5; attempt++ {
+		if ierr = svc.Install(); ierr == nil {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	if ierr != nil {
+		manualHint(dir, ierr)
 		return nil
 	}
 	fmt.Printf("registered the %s service (%s)\n", serviceName, svc.Platform())
@@ -148,10 +164,10 @@ func exeName() string {
 // runArgs is the argv the service (or the operator) needs to start this agent.
 // The state directory is passed explicitly whenever it is not the plain per-OS
 // default, so the service does not depend on the installing shell's environment.
+// runArgs always pins the state directory: a service runs under another account
+// (Windows LocalSystem, systemd system unit) whose default state dir is not the
+// installing user's, and without the flag the service would find no config.
 func runArgs(dir string) []string {
-	if dir == agentcfg.StateDir() && os.Getenv(agentcfg.EnvStateDir) == "" {
-		return []string{"run"}
-	}
 	return []string{"run", "--state-dir", dir}
 }
 
@@ -184,7 +200,10 @@ func newService(dir string) (service.Service, error) {
 // on Windows, where a service process must answer the SCM; on systemd and
 // launchd the same code simply runs in the foreground.
 type program struct {
-	agent *agent
+	// setup builds the agent (config, whoami, collectors). It runs inside Start's
+	// goroutine so the service manager gets its "running" signal immediately.
+	setup  func(ctx context.Context) (*agent, error)
+	syslog service.Logger
 
 	mu     sync.Mutex
 	cancel context.CancelFunc
@@ -201,9 +220,20 @@ func (p *program) Start(service.Service) error {
 
 	go func() {
 		defer close(p.done)
-		if p.agent != nil {
-			p.err = p.agent.loop(ctx)
+		if p.setup == nil {
+			return
 		}
+		ag, err := p.setup(ctx)
+		if err != nil {
+			p.err = err
+			log.Printf("fatal: %v", err)
+			if p.syslog != nil {
+				_ = p.syslog.Errorf("ai-usage-agent: %v", err)
+			}
+			// A service that cannot start must fail visibly rather than idle.
+			os.Exit(1)
+		}
+		p.err = ag.loop(ctx)
 	}()
 	return nil
 }
@@ -221,29 +251,61 @@ func (p *program) Stop(service.Service) error {
 	return p.err
 }
 
-// runLoop runs the agent, under the service manager when we were started by one
-// and in the foreground otherwise.
-func runLoop(ag *agent) error {
-	if service.Interactive() {
-		ctx, stop := signalContext()
-		defer stop()
-		return ag.loop(ctx)
-	}
-	prg := &program{agent: ag}
-	svc, err := service.New(prg, serviceConfig(ag.dir))
+// runAsService runs under the service manager: reach svc.Run() first, then do
+// the slow setup (config, whoami, collectors) inside Start. Logs go to
+// <state dir>/agent.log because a service has no usable stdout (Windows) or
+// the operator wants a file next to the state anyway.
+func runAsService(dir string, sel selected, ov runOverrides) error {
+	closeLog := setupServiceLog(dir)
+	defer closeLog()
+
+	prg := &program{setup: func(ctx context.Context) (*agent, error) {
+		cfg, err := loadRunConfig(dir, ov)
+		if err != nil {
+			return nil, err
+		}
+		syncDeviceID(dir, &cfg, log.Printf)
+		return newAgent(cfg, dir, sel)
+	}}
+	svc, err := service.New(prg, serviceConfig(dir))
 	if err != nil {
 		if errors.Is(err, service.ErrNoServiceSystemDetected) {
 			ctx, stop := signalContext()
 			defer stop()
+			ag, err := prg.setup(ctx)
+			if err != nil {
+				return err
+			}
 			return ag.loop(ctx)
 		}
 		return err
+	}
+	if lg, err := svc.Logger(nil); err == nil {
+		prg.syslog = lg
 	}
 	if err := svc.Run(); err != nil {
 		return err
 	}
 	return prg.err
 }
+
+// setupServiceLog sends the standard logger to <dir>/agent.log (appending) and,
+// best effort, to stdout for service managers that capture it (systemd/launchd).
+// Writes to a dead stdout are ignored so they cannot break file logging.
+func setupServiceLog(dir string) (closeFn func()) {
+	_ = os.MkdirAll(dir, 0o700)
+	f, err := os.OpenFile(filepath.Join(dir, "agent.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return func() {}
+	}
+	log.SetOutput(io.MultiWriter(f, ignoreErrors{os.Stdout}))
+	return func() { _ = f.Close() }
+}
+
+// ignoreErrors makes a writer that never fails (a service's stdout may be closed).
+type ignoreErrors struct{ w io.Writer }
+
+func (i ignoreErrors) Write(p []byte) (int, error) { _, _ = i.w.Write(p); return len(p), nil }
 
 // serviceStatus renders the service state for `status`, tolerating every way a
 // platform can say "there is nothing installed here".

@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kardianos/service"
+
 	"ai-usage-monitor/internal/agentcfg"
 	"ai-usage-monitor/internal/cursor"
 	"ai-usage-monitor/internal/event"
@@ -51,35 +53,57 @@ func cmdRun(args []string) error {
 		return &usageError{err: err}
 	}
 	dir := resolveStateDir(*stateDir)
-	cfg, err := agentcfg.LoadOrCreate(dir)
+	ov := runOverrides{server: *server, token: *token, interval: *interval}
+
+	// Under a service manager the process must reach svc.Run() quickly (Windows
+	// gives it 30s), so every slow step happens after that, inside the service.
+	if !*once && !service.Interactive() {
+		return runAsService(dir, sel, ov)
+	}
+
+	cfg, err := loadRunConfig(dir, ov)
 	if err != nil {
 		return err
 	}
-	if *server != "" {
-		cfg.ServerURL = *server
-	}
-	if *token != "" {
-		cfg.DeviceToken = *token
-	}
-	if *interval > 0 {
-		cfg.IntervalSeconds = *interval
-	}
-	if strings.TrimSpace(cfg.ServerURL) == "" {
-		return usagef("no server configured: run `ai-usage-agent install --server URL --token TOKEN` or set %s", agentcfg.EnvServer)
-	}
-
 	syncDeviceID(dir, &cfg, log.Printf)
 	ag, err := newAgent(cfg, dir, sel)
 	if err != nil {
 		return err
 	}
 
+	ctx, stop := signalContext()
+	defer stop()
 	if *once {
-		ctx, stop := signalContext()
-		defer stop()
 		return ag.tick(ctx)
 	}
-	return runLoop(ag)
+	return ag.loop(ctx)
+}
+
+// runOverrides are the run flags that take precedence over config.json.
+type runOverrides struct {
+	server, token string
+	interval      int
+}
+
+// loadRunConfig reads config.json (creating defaults) and applies flag overrides.
+func loadRunConfig(dir string, ov runOverrides) (agentcfg.Config, error) {
+	cfg, err := agentcfg.LoadOrCreate(dir)
+	if err != nil {
+		return cfg, err
+	}
+	if ov.server != "" {
+		cfg.ServerURL = ov.server
+	}
+	if ov.token != "" {
+		cfg.DeviceToken = ov.token
+	}
+	if ov.interval > 0 {
+		cfg.IntervalSeconds = ov.interval
+	}
+	if strings.TrimSpace(cfg.ServerURL) == "" {
+		return cfg, usagef("no server configured: run `ai-usage-agent install --server URL --token TOKEN` or set %s", agentcfg.EnvServer)
+	}
+	return cfg, nil
 }
 
 // agent is the long running collect/push machine.
@@ -103,7 +127,7 @@ func newAgent(cfg agentcfg.Config, dir string, sel selected) (*agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	lg := log.New(os.Stdout, "", log.LstdFlags|log.LUTC)
+	lg := log.New(log.Writer(), "", log.LstdFlags|log.LUTC) // follows the service log file when set
 
 	q, err := transport.OpenQueue(agentcfg.QueueDir(dir), transport.DefaultQueueMaxBytes)
 	if err != nil {
