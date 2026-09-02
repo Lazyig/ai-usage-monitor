@@ -1,5 +1,6 @@
 import type { TooltipProps } from 'recharts'
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent'
+import { TooltipRow, TooltipShell } from './CompositionChart'
 import { labelForKey } from '../lib/colors'
 
 interface ChartTooltipProps extends TooltipProps<ValueType, NameType> {
@@ -9,39 +10,17 @@ interface ChartTooltipProps extends TooltipProps<ValueType, NameType> {
   labelFor?: (key: string) => string
 }
 
-/** Themed tooltip shared by every recharts chart in the app. */
+/** Themed tooltip shared by every trend chart in the app: one swatched line
+ * per stacked series, in stack order. */
 export function ChartTooltip({ active, payload, label, formatValue, labelFor = labelForKey }: ChartTooltipProps) {
   if (!active || !payload || payload.length === 0) return null
   return (
-    <div
-      style={{
-        background: 'var(--surface-raised)',
-        border: '1px solid var(--border)',
-        borderRadius: 6,
-        padding: '8px 10px',
-        fontSize: 12.5,
-        boxShadow: 'var(--shadow)',
-      }}
-    >
-      <div style={{ color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
+    <TooltipShell label={label} minWidth={0}>
       {payload.map((p) => (
-        <div key={String(p.dataKey)} style={{ display: 'flex', gap: 8, justifyContent: 'space-between', color: 'var(--text-primary)' }}>
-          <span>
-            <span
-              style={{
-                display: 'inline-block',
-                width: 8,
-                height: 8,
-                borderRadius: 2,
-                background: p.color,
-                marginRight: 6,
-              }}
-            />
-            {labelFor(String(p.dataKey))}
-          </span>
-          <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatValue(Number(p.value))}</span>
-        </div>
+        <TooltipRow key={String(p.dataKey)} color={p.color} label={labelFor(String(p.dataKey))}>
+          {formatValue(Number(p.value))}
+        </TooltipRow>
       ))}
-    </div>
+    </TooltipShell>
   )
 }

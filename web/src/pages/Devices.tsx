@@ -5,6 +5,7 @@ import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { type Column, DataTable } from '../components/DataTable'
+import { countColumn, dateTimeColumn } from '../components/columns'
 import { StateContainer } from '../components/StateContainer'
 import { useApiData } from '../hooks/useApiData'
 import { describeError } from '../lib/errors'
@@ -134,14 +135,9 @@ export function Devices() {
       ),
       sortValue: (d) => d.last_seen,
     },
-    { key: 'events_total', header: '누적 이벤트', align: 'right', render: (d) => formatFull(d.events_total), sortValue: (d) => d.events_total },
-    { key: 'token_created_at', header: '토큰 발급일', render: (d) => formatDateTime(d.token_created_at), sortValue: (d) => d.token_created_at },
-    {
-      key: 'revoked_at',
-      header: '폐기 시각',
-      render: (d) => (d.revoked_at ? formatDateTime(d.revoked_at) : '-'),
-      sortValue: (d) => d.revoked_at ?? '',
-    },
+    countColumn('events_total', '누적 이벤트', (d) => d.events_total),
+    dateTimeColumn('token_created_at', '토큰 발급일', (d) => d.token_created_at),
+    dateTimeColumn('revoked_at', '폐기 시각', (d) => d.revoked_at, { fallback: '-' }),
     {
       key: 'actions',
       header: '',
