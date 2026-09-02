@@ -54,7 +54,10 @@ func Open(path string) (*Store, error) {
 		"?_pragma=busy_timeout(5000)" +
 		"&_pragma=journal_mode(WAL)" +
 		"&_pragma=synchronous(NORMAL)" +
-		"&_pragma=foreign_keys(on)"
+		"&_pragma=foreign_keys(on)" +
+		// Sorting/grouping spills go to memory instead of a temp file: the container
+		// runs with a read-only root filesystem (SQLITE_IOERR_GETTEMPPATH otherwise).
+		"&_pragma=temp_store(MEMORY)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("store: open: %w", err)
