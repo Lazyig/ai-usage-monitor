@@ -205,7 +205,7 @@ func decodeLine(raw []byte, deviceID string) (ev event.UsageEvent, nativeKey str
 	}
 
 	ev = event.UsageEvent{
-		EventID:      event.NewEventID(deviceID, event.SourceClaudeCode, msgID, l.RequestID),
+		EventID:      event.NewEventID(event.SourceClaudeCode, msgID, l.RequestID),
 		DeviceID:     deviceID,
 		Source:       event.SourceClaudeCode,
 		Timestamp:    ts.UTC(),

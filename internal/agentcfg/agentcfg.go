@@ -59,6 +59,13 @@ type Config struct {
 	DeviceName      string                         `json:"device_name"`
 	IntervalSeconds int                            `json:"interval_seconds"`
 	Sources         map[event.Source]*SourceConfig `json:"sources"`
+
+	// IDScheme is the event.IDScheme the stored cursors were collected under.
+	// It is deliberately NOT filled in by fillDefaults: a config written before
+	// the field existed must read back as 0 so the agent notices it is behind
+	// and rescans once. Only Defaults() (a brand new device, which has no
+	// history to re-send) starts at the current scheme.
+	IDScheme int `json:"id_scheme"`
 }
 
 // Redacted returns a copy safe to print or log: the device token is replaced by
@@ -172,6 +179,7 @@ func Defaults() Config {
 		DeviceName:      name,
 		IntervalSeconds: DefaultIntervalSeconds,
 		Sources:         map[event.Source]*SourceConfig{},
+		IDScheme:        event.IDScheme,
 	}
 	for _, s := range Sources {
 		cfg.Sources[s] = &SourceConfig{Enabled: true, Root: DefaultRoot(s)}

@@ -393,7 +393,7 @@ func (c *Collector) scanConversation(ctx context.Context, deviceID, path, convID
 			model = internalModel
 		}
 		events = append(events, event.UsageEvent{
-			EventID:    event.NewEventID(deviceID, event.SourceAntigravity, convID, key),
+			EventID:    event.NewEventID(event.SourceAntigravity, convID, key),
 			DeviceID:   deviceID,
 			Source:     event.SourceAntigravity,
 			Timestamp:  ts,
@@ -425,7 +425,7 @@ func (c *Collector) scanConversation(ctx context.Context, deviceID, path, convID
 			continue
 		}
 		events = append(events, event.UsageEvent{
-			EventID:    event.NewEventID(deviceID, event.SourceAntigravity, convID, id),
+			EventID:    event.NewEventID(event.SourceAntigravity, convID, id),
 			DeviceID:   deviceID,
 			Source:     event.SourceAntigravity,
 			Timestamp:  s.Time,

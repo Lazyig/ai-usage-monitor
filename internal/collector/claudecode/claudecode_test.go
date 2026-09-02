@@ -60,7 +60,7 @@ func byID(evs []event.UsageEvent) map[string]event.UsageEvent {
 }
 
 func eventID(msgID, reqID string) string {
-	return event.NewEventID(testDevice, event.SourceClaudeCode, msgID, reqID)
+	return event.NewEventID(event.SourceClaudeCode, msgID, reqID)
 }
 
 func TestScanMapping(t *testing.T) {

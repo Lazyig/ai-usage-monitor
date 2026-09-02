@@ -6,6 +6,7 @@
 //	scan     read local logs and print a summary table (no server needed)
 //	run      scan continuously and push to the server
 //	status   show config, cursors, queue and server health
+//	rescan   drop the cursors and the queue so the next pass re-reads everything
 //	install  write the config and register an OS service
 //	uninstall / start / stop / restart   manage that service
 //	version
@@ -46,6 +47,7 @@ commands:
   scan       read local logs and print a usage table (works with no config)
   run        collect and push to the server on a timer
   status     show state dir, config, cursors, queue and server health
+  rescan     forget the cursors and the queue, so the next pass starts from zero
   install    write config.json and register the OS service
   uninstall  remove the OS service
   start      start the OS service
@@ -79,6 +81,8 @@ func run(args []string) int {
 		err = cmdRun(args[1:])
 	case "status":
 		err = cmdStatus(args[1:])
+	case "rescan":
+		err = cmdRescan(args[1:])
 	case "install", "uninstall", "start", "stop", "restart":
 		err = cmdService(cmd, args[1:])
 	case "version":

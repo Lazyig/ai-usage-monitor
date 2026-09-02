@@ -76,6 +76,25 @@ func (s *Store) Set(source event.Source, cur collector.Cursor) error {
 	return nil
 }
 
+// Reset forgets every cursor, in memory and on disk, so the next scan starts
+// from the beginning. Used when the server asks for a full resync and when the
+// EventID scheme changes.
+func (s *Store) Reset() error {
+	s.mu.Lock()
+	s.data = map[string]json.RawMessage{}
+	s.mu.Unlock()
+	return Clear(s.path)
+}
+
+// Clear deletes the cursor file at path without opening it, for callers that
+// only want the next run to start from zero. A missing file is not an error.
+func Clear(path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("cursor: remove %s: %w", path, err)
+	}
+	return nil
+}
+
 // Sources lists the sources that currently have a cursor, sorted.
 func (s *Store) Sources() []string {
 	s.mu.Lock()

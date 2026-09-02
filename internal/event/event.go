@@ -18,6 +18,11 @@ const (
 	SourceAntigravity Source = "antigravity"
 )
 
+// IDScheme is the version of the EventID derivation in NewEventID. Agents store
+// the scheme their cursors were built with; bumping it makes an upgraded agent
+// rescan once so its history is re-sent under the new ids.
+const IDScheme = 2
+
 // Confidence says how trustworthy the token numbers are.
 type Confidence string
 
@@ -31,7 +36,7 @@ const (
 // Input excludes cache tokens, CacheRead/CacheWrite* are separate, and Output
 // includes reasoning. Collectors convert other providers' conventions on the way in.
 type UsageEvent struct {
-	EventID   string    `json:"event_id"` // sha256(device|source|native key) - idempotency key
+	EventID   string    `json:"event_id"` // sha256(source|native keys) - idempotency key
 	DeviceID  string    `json:"device_id"`
 	Source    Source    `json:"source"`
 	Timestamp time.Time `json:"ts"` // UTC
@@ -51,12 +56,20 @@ type UsageEvent struct {
 	ToolVersion string     `json:"tool_version,omitempty"`
 }
 
-// NewEventID derives the idempotency key. parts are the source-native identifiers
-// (e.g. message id + request id) in a stable order.
-func NewEventID(device string, source Source, parts ...string) string {
+// NewEventID derives the idempotency key. parts are the source-native
+// identifiers (e.g. message id + request id) in a stable order, NUL separated so
+// no combination of ids can collide with another.
+//
+// The device is deliberately NOT part of the hash (scheme 2; scheme 1 hashed it
+// first). Every source-native key is already globally unique on its own, while
+// the device id is not stable: re-registering a device mints a new one, and a
+// first run that could not reach /agent/whoami keeps a locally generated id
+// until the server corrects it. Mixing that in only bought a failure mode - the
+// very same log lines re-ingesting under fresh ids and double counting. Without
+// it, one model call always hashes to one id no matter which device, agent
+// install or run reports it, so the server's INSERT OR IGNORE settles it once.
+func NewEventID(source Source, parts ...string) string {
 	h := sha256.New()
-	h.Write([]byte(device))
-	h.Write([]byte{0})
 	h.Write([]byte(source))
 	for _, p := range parts {
 		h.Write([]byte{0})

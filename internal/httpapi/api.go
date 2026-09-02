@@ -79,6 +79,8 @@ func New(st *store.Store, pr *Pricing, opt Options) http.Handler {
 	mux.Handle("GET /api/v1/devices", a.admin(http.HandlerFunc(a.handleListDevices)))
 	mux.Handle("POST /api/v1/devices", a.admin(http.HandlerFunc(a.handleCreateDevice)))
 	mux.Handle("DELETE /api/v1/devices/{id}", a.admin(http.HandlerFunc(a.handleDeleteDevice)))
+	mux.Handle("POST /api/v1/devices/{id}/rotate", a.admin(http.HandlerFunc(a.handleRotateDevice)))
+	mux.Handle("DELETE /api/v1/devices/{id}/events", a.admin(http.HandlerFunc(a.handlePurgeDeviceEvents)))
 	mux.Handle("GET /api/v1/pricing", a.admin(http.HandlerFunc(a.handlePricing)))
 	mux.Handle("POST /api/v1/pricing/reload", a.admin(http.HandlerFunc(a.handlePricingReload)))
 
@@ -268,6 +270,16 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// boolParam reads a flag query parameter: "true", "1", "yes" and "on" (any
+// case) enable it, anything else - including a missing parameter - does not.
+func boolParam(r *http.Request, name string) bool {
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get(name))) {
+	case "true", "1", "yes", "on":
+		return true
+	}
+	return false
 }
 
 func intParam(r *http.Request, name string, def int) int {

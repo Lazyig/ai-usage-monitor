@@ -16,7 +16,9 @@
 ```
 → `200 {"accepted":12,"duplicates":3,"rejected":0}`. 배치 최대 5,000건.
 `rejected` 는 `event.Valid()` 실패 또는 `device_id` 불일치로 버려진 이벤트 수(나머지는 그대로 저장). `device.id` 는 토큰에 묶인 기기와 일치해야 함(불일치 403).
-`event_id` 중복은 무시(UPSERT 아님, 최초 값 유지).
+`event_id` 중복은 무시(UPSERT 아님, 최초 값 유지). `event_id = sha256(source|native key...)` 로 **기기와 무관**하므로, 같은 호출은 어느 기기·설치에서 올려도 한 번만 저장된다.
+
+`DELETE /devices/{id}/events` 로 재수집 플래그가 선 기기에는 응답에 `"resync":true` 가 추가된다(플래그는 이때 소비되어 딱 한 번만 나감. 빈 배치=하트비트도 포함). 에이전트는 이걸 받으면 커서와 오프라인 큐를 버리고 즉시 처음부터 다시 수집한다.
 
 ## 조회 (관리자 토큰)
 
@@ -50,7 +52,14 @@
 ### POST /devices  → 기기 등록 + 토큰 발급 (토큰은 이 응답에만 평문 노출)
 `{"name":"macbook"}` → `{"id":"<uuid>","name":"macbook","token":"aum_..."}`
 
+### POST /devices/{id}/rotate  → 토큰 재발급 (평문 토큰은 이 응답에만 노출)
+`201 {"id","name","token":"aum_...","token_created_at"}`. 기기 ID·이벤트는 그대로 두고 토큰만 바꾼다. 이전 토큰은 즉시 무효(캐시도 바로 만료), 폐기된 기기는 rotate 로 되살아난다. 없으면 `404`.
+
 ### DELETE /devices/{id}  → 토큰 폐기 (이벤트는 유지)
+`?purge=true` 를 붙이면 그 기기의 이벤트와 기기 행까지 한 트랜잭션으로 완전 삭제 → `200 {"id","deleted_events":n,"purged":true}`.
+
+### DELETE /devices/{id}/events  → 이벤트만 삭제 (기기·토큰 유지)
+`200 {"id","deleted_events":n,"resync_requested":true}`. 재수집 플래그가 서고, 그 기기의 다음 `POST /ingest` 응답이 `"resync":true` 를 딱 한 번 실어 보낸다.
 
 ### GET /pricing  → 현재 로드된 pricing.yaml 항목 목록 `{"rates":[{"match","provider","input","output","cache_read","cache_write","cache_write_5m","cache_write_1h","alias_of","estimated"}]}`
 ### POST /pricing/reload  → 파일 다시 읽기
@@ -102,7 +111,20 @@
 **devices**
 - `GET /devices` 행에 `revoked_at`(폐기된 기기만) 추가.
 - `POST /devices` → `201`, 응답에 `token_created_at` 추가.
-- `DELETE /devices/{id}` → `200 {"id":"...","revoked":true}`, 없으면 `404`.
+- `DELETE /devices/{id}` → `200 {"id":"...","revoked":true}`, 없으면 `404`. `?purge=true` 면 `{"id","deleted_events":n,"purged":true}`.
+- `POST /devices/{id}/rotate` → `201`, `POST /devices` 와 같은 모양(`id`,`name`,`token`,`token_created_at`).
+- `DELETE /devices/{id}/events` → `200 {"id","deleted_events":n,"resync_requested":true}`.
+- `purge=true` 는 `true`/`1`/`yes`/`on`(대소문자 무시)만 참으로 본다. 값이 없거나 다른 값이면 평범한 폐기.
+
+**운영 절차**
+
+| 하고 싶은 일 | 하는 법 |
+|---|---|
+| 기기 재등록 (토큰 분실/유출, 재설치) | `POST /devices/{id}/rotate` → 새 토큰으로 `agent install`. **새 기기를 만들지 말 것**: 한 대가 두 행으로 쪼개진다 |
+| 기기 데이터 다시 맞추기 (수집 오류·중복 의심) | `DELETE /devices/{id}/events` 후 에이전트 주기(기본 60s, 유휴 기기는 하트비트 주기 5분)만큼 기다리면 알아서 전량 재전송. 서버에 못 붙는 기기는 그 기기에서 `ai-usage-agent rescan` |
+| 기기 완전 삭제 | `DELETE /devices/{id}?purge=true` (이벤트+기기 행). 토큰만 죽이고 이력은 남기려면 `?purge` 없이 |
+
+재전송이 안전한 이유: `event_id` 가 기기와 무관해서(위 ingest 항목) 서버가 이미 가진 건 duplicate 로 흘린다.
 
 **pricing** — `GET /pricing` 항목에 `effective_from` 추가. `POST /pricing/reload` → `{"ok":true,"rates":n}`; 파싱 실패 시 `400` 이고 기존 표가 유지된다.
 

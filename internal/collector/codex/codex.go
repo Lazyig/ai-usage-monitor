@@ -238,7 +238,7 @@ func decodeLine(raw []byte, offset int64, deviceID string, st *fileState) (event
 		}
 
 		ev := event.UsageEvent{
-			EventID:     event.NewEventID(deviceID, event.SourceCodex, st.SessionID, strconv.FormatInt(offset, 10)),
+			EventID:     event.NewEventID(event.SourceCodex, st.SessionID, strconv.FormatInt(offset, 10)),
 			DeviceID:    deviceID,
 			Source:      event.SourceCodex,
 			Timestamp:   ts.UTC(),
