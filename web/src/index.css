@@ -1348,6 +1348,9 @@ a.btn {
 }
 
 .command-box-copy {
+  /* Sits over a horizontally scrolling <pre>: an opaque body plus a soft left
+     shadow makes it read as an overlay instead of hiding the text underneath. */
+  box-shadow: -10px 0 10px var(--code-bg);
   position: absolute;
   top: 6px;
   right: 6px;
