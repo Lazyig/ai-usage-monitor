@@ -74,22 +74,32 @@ interface MockModel {
   estimated: boolean
 }
 
+// Deliberately >15 distinct models across sources (was 10) so the Models
+// page's "top 15 + 전체 보기" cutoff has something real to expand, and sizes
+// vary widely (unpriced small models next to expensive frontier ones) to
+// exercise both the cost and token-consumption charts.
 const MODELS: Record<Source, MockModel[]> = {
   claude_code: [
     { model: 'claude-opus-5', priceUsdPer1M: { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 }, estimated: false },
     { model: 'claude-sonnet-5', priceUsdPer1M: { input: 2, output: 10, cache_read: 0.2, cache_write: 2.5 }, estimated: false },
     { model: 'claude-fable-5', priceUsdPer1M: { input: 10, output: 50, cache_read: 1, cache_write: 12.5 }, estimated: false },
+    { model: 'claude-haiku-5', priceUsdPer1M: { input: 0.8, output: 4, cache_read: 0.08, cache_write: 1 }, estimated: false },
+    { model: 'claude-opus-5-1', priceUsdPer1M: { input: 6, output: 30, cache_read: 0.6, cache_write: 7.5 }, estimated: false },
   ],
   codex: [
     { model: 'gpt-5.6-terra', priceUsdPer1M: null, estimated: false },
     { model: 'gpt-5.6-sol', priceUsdPer1M: null, estimated: false },
     { model: 'codex-auto-review', priceUsdPer1M: null, estimated: false },
+    { model: 'gpt-5.6-nano', priceUsdPer1M: null, estimated: false },
+    { model: 'gpt-5.7-preview', priceUsdPer1M: null, estimated: false },
   ],
   antigravity: [
     { model: 'gemini-3.7-flash', priceUsdPer1M: { input: 0.3, output: 1.2, cache_read: 0.03, cache_write: 0.375 }, estimated: false },
     { model: 'gemini-default', priceUsdPer1M: { input: 0.3, output: 1.2, cache_read: 0.03, cache_write: 0.375 }, estimated: true },
     { model: 'claude-sonnet-4-6', priceUsdPer1M: { input: 3, output: 15, cache_read: 0.3, cache_write: 3.75 }, estimated: false },
     { model: 'gemini-3-flash-a', priceUsdPer1M: null, estimated: false },
+    { model: 'gemini-3-pro', priceUsdPer1M: { input: 2, output: 8, cache_read: 0.2, cache_write: 2.5 }, estimated: false },
+    { model: 'gemini-2.5-flash-lite', priceUsdPer1M: { input: 0.15, output: 0.6, cache_read: 0.015, cache_write: 0.19 }, estimated: false },
   ],
 }
 
@@ -366,7 +376,8 @@ function buildTimeseries(params: Record<string, string | undefined>): Timeseries
   const { from, to } = normalizeRange(params)
   const bucket = params.bucket === 'hour' ? 'hour' : 'day'
   const groupBy = (params.group_by as GroupBy) ?? 'source'
-  const rows = DATASET.filter((r) => inRange(r.date, from, to))
+  let rows = DATASET.filter((r) => inRange(r.date, from, to))
+  if (params.source) rows = rows.filter((r) => r.source === params.source)
 
   const keyOf = (r: DayRecord): string => {
     switch (groupBy) {
@@ -381,7 +392,10 @@ function buildTimeseries(params: Record<string, string | undefined>): Timeseries
     }
   }
 
-  const series = new Map<string, Map<string, { input: number; output: number; cache_read: number; cache_write: number; cost_usd: number | null }>>()
+  const series = new Map<
+    string,
+    Map<string, { input: number; output: number; cache_read: number; cache_write: number; reasoning: number; cost_usd: number | null; events: number }>
+  >()
 
   for (const r of rows) {
     const key = keyOf(r)
@@ -389,11 +403,13 @@ function buildTimeseries(params: Record<string, string | undefined>): Timeseries
     const points = series.get(key)!
 
     if (bucket === 'day') {
-      const p = points.get(r.date) ?? { input: 0, output: 0, cache_read: 0, cache_write: 0, cost_usd: null }
+      const p = points.get(r.date) ?? { input: 0, output: 0, cache_read: 0, cache_write: 0, reasoning: 0, cost_usd: null, events: 0 }
       p.input += r.input
       p.output += r.output
       p.cache_read += r.cache_read
       p.cache_write += r.cache_write
+      p.reasoning += r.reasoning
+      p.events += r.events
       if (r.cost_usd !== null) p.cost_usd = (p.cost_usd ?? 0) + r.cost_usd
       points.set(r.date, p)
     } else {
@@ -404,11 +420,13 @@ function buildTimeseries(params: Record<string, string | undefined>): Timeseries
       for (const h of bucketHours) {
         const t = `${r.date}T${String(h).padStart(2, '0')}:00:00Z`
         const frac = 1 / bucketHours.length
-        const p = points.get(t) ?? { input: 0, output: 0, cache_read: 0, cache_write: 0, cost_usd: null }
+        const p = points.get(t) ?? { input: 0, output: 0, cache_read: 0, cache_write: 0, reasoning: 0, cost_usd: null, events: 0 }
         p.input += Math.round(r.input * frac)
         p.output += Math.round(r.output * frac)
         p.cache_read += Math.round(r.cache_read * frac)
         p.cache_write += Math.round(r.cache_write * frac)
+        p.reasoning += Math.round(r.reasoning * frac)
+        p.events += Math.round(r.events * frac)
         if (r.cost_usd !== null) p.cost_usd = (p.cost_usd ?? 0) + r.cost_usd * frac
         points.set(t, p)
       }

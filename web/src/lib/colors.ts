@@ -26,3 +26,24 @@ export function colorForKey(key: string, indexIfUnknown: number): string {
 export function labelForKey(key: string): string {
   return (SOURCE_LABELS as Record<string, string>)[key] ?? key
 }
+
+// Token class is a second, independent categorical dimension (not a source),
+// so it draws fixed slots from the same fallback ramp used for arbitrary
+// keys elsewhere (models/projects) — never cycled, in stack order.
+export type TokenClass = 'input' | 'cache_read' | 'cache_write' | 'output'
+
+export const TOKEN_CLASS_ORDER: TokenClass[] = ['input', 'cache_read', 'cache_write', 'output']
+
+export const TOKEN_CLASS_COLORS: Record<TokenClass, string> = {
+  input: 'var(--series-4)',
+  cache_read: 'var(--series-5)',
+  cache_write: 'var(--series-6)',
+  output: 'var(--series-7)',
+}
+
+export const TOKEN_CLASS_LABELS: Record<TokenClass, string> = {
+  input: '입력',
+  cache_read: '캐시 읽기',
+  cache_write: '캐시 쓰기',
+  output: '출력',
+}
