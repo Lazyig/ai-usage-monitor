@@ -28,6 +28,8 @@ type Device struct {
 	LastIngest     *time.Time `json:"last_ingest"`
 	RevokedAt      *time.Time `json:"revoked_at,omitempty"`
 	EventsTotal    int64      `json:"events_total"`
+	// Hostname is what the agent last reported; Name is operator-owned.
+	Hostname string `json:"hostname"`
 }
 
 // DeviceMeta is the self-reported device description an agent sends with ingest.
@@ -86,7 +88,7 @@ func (s *Store) CreateDevice(ctx context.Context, name string) (Device, string, 
 	return Device{ID: id, Name: name, TokenCreatedAt: fromMillis(now)}, token, nil
 }
 
-const deviceCols = `d.id, d.name, d.os, d.arch, d.agent_version, d.token_created_at, d.last_seen, d.last_ingest, d.revoked_at`
+const deviceCols = `d.id, d.name, d.os, d.arch, d.agent_version, d.token_created_at, d.last_seen, d.last_ingest, d.revoked_at, d.hostname`
 
 func scanDevice(sc interface{ Scan(...any) error }) (Device, error) {
 	var (
@@ -94,7 +96,7 @@ func scanDevice(sc interface{ Scan(...any) error }) (Device, error) {
 		created                       int64
 		lastSeen, lastIngest, revoked sql.NullInt64
 	)
-	if err := sc.Scan(&d.ID, &d.Name, &d.OS, &d.Arch, &d.AgentVersion, &created, &lastSeen, &lastIngest, &revoked); err != nil {
+	if err := sc.Scan(&d.ID, &d.Name, &d.OS, &d.Arch, &d.AgentVersion, &created, &lastSeen, &lastIngest, &revoked, &d.Hostname); err != nil {
 		return Device{}, err
 	}
 	d.TokenCreatedAt = fromMillis(created)
@@ -143,7 +145,7 @@ func (s *Store) ListDevices(ctx context.Context) ([]Device, error) {
 			events                        int64
 		)
 		if err := rows.Scan(&d.ID, &d.Name, &d.OS, &d.Arch, &d.AgentVersion, &created,
-			&lastSeen, &lastIngest, &revoked, &events); err != nil {
+			&lastSeen, &lastIngest, &revoked, &d.Hostname, &events); err != nil {
 			return nil, err
 		}
 		d.TokenCreatedAt = fromMillis(created)
@@ -314,7 +316,9 @@ func (s *Store) ConsumeResync(ctx context.Context, id string) (bool, error) {
 }
 
 // TouchDevice records agent metadata and heartbeat timestamps. Empty metadata
-// fields are left untouched. ingest=true also bumps last_ingest.
+// fields are left untouched. The reported name goes to hostname; it only becomes
+// the display name when the operator never gave one. ingest=true also bumps
+// last_ingest.
 func (s *Store) TouchDevice(ctx context.Context, m DeviceMeta, ingest bool, at time.Time) error {
 	ms := toMillis(at)
 	var lastIngest any
@@ -323,14 +327,27 @@ func (s *Store) TouchDevice(ctx context.Context, m DeviceMeta, ingest bool, at t
 	}
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE devices SET
-			name          = CASE WHEN ? <> '' THEN ? ELSE name END,
+			name          = CASE WHEN name = '' AND ? <> '' THEN ? ELSE name END,
+			hostname      = CASE WHEN ? <> '' THEN ? ELSE hostname END,
 			os            = CASE WHEN ? <> '' THEN ? ELSE os END,
 			arch          = CASE WHEN ? <> '' THEN ? ELSE arch END,
 			agent_version = CASE WHEN ? <> '' THEN ? ELSE agent_version END,
 			last_seen     = ?,
 			last_ingest   = COALESCE(?, last_ingest)
 		WHERE id = ?`,
-		m.Name, m.Name, m.OS, m.OS, m.Arch, m.Arch, m.AgentVersion, m.AgentVersion,
+		m.Name, m.Name, m.Name, m.Name, m.OS, m.OS, m.Arch, m.Arch, m.AgentVersion, m.AgentVersion,
 		ms, lastIngest, m.ID)
 	return err
+}
+
+// RenameDevice sets the operator-owned display name.
+func (s *Store) RenameDevice(ctx context.Context, id, name string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE devices SET name = ? WHERE id = ?`, name, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }

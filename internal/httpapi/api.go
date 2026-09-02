@@ -79,6 +79,7 @@ func New(st *store.Store, pr *Pricing, opt Options) http.Handler {
 	mux.Handle("GET /api/v1/devices", a.admin(http.HandlerFunc(a.handleListDevices)))
 	mux.Handle("POST /api/v1/devices", a.admin(http.HandlerFunc(a.handleCreateDevice)))
 	mux.Handle("DELETE /api/v1/devices/{id}", a.admin(http.HandlerFunc(a.handleDeleteDevice)))
+	mux.Handle("PATCH /api/v1/devices/{id}", a.admin(http.HandlerFunc(a.handleRenameDevice)))
 	mux.Handle("POST /api/v1/devices/{id}/rotate", a.admin(http.HandlerFunc(a.handleRotateDevice)))
 	mux.Handle("DELETE /api/v1/devices/{id}/events", a.admin(http.HandlerFunc(a.handlePurgeDeviceEvents)))
 	mux.Handle("GET /api/v1/pricing", a.admin(http.HandlerFunc(a.handlePricing)))

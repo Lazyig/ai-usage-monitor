@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react'
-import { createDevice, deleteDevice, getDevices, purgeDevice, purgeDeviceEvents, rotateDevice } from '../api/client'
+import { createDevice, renameDevice, deleteDevice, getDevices, purgeDevice, purgeDeviceEvents, rotateDevice } from '../api/client'
 import type { Device } from '../api/types'
 import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
@@ -66,6 +66,22 @@ export function Devices() {
     }
   }
 
+  async function onRename(d: Device) {
+    const next = window.prompt('기기 이름을 입력하세요. 에이전트가 보고하는 호스트명과 별개로 유지됩니다.', d.name)
+    if (next === null) return
+    const name = next.trim()
+    if (!name || name === d.name) return
+    setActionError(null)
+    setActionNotice(null)
+    try {
+      await renameDevice(d.id, name)
+      setActionNotice(`이름을 "${name}" 으로 바꿨습니다.`)
+      state.reload()
+    } catch (err) {
+      setActionError(describeError(err))
+    }
+  }
+
   async function onRotate(d: Device) {
     if (!window.confirm(`"${d.name}" 기기의 토큰을 재발급할까요? 기존 토큰은 즉시 사용할 수 없게 됩니다.`)) return
     setRotating(d.id)
@@ -121,6 +137,11 @@ export function Devices() {
         <span>
           {d.name} {!d.revoked_at && isStale(d.last_seen) && <Badge kind="stale" />}{' '}
           {d.revoked_at && <Badge kind="revoked" title={`폐기 시각: ${formatDateTime(d.revoked_at)}`} />}
+          {d.hostname && d.hostname !== d.name && (
+            <span className="muted" title="에이전트가 보고한 호스트명" style={{ display: 'block', fontSize: '0.8em' }}>
+              {d.hostname}
+            </span>
+          )}
         </span>
       ),
       sortValue: (d) => d.name,
@@ -143,6 +164,9 @@ export function Devices() {
       header: '',
       render: (d) => (
         <div className="action-group">
+          <button type="button" className="btn btn-sm" onClick={() => onRename(d)}>
+            이름 변경
+          </button>
           <button type="button" className="btn btn-sm" disabled={rotating === d.id} onClick={() => onRotate(d)}>
             {rotating === d.id ? '재발급 중…' : '토큰 재발급'}
           </button>

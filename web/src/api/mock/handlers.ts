@@ -497,6 +497,16 @@ export async function mockRequest<T>(path: string, opts: MockRequestOptions): Pr
     return delay(resp as unknown as T)
   }
 
+  const deviceRenameMatch = /^\/api\/v1\/devices\/([^/]+)$/.exec(path)
+  if (deviceRenameMatch && method === 'PATCH') {
+    const id = deviceRenameMatch[1]
+    requireDevice(id)
+    const name = String((opts.body as { name?: string } | undefined)?.name ?? '').trim()
+    if (!name) throw new MockApiError(400, 'name must be 1-100 characters')
+    updateDevice(id, (d) => ({ ...d, name }))
+    return delay(requireDevice(id) as unknown as T)
+  }
+
   const deviceRotateMatch = /^\/api\/v1\/devices\/([^/]+)\/rotate$/.exec(path)
   if (deviceRotateMatch && method === 'POST') {
     const id = deviceRotateMatch[1]

@@ -55,6 +55,8 @@
 ### POST /devices/{id}/rotate  → 토큰 재발급 (평문 토큰은 이 응답에만 노출)
 `201 {"id","name","token":"aum_...","token_created_at"}`. 기기 ID·이벤트는 그대로 두고 토큰만 바꾼다. 이전 토큰은 즉시 무효(캐시도 바로 만료), 폐기된 기기는 rotate 로 되살아난다. 없으면 `404`.
 
+### PATCH /devices/{id}  → 이름 변경 `{"name":"거실 PC"}` → 기기 행. 이름은 운영자 소유이며 에이전트가 보고하는 호스트명은 `hostname` 필드에 따로 보관된다(등록 시 이름이 비어 있을 때만 호스트명이 이름으로 채워짐).
+
 ### DELETE /devices/{id}  → 토큰 폐기 (이벤트는 유지)
 `?purge=true` 를 붙이면 그 기기의 이벤트와 기기 행까지 한 트랜잭션으로 완전 삭제 → `200 {"id","deleted_events":n,"purged":true}`.
 

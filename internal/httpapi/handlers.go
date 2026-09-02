@@ -340,6 +340,34 @@ func (a *api) handleRotateDevice(w http.ResponseWriter, r *http.Request) {
 	writeDeviceToken(w, dev, token)
 }
 
+// handleRenameDevice changes the operator-owned display name.
+func (a *api) handleRenameDevice(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" || len(req.Name) > 100 {
+		writeError(w, http.StatusBadRequest, "name must be 1-100 characters")
+		return
+	}
+	if err := a.store.RenameDevice(r.Context(), id, req.Name); err != nil {
+		a.failDevice(w, "rename device", err)
+		return
+	}
+	a.forgetDevice(id) // the auth cache carries the name
+	dev, err := a.store.Device(r.Context(), id)
+	if err != nil {
+		a.fail(w, "rename device", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, dev)
+}
+
 // handleDeleteDevice revokes the token and, with ?purge=true, erases the device
 // and every event it ever sent.
 func (a *api) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {

@@ -4,6 +4,7 @@
 // touching the network — see mock/handlers.ts.
 import { mockRequest } from './mock/handlers'
 import type {
+  Device,
   BreakdownGroupBy,
   BreakdownResponse,
   CreateDeviceResponse,
@@ -188,6 +189,11 @@ export function deleteDevice(id: string): Promise<DeleteDeviceResponse | undefin
 
 /** Issues a fresh token for the device; the old one stops working immediately.
  * Un-revokes a previously-revoked device. Device id and event history are kept. */
+/** Sets the operator-owned display name (agents can no longer overwrite it). */
+export function renameDevice(id: string, name: string): Promise<Device> {
+  return request(`/api/v1/devices/${encodeURIComponent(id)}`, { method: 'PATCH', body: { name } })
+}
+
 export function rotateDevice(id: string): Promise<RotateDeviceResponse> {
   return request(`/api/v1/devices/${encodeURIComponent(id)}/rotate`, { method: 'POST' })
 }

@@ -147,6 +147,8 @@ export interface Device {
   token_created_at: string
   /** Only present once the device's token has been revoked. */
   revoked_at?: string
+  /** Hostname the agent last reported; `name` is operator-owned. */
+  hostname?: string
 }
 
 export interface DevicesResponse {
