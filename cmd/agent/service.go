@@ -299,7 +299,13 @@ func setupServiceLog(dir string) (closeFn func()) {
 	if err != nil {
 		return func() {}
 	}
-	log.SetOutput(io.MultiWriter(f, ignoreErrors{os.Stdout}))
+	// Tee to stdout only when it is something other than a plain file: systemd and
+	// launchd capture it, but `nohup agent run >> agent.log` would log twice.
+	if st, err := os.Stdout.Stat(); err == nil && st.Mode().IsRegular() {
+		log.SetOutput(f)
+	} else {
+		log.SetOutput(io.MultiWriter(f, ignoreErrors{os.Stdout}))
+	}
 	return func() { _ = f.Close() }
 }
 
