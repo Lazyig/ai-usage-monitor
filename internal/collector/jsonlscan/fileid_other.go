@@ -1,6 +1,6 @@
 //go:build !unix
 
-package claudecode
+package jsonlscan
 
 import "io/fs"
 

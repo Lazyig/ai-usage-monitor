@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kardianos/service"
-
 	"ai-usage-monitor/internal/agentcfg"
 	"ai-usage-monitor/internal/cursor"
 )
@@ -67,20 +65,4 @@ func cmdRescan(args []string) error {
 	}
 	fmt.Fprintln(stdout, "the next `run` will scan every log from the beginning")
 	return nil
-}
-
-// runningService returns the service handle only when one is installed and
-// actually running. Every way a platform can say "nothing installed here" -
-// no service manager at all, ErrNotInstalled, an unreadable status - means the
-// agent is not being managed, and rescan just clears the files.
-func runningService(dir string) (service.Service, bool) {
-	svc, err := newService(dir)
-	if err != nil {
-		return nil, false
-	}
-	st, err := svc.Status()
-	if err != nil {
-		return svc, false
-	}
-	return svc, st == service.StatusRunning
 }

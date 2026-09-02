@@ -1,6 +1,6 @@
 //go:build unix
 
-package codex
+package jsonlscan
 
 import (
 	"io/fs"

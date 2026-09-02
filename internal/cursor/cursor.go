@@ -45,9 +45,6 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 
-// Path is the file this store is backed by.
-func (s *Store) Path() string { return s.path }
-
 // Get returns the stored cursor for source, or nil for "from the beginning".
 func (s *Store) Get(source event.Source) collector.Cursor {
 	s.mu.Lock()

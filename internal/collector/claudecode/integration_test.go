@@ -123,7 +123,7 @@ func TestIntegrationRealHome(t *testing.T) {
 // files, independently of the collector's own decoding.
 func countNativeKeys(t *testing.T, root string) int {
 	t.Helper()
-	files, err := jsonlFiles(root)
+	files, err := scanner{Root: root, SkipDir: skipDir}.Files()
 	if err != nil {
 		t.Fatalf("walk: %v", err)
 	}

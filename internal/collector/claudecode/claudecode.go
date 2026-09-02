@@ -7,12 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"ai-usage-monitor/internal/collector"
+	"ai-usage-monitor/internal/collector/jsonlscan"
 	"ai-usage-monitor/internal/event"
 )
 
@@ -32,6 +31,21 @@ func New(root string) collector.Collector { return &Collector{root: root} }
 
 // Name implements collector.Collector.
 func (c *Collector) Name() event.Source { return event.SourceClaudeCode }
+
+// fileState is what the cursor keeps per transcript. Claude Code carries every
+// field an event needs on the line itself, so the shared resume point is all
+// there is to remember.
+type fileState = jsonlscan.FileState
+
+type (
+	scanner     = jsonlscan.Scanner[fileState, *fileState]
+	cursorState = jsonlscan.Cursor[fileState]
+)
+
+func decodeCursor(raw []byte) cursorState { return jsonlscan.DecodeCursor[fileState](raw) }
+
+// skipDir prunes memory/ subtrees: they only ever hold markdown notes.
+func skipDir(name string) bool { return name == "memory" }
 
 // line is the subset of a transcript record we care about. Everything else,
 // including all prompt and response text, is deliberately left undecoded.
@@ -83,40 +97,15 @@ type outputDetails struct {
 // EventID, and the server keeps the first write, so the total is never inflated -
 // it can only be slightly low for that one message until a later full re-read.
 func (c *Collector) Scan(ctx context.Context, deviceID string, cur collector.Cursor) ([]event.UsageEvent, collector.Cursor, error) {
-	state := decodeCursor(cur)
-
-	files, err := jsonlFiles(c.root)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, cur, nil // tool not installed on this device
-		}
-		return nil, cur, fmt.Errorf("claudecode: walk %s: %w", c.root, err)
-	}
-
-	next := cursorState{Files: make(map[string]fileState, len(files))}
 	var (
-		events  []event.UsageEvent
-		byKey   = map[string]int{} // native key -> index in events (last write wins)
-		fileErr []error
-		okFiles int
+		events []event.UsageEvent
+		byKey  = map[string]int{} // native key -> index in events (last write wins)
 	)
-
-	for _, path := range files {
-		if err := ctx.Err(); err != nil {
-			return events, cur, err
-		}
-
-		key := cursorKey(c.root, path)
-		fi, err := os.Stat(path)
-		if err != nil {
-			fileErr = append(fileErr, fmt.Errorf("claudecode: stat %s: %w", path, err))
-			continue
-		}
-		ino, hasIno := fileIdentity(fi)
-		prev, seen := state.Files[key]
-		start := startOffset(prev, seen, fi, ino, hasIno)
-
-		end, err := readAppended(path, start, func(offset int64, raw []byte) error {
+	sc := scanner{
+		Root:    c.root,
+		Name:    "claudecode",
+		SkipDir: skipDir,
+		Line: func(_ *fileState, _ int64, raw []byte) error {
 			ev, nativeKey, ok := decodeLine(raw, deviceID)
 			if !ok {
 				return nil
@@ -128,20 +117,15 @@ func (c *Collector) Scan(ctx context.Context, deviceID string, cur collector.Cur
 			byKey[nativeKey] = len(events)
 			events = append(events, ev)
 			return nil
-		})
-		if err != nil {
-			// Keep whatever we managed to consume so the next scan resumes there.
-			fileErr = append(fileErr, fmt.Errorf("claudecode: read %s: %w", path, err))
-		} else {
-			okFiles++
-		}
-		next.Files[key] = newFileState(end, fi, ino, hasIno)
+		},
 	}
 
-	// Nothing at all could be read but files existed: report it so the agent can
-	// surface a broken install instead of silently reporting zero usage.
-	if okFiles == 0 && len(fileErr) > 0 {
-		return events, cur, errors.Join(fileErr...)
+	next, err := sc.Scan(ctx, decodeCursor(cur))
+	switch {
+	case errors.Is(err, jsonlscan.ErrNoRoot):
+		return nil, cur, nil // tool not installed on this device
+	case err != nil:
+		return events, cur, err
 	}
 
 	encoded, err := json.Marshal(next)
@@ -149,15 +133,6 @@ func (c *Collector) Scan(ctx context.Context, deviceID string, cur collector.Cur
 		return events, cur, fmt.Errorf("claudecode: encode cursor: %w", err)
 	}
 	return events, encoded, nil
-}
-
-// cursorKey is the stable, OS independent cursor map key for path.
-func cursorKey(root, path string) string {
-	rel, err := filepath.Rel(root, path)
-	if err != nil {
-		rel = path
-	}
-	return filepath.ToSlash(rel)
 }
 
 // decodeLine converts one transcript line into an event. ok is false for every
