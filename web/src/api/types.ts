@@ -156,6 +156,28 @@ export interface DeleteDeviceResponse {
   revoked: boolean
 }
 
+/** POST /api/v1/devices/{id}/rotate — new token shown once; the old token
+ * stops working immediately; device id and history are kept. */
+export interface RotateDeviceResponse {
+  id: string
+  name: string
+  token: string
+  token_created_at: string
+}
+
+/** DELETE /api/v1/devices/{id}/events — deletes the device's events only;
+ * the agent re-sends its full history on its next heartbeat (<= 1 min). */
+export interface PurgeDeviceEventsResponse {
+  deleted_events: number
+  resync_requested: boolean
+}
+
+/** DELETE /api/v1/devices/{id}?purge=true — deletes events AND the device. */
+export interface PurgeDeviceResponse {
+  deleted_events: number
+  purged: boolean
+}
+
 // Any numeric field can come back as `null` (price unknown) and provider /
 // alias_of / effective_from can be missing entirely depending on the rate's
 // shape in pricing.yaml — never assume they're present.

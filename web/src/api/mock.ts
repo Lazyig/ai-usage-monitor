@@ -14,6 +14,9 @@ import type {
   HealthResponse,
   PricingRate,
   PricingResponse,
+  PurgeDeviceEventsResponse,
+  PurgeDeviceResponse,
+  RotateDeviceResponse,
   Source,
   SummaryResponse,
   SummaryRowBase,
@@ -227,7 +230,9 @@ function buildDataset(): DayRecord[] {
   return records
 }
 
-const DATASET = buildDataset()
+// mutable: purge (재동기화/완전 삭제) actions remove a device's records so the
+// other mock endpoints (summary/timeseries/breakdown/events) reflect it too
+let DATASET = buildDataset()
 
 // fill device event totals now that the dataset exists (only for devices
 // that are actually part of the synthetic dataset — leaves e.g. the
@@ -284,6 +289,16 @@ function flatEvents(): UsageEventDTO[] {
   out.sort((a, b) => (a.ts < b.ts ? 1 : -1))
   flatEventsCache = out
   return out
+}
+
+// Removes every DATASET/flatEvents record for a device (재동기화/완전 삭제) so
+// summary/timeseries/breakdown/events immediately reflect the purge, and
+// returns the number of events removed (mirrors the server's `deleted_events`).
+function purgeDeviceRecords(deviceId: string): number {
+  const deleted = DATASET.filter((r) => r.deviceId === deviceId).reduce((s, r) => s + r.events, 0)
+  DATASET = DATASET.filter((r) => r.deviceId !== deviceId)
+  flatEventsCache = null
+  return deleted
 }
 
 // ---- request helpers ---------------------------------------------------
@@ -652,11 +667,46 @@ export async function mockRequest<T>(path: string, opts: MockRequestOptions): Pr
     return delay(resp as unknown as T)
   }
 
+  const deviceRotateMatch = /^\/api\/v1\/devices\/([^/]+)\/rotate$/.exec(path)
+  if (deviceRotateMatch && method === 'POST') {
+    const id = deviceRotateMatch[1]
+    const existing = devices.find((d) => d.id === id)
+    if (!existing) throw new MockApiError(404, 'device not found')
+    const tokenCreatedAt = new Date().toISOString()
+    // Un-revokes the device (rotating a revoked device's token brings it back
+    // to life, per the real server contract) and bumps token_created_at.
+    devices = devices.map((d) => (d.id === id ? { ...d, token_created_at: tokenCreatedAt, revoked_at: undefined } : d))
+    const resp: RotateDeviceResponse = {
+      id,
+      name: existing.name,
+      token: `aum_${hashStr(id + tokenCreatedAt).toString(16)}${Date.now().toString(16)}`,
+      token_created_at: tokenCreatedAt,
+    }
+    return delay(resp as unknown as T)
+  }
+
+  const deviceEventsMatch = /^\/api\/v1\/devices\/([^/]+)\/events$/.exec(path)
+  if (deviceEventsMatch && method === 'DELETE') {
+    const id = deviceEventsMatch[1]
+    const existing = devices.find((d) => d.id === id)
+    if (!existing) throw new MockApiError(404, 'device not found')
+    const deleted = purgeDeviceRecords(id)
+    devices = devices.map((d) => (d.id === id ? { ...d, events_total: 0 } : d))
+    const resp: PurgeDeviceEventsResponse = { deleted_events: deleted, resync_requested: true }
+    return delay(resp as unknown as T)
+  }
+
   const deviceDeleteMatch = /^\/api\/v1\/devices\/([^/]+)$/.exec(path)
   if (deviceDeleteMatch && method === 'DELETE') {
     const id = deviceDeleteMatch[1]
     const existing = devices.find((d) => d.id === id)
     if (!existing) throw new MockApiError(404, 'device not found')
+    if (params.purge === 'true') {
+      const deleted = purgeDeviceRecords(id)
+      devices = devices.filter((d) => d.id !== id)
+      const resp: PurgeDeviceResponse = { deleted_events: deleted, purged: true }
+      return delay(resp as unknown as T)
+    }
     // Real server behavior: revoke the token but keep the row (events stay
     // intact) — never remove the device from the list.
     const revokedAt = new Date().toISOString()

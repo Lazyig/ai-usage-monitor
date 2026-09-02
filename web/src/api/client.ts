@@ -14,6 +14,9 @@ import type {
   GroupBy,
   HealthResponse,
   PricingResponse,
+  PurgeDeviceEventsResponse,
+  PurgeDeviceResponse,
+  RotateDeviceResponse,
   SummaryResponse,
   TimeseriesBucket,
   TimeseriesResponse,
@@ -168,6 +171,23 @@ export function createDevice(name: string): Promise<CreateDeviceResponse> {
  * (`{"id","revoked"}`) or, tolerated here just in case, `204` with none. */
 export function deleteDevice(id: string): Promise<DeleteDeviceResponse | undefined> {
   return request(`/api/v1/devices/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+/** Issues a fresh token for the device; the old one stops working immediately.
+ * Un-revokes a previously-revoked device. Device id and event history are kept. */
+export function rotateDevice(id: string): Promise<RotateDeviceResponse> {
+  return request(`/api/v1/devices/${encodeURIComponent(id)}/rotate`, { method: 'POST' })
+}
+
+/** Deletes the device's events only; the agent re-sends its full history on
+ * its next heartbeat (<= 1 min). Used for "재동기화". */
+export function purgeDeviceEvents(id: string): Promise<PurgeDeviceEventsResponse> {
+  return request(`/api/v1/devices/${encodeURIComponent(id)}/events`, { method: 'DELETE' })
+}
+
+/** Deletes the device's events AND the device itself. Irreversible. */
+export function purgeDevice(id: string): Promise<PurgeDeviceResponse> {
+  return request(`/api/v1/devices/${encodeURIComponent(id)}`, { method: 'DELETE', params: { purge: 'true' } })
 }
 
 export function getPricing(): Promise<PricingResponse> {
