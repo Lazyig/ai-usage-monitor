@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -376,11 +377,12 @@ func TestQueryEndpoints(t *testing.T) {
 }
 
 func TestHealthAndPricing(t *testing.T) {
-	h := newHarness(t, Options{AdminToken: adminToken, Version: "1.2.3"})
+	dist := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<html>dashboard</html>")}}
+	h := newHarness(t, Options{AdminToken: adminToken, Version: "1.2.3", SPA: dist, SPABuilt: true})
 
 	w := h.do(http.MethodGet, "/health", "", nil)
 	if w.Code != http.StatusOK {
-		t.Fatalf("health = %d", w.Code)
+		t.Fatalf("health = %d %s", w.Code, w.Body)
 	}
 	var health struct {
 		OK      bool   `json:"ok"`
@@ -544,5 +546,36 @@ func TestSPAFallback(t *testing.T) {
 		if strings.Contains(w.Body.String(), "dashboard") {
 			t.Errorf("%s fell back to the SPA", path)
 		}
+	}
+}
+
+// Readiness must fail when the frontend is missing or the process is draining,
+// while liveness keeps answering; that split is what lets k8s roll pods without
+// sending traffic to one that cannot serve the dashboard.
+func TestReadinessGates(t *testing.T) {
+	noSPA := newHarness(t, Options{AdminToken: adminToken, Version: "x"})
+	if w := noSPA.do(http.MethodGet, "/health/ready", "", nil); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "frontend") {
+		t.Fatalf("ready without SPA = %d %s", w.Code, w.Body)
+	}
+	if w := noSPA.do(http.MethodGet, "/health/live", "", nil); w.Code != http.StatusOK {
+		t.Fatalf("live without SPA = %d", w.Code)
+	}
+
+	var draining atomic.Bool
+	dist := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<html>dashboard</html>")}}
+	h := newHarness(t, Options{AdminToken: adminToken, Version: "x", SPA: dist, SPABuilt: true, Draining: &draining})
+	if w := h.do(http.MethodGet, "/health/ready", "", nil); w.Code != http.StatusOK {
+		t.Fatalf("ready = %d %s", w.Code, w.Body)
+	}
+	draining.Store(true)
+	if w := h.do(http.MethodGet, "/health/ready", "", nil); w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "draining") {
+		t.Fatalf("ready while draining = %d %s", w.Code, w.Body)
+	}
+	if w := h.do(http.MethodGet, "/health/live", "", nil); w.Code != http.StatusOK {
+		t.Fatalf("live while draining = %d", w.Code)
+	}
+	// The SPA fallback must not swallow the probe paths.
+	if w := h.do(http.MethodGet, "/health/nope", "", nil); w.Code != http.StatusNotFound || strings.Contains(w.Body.String(), "dashboard") {
+		t.Fatalf("/health/nope = %d %s", w.Code, w.Body)
 	}
 }

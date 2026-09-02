@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -70,7 +71,9 @@ func main() {
 		"admin_token_set", adminToken != "",
 	)
 
+	var draining atomic.Bool
 	handler := httpapi.New(st, pricingProvider, httpapi.Options{
+		Draining:     &draining,
 		AdminToken:   adminToken,
 		Version:      version,
 		DownloadsDir: *downloadsDir,
@@ -104,7 +107,17 @@ func main() {
 		log.Error("listen", "err", err)
 		os.Exit(1)
 	case <-ctx.Done():
-		log.Info("shutting down")
+		// Fail readiness first and give the endpoints controller / load balancer
+		// time to stop routing to this pod; only then close the listener. Without
+		// the pause a rolling update still drops the requests in flight to the
+		// old pod's address.
+		draining.Store(true)
+		delay := shutdownDelay()
+		log.Info("shutting down", "drain_delay", delay)
+		select {
+		case <-time.After(delay):
+		case <-errc:
+		}
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -127,4 +140,15 @@ func envOr(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// shutdownDelay is how long readiness stays red before the listener closes
+// (SHUTDOWN_DELAY, default 8s; k8s endpoint propagation is usually 1-3s).
+func shutdownDelay() time.Duration {
+	if v := os.Getenv("SHUTDOWN_DELAY"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d >= 0 {
+			return d
+		}
+	}
+	return 8 * time.Second
 }

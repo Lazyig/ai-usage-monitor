@@ -418,19 +418,78 @@ func (a *api) handlePricingReload(w http.ResponseWriter, r *http.Request) {
 
 // --- health ----------------------------------------------------------------
 
-func (a *api) handleHealth(w http.ResponseWriter, r *http.Request) {
+// readiness evaluates everything a request needs: the database answers, a
+// price table is loaded and the dashboard bundle is embedded. A process that is
+// draining (SIGTERM received) reports not ready so traffic moves away first.
+type readiness struct {
+	ok     bool
+	checks map[string]string // check -> "ok" or the reason it failed
+	counts store.Counts
+}
+
+func (a *api) readiness(r *http.Request) readiness {
+	rd := readiness{ok: true, checks: map[string]string{}}
+	note := func(name string, err string) {
+		if err == "" {
+			rd.checks[name] = "ok"
+			return
+		}
+		rd.checks[name] = err
+		rd.ok = false
+	}
 	c, err := a.store.Counts(r.Context())
 	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-			"ok": false, "version": a.opt.Version, "error": "database unavailable",
-		})
-		return
+		note("database", "unavailable: "+err.Error())
+	} else {
+		rd.counts = c
+		note("database", "")
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":      true,
+	if len(a.pricing.Rates()) == 0 {
+		note("pricing", "no rates loaded")
+	} else {
+		note("pricing", "")
+	}
+	if !a.opt.SPABuilt {
+		note("frontend", "SPA bundle not embedded")
+	} else {
+		note("frontend", "")
+	}
+	if a.opt.Draining != nil && a.opt.Draining.Load() {
+		note("draining", "shutting down")
+	}
+	return rd
+}
+
+// handleLive answers as long as the process serves HTTP; k8s restarts the pod
+// when this fails, which is only right for a hung process, not a bad dependency.
+func (a *api) handleLive(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": a.opt.Version})
+}
+
+// handleReady gates traffic: 503 until database, pricing and frontend are all
+// good, and again once the process starts draining.
+func (a *api) handleReady(w http.ResponseWriter, r *http.Request) {
+	rd := a.readiness(r)
+	status := http.StatusOK
+	if !rd.ok {
+		status = http.StatusServiceUnavailable
+	}
+	writeJSON(w, status, map[string]any{"ok": rd.ok, "version": a.opt.Version, "checks": rd.checks})
+}
+
+// handleHealth is the human-facing summary: readiness plus row counts.
+func (a *api) handleHealth(w http.ResponseWriter, r *http.Request) {
+	rd := a.readiness(r)
+	status := http.StatusOK
+	if !rd.ok {
+		status = http.StatusServiceUnavailable
+	}
+	writeJSON(w, status, map[string]any{
+		"ok":      rd.ok,
 		"version": a.opt.Version,
-		"events":  c.Events,
-		"devices": c.Devices,
+		"events":  rd.counts.Events,
+		"devices": rd.counts.Devices,
+		"checks":  rd.checks,
 	})
 }
 

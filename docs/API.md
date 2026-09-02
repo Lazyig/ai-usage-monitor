@@ -66,7 +66,9 @@
 ### GET /pricing  → 현재 로드된 pricing.yaml 항목 목록 `{"rates":[{"match","provider","input","output","cache_read","cache_write","cache_write_5m","cache_write_1h","alias_of","estimated"}]}`
 ### POST /pricing/reload  → 파일 다시 읽기
 
-### GET /health  (토큰 불필요) → `{"ok":true,"version":"...","events":n}`
+### GET /health  (토큰 불필요) → `{"ok":true,"version":"...","events":n,"devices":n,"checks":{"database":"ok","pricing":"ok","frontend":"ok"}}` — 하나라도 실패하면 503
+### GET /health/live  → 프로세스 생존만 (liveness probe)
+### GET /health/ready → DB 조회·단가표 로드·SPA 번들 포함·종료 중 아님을 모두 만족할 때 200, 아니면 503 과 `checks` (readiness/startup probe). SIGTERM 을 받으면 `SHUTDOWN_DELAY`(기본 8s) 동안 503 을 먼저 돌려 트래픽을 뺀 뒤 리스너를 닫는다.
 
 ## 다운로드 (토큰 불필요)
 

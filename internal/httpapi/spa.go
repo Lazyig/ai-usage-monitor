@@ -14,7 +14,7 @@ import (
 // route and must still get index.html.
 func (a *api) handleSPA(w http.ResponseWriter, r *http.Request) {
 	p := r.URL.Path
-	if strings.HasPrefix(p, "/api/") || p == "/downloads" || strings.HasPrefix(p, "/downloads/") || p == "/health" {
+	if strings.HasPrefix(p, "/api/") || p == "/downloads" || strings.HasPrefix(p, "/downloads/") || p == "/health" || strings.HasPrefix(p, "/health/") {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"ai-usage-monitor/internal/store"
@@ -41,6 +42,9 @@ type Options struct {
 	SPA          fs.FS  // built SPA (web.Dist())
 	SPABuilt     bool   // false => "/" serves the "not built" notice
 	Logger       *slog.Logger
+	// Draining, when set by the process on SIGTERM, makes readiness fail so the
+	// load balancer stops sending new traffic before the listener closes.
+	Draining *atomic.Bool
 }
 
 type api struct {
@@ -87,6 +91,8 @@ func New(st *store.Store, pr *Pricing, opt Options) http.Handler {
 
 	// Open endpoints.
 	mux.HandleFunc("GET /health", a.handleHealth)
+	mux.HandleFunc("GET /health/live", a.handleLive)
+	mux.HandleFunc("GET /health/ready", a.handleReady)
 	mux.HandleFunc("GET /api/v1/health", a.handleHealth)
 	mux.HandleFunc("GET /downloads", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/downloads/", http.StatusMovedPermanently)
@@ -115,7 +121,7 @@ func limitBody(h http.Handler) http.Handler {
 // noStoreAPI keeps API answers out of every cache; the dashboard polls them.
 func noStoreAPI(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/health" {
+		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/health" || strings.HasPrefix(r.URL.Path, "/health/") {
 			w.Header().Set("Cache-Control", "no-store")
 		}
 		h.ServeHTTP(w, r)
