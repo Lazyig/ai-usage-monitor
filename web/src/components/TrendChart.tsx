@@ -3,6 +3,7 @@ import type { TimeseriesSeries } from '../api/types'
 import { ChartTooltip } from './ChartTooltip'
 import { type Metric, formatBucketLabel, mergeSeries, metricFormat, metricOfPoint } from '../lib/chartData'
 import { labelForKey } from '../lib/colors'
+import { PHONE_QUERY, useMediaQuery } from '../hooks/useMediaQuery'
 
 interface TrendChartProps {
   series: TimeseriesSeries[]
@@ -29,9 +30,13 @@ interface TrendChartProps {
  * per series, with the shared themed tooltip and legend.
  */
 export function TrendChart({ series, mode, labelFor = labelForKey, colorFor, variant = 'bar', height = 288, barStroke = true }: TrendChartProps) {
+  const isPhone = useMediaQuery(PHONE_QUERY)
   const { data, keys } = mergeSeries(series, metricOfPoint(mode))
   if (data.length === 0) return null
   const format = metricFormat(mode)
+  const effectiveHeight = isPhone ? Math.min(height, 220) : height
+  const tickFontSize = isPhone ? 10 : 11
+  const legendFontSize = isPhone ? 11 : 12
 
   // The two variants share every axis, the grid, the tooltip and the legend;
   // only the chart/mark pair and the tooltip cursor differ.
@@ -41,27 +46,31 @@ export function TrendChart({ series, mode, labelFor = labelForKey, colorFor, var
       <XAxis
         dataKey="t"
         tickFormatter={formatBucketLabel}
-        tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+        tick={{ fill: 'var(--text-muted)', fontSize: tickFontSize }}
         axisLine={{ stroke: 'var(--border-strong)' }}
         tickLine={false}
+        interval={isPhone ? 'preserveStartEnd' : undefined}
       />
       <YAxis
         tickFormatter={(v: number) => format(v)}
-        tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+        tick={{ fill: 'var(--text-muted)', fontSize: tickFontSize }}
         axisLine={false}
         tickLine={false}
-        width={64}
+        width={isPhone ? 48 : 64}
       />
       <Tooltip
         content={<ChartTooltip formatValue={format} labelFor={labelFor} />}
         cursor={variant === 'area' ? { stroke: 'var(--border-strong)', strokeWidth: 1 } : { fill: 'var(--border)', opacity: 0.4 }}
       />
-      <Legend formatter={(value: string) => <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{labelFor(value)}</span>} />
+      <Legend
+        formatter={(value: string) => <span style={{ color: 'var(--text-secondary)', fontSize: legendFontSize }}>{labelFor(value)}</span>}
+        wrapperStyle={{ overflow: 'hidden' }}
+      />
     </>
   )
 
   return (
-    <ResponsiveContainer width="100%" height={height}>
+    <ResponsiveContainer width="100%" height={effectiveHeight}>
       {variant === 'area' ? (
         <AreaChart data={data} margin={{ left: 4, right: 4 }}>
           {axes}
