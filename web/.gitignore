@@ -8,7 +8,10 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-dist
+# dist is build output, but the placeholder index.html and .gitkeep are tracked so go:embed always matches
+dist/*
+!dist/index.html
+!dist/.gitkeep
 dist-ssr
 *.local
 
