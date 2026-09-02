@@ -82,7 +82,7 @@ build:agents:
   script:
     - *set-version
     - scripts/build-agents.sh dist
-    - cp scripts/install.sh scripts/install.ps1 dist/
+    - cp scripts/install.sh scripts/install.ps1 scripts/uninstall.sh scripts/uninstall.ps1 dist/
     - scripts/upload-packages.sh dist
   artifacts:
     paths:

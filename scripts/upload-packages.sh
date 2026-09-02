@@ -6,7 +6,7 @@ set -eu
 DIR="${1:-dist}"
 VERSION="${VERSION:?VERSION required}"
 base="$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/ai-usage-agent"
-for f in "$DIR"/ai-usage-agent_* "$DIR"/manifest.json "$DIR"/install.sh "$DIR"/install.ps1; do
+for f in "$DIR"/ai-usage-agent_* "$DIR"/manifest.json "$DIR"/install.sh "$DIR"/install.ps1 "$DIR"/uninstall.sh "$DIR"/uninstall.ps1; do
   [ -f "$f" ] || continue
   name=$(basename "$f")
   for v in "$VERSION" latest; do

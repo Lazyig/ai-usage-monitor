@@ -7,7 +7,7 @@ import { type Column, DataTable } from '../components/DataTable'
 import { StateContainer } from '../components/StateContainer'
 import { describeError } from '../lib/errors'
 import { formatBytes, formatDateTime } from '../lib/format'
-import { installCommands } from '../lib/installCommands'
+import { installCommands, uninstallCommands } from '../lib/installCommands'
 import { useFilters } from '../state/FiltersContext'
 
 const TOKEN_PLACEHOLDER = '<기기 관리에서 발급받은 토큰>'
@@ -76,6 +76,7 @@ export function Downloads() {
       )}
 
       {state.status === 'success' && <InstallGuideCard />}
+      {state.status === 'success' && <UninstallGuideCard />}
     </div>
   )
 }
@@ -126,8 +127,8 @@ function DownloadsTable({ files }: { files: DownloadFile[] }) {
 /** Splits a command string around a placeholder substring so the
  * placeholder can be highlighted in a distinct color; the rest of the
  * command renders as plain monospace text. */
-function CommandBox({ command, highlight }: { command: string; highlight: string }) {
-  const idx = command.indexOf(highlight)
+function CommandBox({ command, highlight = '' }: { command: string; highlight?: string }) {
+  const idx = highlight ? command.indexOf(highlight) : -1
   const before = idx >= 0 ? command.slice(0, idx) : command
   const after = idx >= 0 ? command.slice(idx + highlight.length) : ''
   return (
@@ -168,7 +169,7 @@ function InstallGuideCard() {
           <ol className="install-steps">
             <li>기기 관리에서 기기 추가 → 토큰 발급</li>
             <li>아래 명령을 실행</li>
-            <li>1분 안에 Devices 에 나타남</li>
+            <li>1분 안에 기기 관리 목록에 나타남</li>
           </ol>
         </div>
         <div className="install-panel">
@@ -177,14 +178,58 @@ function InstallGuideCard() {
           <ol className="install-steps">
             <li>기기 관리에서 기기 추가 → 토큰 발급</li>
             <li>아래 명령을 실행</li>
-            <li>1분 안에 Devices 에 나타남</li>
+            <li>1분 안에 기기 관리 목록에 나타남</li>
           </ol>
           <p className="install-note">관리자 PowerShell 에서 실행하세요.</p>
         </div>
       </div>
       <p className="install-note">
-        <span className="token-placeholder">{TOKEN_PLACEHOLDER}</span> 자리에는 실제 토큰이 들어갑니다 — 기기를 추가하면 Devices
-        페이지에 토큰이 포함된 실제 명령이 표시됩니다.
+        <span className="token-placeholder">{TOKEN_PLACEHOLDER}</span> 자리에는 실제 토큰이 들어갑니다 — 기기 관리에서 기기를 추가하면
+        토큰이 포함된 실제 명령이 표시됩니다.
+      </p>
+    </Card>
+  )
+}
+
+function UninstallGuideCard() {
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const cmds = uninstallCommands(origin)
+  return (
+    <Card
+      className="section"
+      title="에이전트 제거"
+      subtitle="서비스 등록을 해제하고 바이너리와 로컬 상태(설정·커서·오프라인 큐)를 지웁니다."
+    >
+      <div className="install-tabs">
+        <div className="install-panel">
+          <h3>Linux / macOS</h3>
+          <CommandBox command={cmds.unix} />
+          <ol className="install-steps">
+            <li>systemd(user) 또는 launchd 등록 해제</li>
+            <li>바이너리(/usr/local/bin 또는 ~/.local/bin) 삭제</li>
+            <li>~/.config/ai-usage-agent (macOS 는 ~/Library/Application Support) 삭제</li>
+          </ol>
+          <p className="install-note">
+            로컬 상태를 남기려면 <code>| sh -s -- --keep-state</code> 로 실행하세요.
+          </p>
+        </div>
+        <div className="install-panel">
+          <h3>Windows (PowerShell)</h3>
+          <CommandBox command={cmds.windows} />
+          <ol className="install-steps">
+            <li>ai-usage-agent 서비스 중지 및 삭제</li>
+            <li>%LOCALAPPDATA%\ai-usage-agent 삭제</li>
+            <li>%APPDATA%\ai-usage-agent (설정·커서·큐) 삭제</li>
+          </ol>
+          <p className="install-note">
+            관리자 PowerShell 에서 실행하세요. 로컬 상태를 남기려면 명령 끝에 <code> -KeepState</code> 를 붙이세요.
+          </p>
+        </div>
+      </div>
+      <p className="install-note">
+        제거 후에도 서버는 그 기기의 토큰을 계속 받아들이므로, 기기 관리에서 <strong>토큰 폐기</strong>(이력 유지) 또는{' '}
+        <strong>완전 삭제</strong>(이력까지 삭제)로 마무리하세요. 같은 기기를 다시 설치하면 이벤트 ID 가 로그 기준이라 중복 집계는 생기지
+        않습니다.
       </p>
     </Card>
   )
