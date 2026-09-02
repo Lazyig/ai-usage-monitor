@@ -69,7 +69,7 @@ function toParams(params: object): Params {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
   params?: Params
   body?: unknown
   /** Override the stored token, used only by the login screen to verify a token before storing it. */
