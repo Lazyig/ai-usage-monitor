@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -30,6 +31,23 @@ type Rate struct {
 	CacheWrite1h  *float64 `yaml:"cache_write_1h,omitempty"`
 	EffectiveFrom string   `yaml:"effective_from,omitempty"` // YYYY-MM-DD, optional
 	effectiveFrom time.Time
+
+	// LongContext, when set, replaces the base rates for the WHOLE request once
+	// its prompt (input + every cache class) exceeds Threshold tokens. This is
+	// how OpenAI (>272K) and Gemini Pro (>200K) bill; Claude 4.6+ has no such tier.
+	LongContext *LongContext `yaml:"long_context,omitempty"`
+}
+
+// LongContext is the over-threshold rate set of a Rate. Nil fields fall back to
+// the base rate of the same class.
+type LongContext struct {
+	Threshold    int64    `yaml:"threshold"`
+	Input        *float64 `yaml:"input,omitempty"`
+	Output       *float64 `yaml:"output,omitempty"`
+	CacheRead    *float64 `yaml:"cache_read,omitempty"`
+	CacheWrite   *float64 `yaml:"cache_write,omitempty"`
+	CacheWrite5m *float64 `yaml:"cache_write_5m,omitempty"`
+	CacheWrite1h *float64 `yaml:"cache_write_1h,omitempty"`
 }
 
 // Table is an ordered list of rates; first match wins, so put specific entries first.
@@ -60,6 +78,9 @@ func Parse(b []byte) (*Table, error) {
 		if _, err := path.Match(r.Match, ""); err != nil {
 			return nil, fmt.Errorf("pricing: bad glob %q: %w", r.Match, err)
 		}
+		if r.LongContext != nil && r.LongContext.Threshold <= 0 {
+			return nil, fmt.Errorf("pricing: %q long_context.threshold must be > 0", r.Match)
+		}
 		if r.EffectiveFrom != "" {
 			t, err := time.Parse("2006-01-02", r.EffectiveFrom)
 			if err != nil {
@@ -71,9 +92,31 @@ func Parse(b []byte) (*Table, error) {
 	return &Table{rates: rates}, nil
 }
 
+// Thresholds lists every distinct long_context threshold in the table, ascending.
+// The store groups events by these boundaries so aggregated rows can still be
+// priced per tier (a tier rule is not linear, so summing first would be wrong).
+func (t *Table) Thresholds() []int64 {
+	if t == nil {
+		return nil
+	}
+	seen := map[int64]bool{}
+	var out []int64
+	for _, r := range t.rates {
+		if r.LongContext != nil && !seen[r.LongContext.Threshold] {
+			seen[r.LongContext.Threshold] = true
+			out = append(out, r.LongContext.Threshold)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
 // Lookup returns the rate for model at time at, following alias_of once.
 // ok is false when no entry matches.
 func (t *Table) Lookup(model string, at time.Time) (r Rate, ok bool) {
+	if t == nil {
+		return Rate{}, false
+	}
 	r, ok = t.match(model, at)
 	if ok && r.AliasOf != "" {
 		base, baseOK := t.match(r.AliasOf, at)
@@ -107,11 +150,33 @@ type Cost struct {
 	Estimated bool    // priced via alias / marked estimated in the table
 }
 
-// Cost prices an event. Token classes with zero count never require a price.
+// Cost prices a single event. Token classes with zero count never require a
+// price. The long-context tier is decided by the event's own prompt size.
 func (t *Table) Cost(e event.UsageEvent) Cost {
+	return t.CostFor(e, e.TotalInput())
+}
+
+// CostFor prices e as if its request prompt had promptTokens tokens. Aggregated
+// rows use it with a representative prompt size for their tier, because the
+// summed token counts of a group say nothing about individual request sizes.
+func (t *Table) CostFor(e event.UsageEvent, promptTokens int64) Cost {
 	r, ok := t.Lookup(e.Model, e.Timestamp)
 	if !ok {
 		return Cost{}
+	}
+	if lc := r.LongContext; lc != nil && promptTokens > lc.Threshold {
+		pick := func(tier, base *float64) *float64 {
+			if tier != nil {
+				return tier
+			}
+			return base
+		}
+		r.Input = pick(lc.Input, r.Input)
+		r.Output = pick(lc.Output, r.Output)
+		r.CacheRead = pick(lc.CacheRead, r.CacheRead)
+		r.CacheWrite = pick(lc.CacheWrite, r.CacheWrite)
+		r.CacheWrite5m = pick(lc.CacheWrite5m, r.CacheWrite5m)
+		r.CacheWrite1h = pick(lc.CacheWrite1h, r.CacheWrite1h)
 	}
 	var total float64
 	known := true

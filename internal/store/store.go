@@ -33,6 +33,10 @@ var ErrNotFound = errors.New("store: not found")
 // Pricer prices one (aggregated) event. *pricing.Table implements it.
 type Pricer interface {
 	Cost(event.UsageEvent) pricing.Cost
+	// CostFor prices with an explicit request prompt size (long-context tiers).
+	CostFor(event.UsageEvent, int64) pricing.Cost
+	// Thresholds are the long-context boundaries the aggregator must group by.
+	Thresholds() []int64
 }
 
 // Store owns the SQLite handle.

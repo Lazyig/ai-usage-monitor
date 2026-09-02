@@ -159,13 +159,17 @@ type aggRow struct {
 	bucket int64 // (ts + offset) / bucketMs, or 0 when unbucketed
 	tokens
 	first, last int64
+	// promptHint is a prompt size representative of this row's long-context
+	// tier (0 = below every threshold). Rows are split per tier so non-linear
+	// tier pricing stays exact after aggregation.
+	promptHint int64
 }
 
 // aggregate groups usage_events by an optional key column, plus source, model and
 // an optional time bucket. keyCol must be a fixed column name chosen by the
 // caller (never user input). bucketMs == 0 disables bucketing; offsetSec shifts
 // the timeline so buckets land on local boundaries.
-func (s *Store) aggregate(ctx context.Context, f Filter, keyCol string, bucketMs, offsetSec int64) ([]aggRow, error) {
+func (s *Store) aggregate(ctx context.Context, f Filter, keyCol string, bucketMs, offsetSec int64, thresholds []int64) ([]aggRow, error) {
 	keyExpr := "''"
 	if keyCol != "" {
 		keyExpr = keyCol
@@ -174,14 +178,28 @@ func (s *Store) aggregate(ctx context.Context, f Filter, keyCol string, bucketMs
 	if bucketMs > 0 {
 		bucketExpr = fmt.Sprintf("((ts + %d) / %d)", offsetSec*1000, bucketMs)
 	}
+	// Tier = how many long-context thresholds the request prompt exceeds. Each
+	// model has at most one threshold and it is one of these boundaries, so no
+	// tier straddles a model's cut-off.
+	tierExpr := "0"
+	if len(thresholds) > 0 {
+		const prompt = "(input + cache_read + cache_write_5m + cache_write_1h + cache_write)"
+		var b strings.Builder
+		b.WriteString("CASE")
+		for i := len(thresholds) - 1; i >= 0; i-- {
+			fmt.Fprintf(&b, " WHEN %s > %d THEN %d", prompt, thresholds[i], i+1)
+		}
+		b.WriteString(" ELSE 0 END")
+		tierExpr = b.String()
+	}
 	q := newQueryBuilder(fmt.Sprintf(`
-		SELECT %s AS k, source, model, %s AS b,
+		SELECT %s AS k, source, model, %s AS b, %s AS tier,
 		       SUM(input), SUM(output), SUM(cache_read),
 		       SUM(cache_write_5m), SUM(cache_write_1h), SUM(cache_write), SUM(reasoning),
 		       COUNT(*), MIN(ts), MAX(ts)
-		FROM usage_events`, keyExpr, bucketExpr))
+		FROM usage_events`, keyExpr, bucketExpr, tierExpr))
 	f.apply(q)
-	q.tail("GROUP BY k, source, model, b")
+	q.tail("GROUP BY k, source, model, b, tier")
 
 	rows, err := s.db.QueryContext(ctx, q.sql(), q.args...)
 	if err != nil {
@@ -191,10 +209,14 @@ func (s *Store) aggregate(ctx context.Context, f Filter, keyCol string, bucketMs
 	var out []aggRow
 	for rows.Next() {
 		var r aggRow
-		if err := rows.Scan(&r.key, &r.source, &r.model, &r.bucket,
+		var tier int
+		if err := rows.Scan(&r.key, &r.source, &r.model, &r.bucket, &tier,
 			&r.input, &r.output, &r.cacheRead, &r.w5m, &r.w1h, &r.wGen, &r.reasoning,
 			&r.events, &r.first, &r.last); err != nil {
 			return nil, err
+		}
+		if tier > 0 && tier <= len(thresholds) {
+			r.promptHint = thresholds[tier-1] + 1
 		}
 		out = append(out, r)
 	}
@@ -325,8 +347,16 @@ func priceRow(p Pricer, r aggRow, at time.Time) (usd float64, known, estimated b
 	if p == nil {
 		return 0, false, false
 	}
-	c := p.Cost(r.tokens.asEvent(r.model, at))
+	c := p.CostFor(r.tokens.asEvent(r.model, at), r.promptHint)
 	return c.USD, c.Known, c.Estimated
+}
+
+// thresholdsOf tolerates a nil pricer.
+func thresholdsOf(p Pricer) []int64 {
+	if p == nil {
+		return nil
+	}
+	return p.Thresholds()
 }
 
 // sortGroups orders by cost, then by token volume, then by key for stability.
@@ -354,7 +384,7 @@ func sortGroups(gs []Group) {
 // day) and folds that single result set into totals and the three breakdowns.
 // The UTC-day grain is what lets pricing honour `effective_from`.
 func (s *Store) Summary(ctx context.Context, f Filter, p Pricer) (Summary, error) {
-	rows, err := s.aggregate(ctx, f, "device_id", dayMs, 0)
+	rows, err := s.aggregate(ctx, f, "device_id", dayMs, 0, thresholdsOf(p))
 	if err != nil {
 		return Summary{}, err
 	}
@@ -482,7 +512,7 @@ func (s *Store) Breakdown(ctx context.Context, f Filter, groupBy string, limit i
 	if limit <= 0 || limit > 1000 {
 		limit = 50
 	}
-	rows, err := s.aggregate(ctx, f, col, dayMs, 0)
+	rows, err := s.aggregate(ctx, f, col, dayMs, 0, thresholdsOf(p))
 	if err != nil {
 		return Breakdown{}, err
 	}
@@ -642,7 +672,7 @@ func (s *Store) Timeseries(ctx context.Context, f Filter, bucket, groupBy string
 		sf := f
 		sf.From = fromMillis(seg.startMs)
 		sf.To = fromMillis(seg.endMs)
-		rows, err := s.aggregate(ctx, sf, col, bucketMs, seg.offsetSec)
+		rows, err := s.aggregate(ctx, sf, col, bucketMs, seg.offsetSec, thresholdsOf(p))
 		if err != nil {
 			return Timeseries{}, err
 		}

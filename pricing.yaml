@@ -1,78 +1,153 @@
-# USD per 1M tokens. First matching entry wins (path.Match glob on lowercased model name).
-# Anthropic rates: claude-api skill cache 2026-06-24. Cache read = 10% of input except Fable 5.1 ($0.25),
-# cache write 5m = 1.25x input, 1h = 2x input. Long-context (>200K) surcharge: verify before relying on it.
+# Model price table. USD per 1M tokens. First matching entry wins (path.Match glob on the
+# lowercased model name), so specific names come before globs. Sources and access dates are
+# in comments; re-check the dated promotions. Cache storage (per hour) is NOT modelled.
+#
+# Conventions: `input` excludes cache; `cache_read` = cached input; Claude cache writes are
+# 1.25x (5m) / 2x (1h) of input. `long_context` replaces the rates for the WHOLE request when
+# its prompt (input + cache) exceeds `threshold` tokens. `alias_of` reuses another entry and is
+# shown as "estimated" in the UI.
+
+# ---------------------------------------------------------------------------------------------
+# Anthropic — Claude Code (first-party). No long-context surcharge on Claude 4.6+ (1M ctx at
+# standard rate). Source: https://platform.claude.com/docs/en/about-claude/pricing (2026-09-02)
 - match: "claude-fable-5-1"
   provider: anthropic
   input: 10.00
-  output: 50.00
-  cache_read: 0.25
+  cache_read: 0.25          # 0.025x, unique to Fable/Mythos 5.1
   cache_write_5m: 12.50
   cache_write_1h: 20.00
+  output: 50.00
 - match: "claude-fable-5"
   provider: anthropic
   input: 10.00
-  output: 50.00
   cache_read: 1.00
   cache_write_5m: 12.50
   cache_write_1h: 20.00
+  output: 50.00
 - match: "claude-opus-5"
   provider: anthropic
   input: 5.00
-  output: 25.00
   cache_read: 0.50
   cache_write_5m: 6.25
   cache_write_1h: 10.00
-- match: "claude-opus-4-*"
-  provider: anthropic
-  input: 5.00
   output: 25.00
-  cache_read: 0.50
-  cache_write_5m: 6.25
-  cache_write_1h: 10.00
+  # fast mode (speed=fast) is $10/$50 — not distinguished in the logs we read
 - match: "claude-sonnet-5"
   provider: anthropic
-  input: 2.00
-  output: 10.00
+  input: 2.00               # the increase to $3/$15 scheduled for 2026-09-01 was cancelled
   cache_read: 0.20
   cache_write_5m: 2.50
   cache_write_1h: 4.00
-- match: "claude-sonnet-4-6"
-  provider: anthropic
-  input: 3.00
-  output: 15.00
-  cache_read: 0.30
-  cache_write_5m: 3.75
-  cache_write_1h: 6.00
+  output: 10.00
 - match: "claude-haiku-4-5"
   provider: anthropic
   input: 1.00
-  output: 5.00
   cache_read: 0.10
   cache_write_5m: 1.25
   cache_write_1h: 2.00
+  output: 5.00
 
-# OpenAI — fill from the official pricing page; leaving a field out marks the cost unknown.
-- match: "gpt-5.6-*"
+# Claude called through Vertex AI by Antigravity. Google bills these; the Vertex price table
+# could not be fetched, so Anthropic list price is used as an estimate (regional endpoints
+# add 10%). "-thinking" is a mode: thinking tokens bill as output.
+- match: "claude-opus-4-6-thinking"
+  provider: vertex
+  alias_of: "claude-opus-4-6"
+- match: "claude-sonnet-4-6"
+  provider: vertex
+  estimated: true
+  input: 3.00
+  cache_read: 0.30
+  cache_write_5m: 3.75
+  cache_write_1h: 6.00
+  output: 15.00
+- match: "claude-opus-4-6"
+  provider: vertex
+  estimated: true
+  input: 5.00
+  cache_read: 0.50
+  cache_write_5m: 6.25
+  cache_write_1h: 10.00
+  output: 25.00
+- match: "claude-opus-4-*"
+  provider: anthropic
+  input: 5.00
+  cache_read: 0.50
+  cache_write_5m: 6.25
+  cache_write_1h: 10.00
+  output: 25.00
+
+# ---------------------------------------------------------------------------------------------
+# OpenAI — Codex CLI. terra/sol/luna are distinct public models (20x spread), never glob them.
+# >272K input tokens: 2x input (cached too) and 1.5x output for the full request.
+# Sources: https://developers.openai.com/api/docs/models/gpt-5.6 , .../gpt-5.6-terra ,
+# .../gpt-5.6-luna (2026-09-02). Sol is promotional pricing at least through 2026-11-21.
+- match: "gpt-5.6-sol"
   provider: openai
-  # input:
-  # cache_read:
-  # output:
-- match: "codex-auto-review"
-  provider: openai   # internal reviewer model, no public price -> tokens only
+  input: 4.00
+  cache_read: 0.40
+  output: 20.00
+  long_context: { threshold: 272000, input: 8.00, cache_read: 0.80, output: 30.00 }
+- match: "gpt-5.6-terra"
+  provider: openai
+  input: 2.00
+  cache_read: 0.20
+  output: 12.00
+  long_context: { threshold: 272000, input: 4.00, cache_read: 0.40, output: 18.00 }
+- match: "gpt-5.6-luna"
+  provider: openai
+  input: 0.20
+  cache_read: 0.02
+  output: 1.20
+  long_context: { threshold: 272000, input: 0.40, cache_read: 0.04, output: 1.80 }
+- match: "gpt-5.6"                # bare alias routes to Sol
+  provider: openai
+  alias_of: "gpt-5.6-sol"
+- match: "codex-auto-review"      # Codex's built-in reviewer; not a billable API model. It runs
+  provider: openai                # on gpt-5.6-sol (high) by default — priced as Sol, estimated.
+  alias_of: "gpt-5.6-sol"         # https://github.com/openai/codex/issues/20981
 
-# Google — fill from the official pricing page.
-- match: "gemini-3.7-flash*"        # gemini-3.7-flash, gemini-3.7-flash-control
+# ---------------------------------------------------------------------------------------------
+# Google — Antigravity CLI. Thinking tokens bill as output. Intro rates for 3.7/3.6 Flash run
+# through 2026-12-31 and double on 2027-01-01. Suffixes (-control, -a, -c, -exp-a, -low) are
+# Antigravity-internal experiment arms / reasoning levels, priced as the base model (estimated).
+# Source: https://ai.google.dev/gemini-api/docs/pricing (2026-09-02)
+- match: "gemini-3.7-flash"
   provider: google
-  # input:
-  # cache_read:
-  # output:
-- match: "gemini-default"           # decision 6: real model unknown -> price as 3.7 flash
+  input: 0.75
+  cache_read: 0.075
+  output: 3.75
+- match: "gemini-3.7-flash-*"
+  provider: google
   alias_of: "gemini-3.7-flash"
-- match: "gemini-3.6-flash*"
+- match: "gemini-default"         # Antigravity's documented default model
   provider: google
-- match: "gemini-3-flash-*"
+  alias_of: "gemini-3.7-flash"
+- match: "gemini-3.6-flash"
   provider: google
-- match: "gemini-3.1-pro-*"
+  input: 0.75
+  cache_read: 0.075
+  output: 3.75
+- match: "gemini-3.6-flash-*"
   provider: google
-- match: "antigravity-internal"     # title/summary calls with no model name recorded
+  alias_of: "gemini-3.6-flash"
+- match: "gemini-3-flash-preview"
   provider: google
+  input: 0.50                     # audio input 1.00 (not distinguished here)
+  cache_read: 0.05
+  output: 3.00
+- match: "gemini-3-flash*"
+  provider: google
+  alias_of: "gemini-3-flash-preview"
+- match: "gemini-3.1-pro-preview"
+  provider: google
+  input: 2.00
+  cache_read: 0.20
+  output: 12.00
+  long_context: { threshold: 200000, input: 4.00, cache_read: 0.40, output: 18.00 }
+- match: "gemini-3.1-pro*"
+  provider: google
+  alias_of: "gemini-3.1-pro-preview"
+- match: "antigravity-internal"   # title/summary calls with no model recorded; small volume
+  provider: google
+  alias_of: "gemini-3.7-flash"
