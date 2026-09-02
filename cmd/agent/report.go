@@ -35,6 +35,16 @@ func (t *totals) add(e event.UsageEvent) {
 	t.Reasoning += e.Reasoning
 }
 
+// merge folds another bucket in, for the subtotal and TOTAL rows.
+func (t *totals) merge(o totals) {
+	t.Calls += o.Calls
+	t.Input += o.Input
+	t.Output += o.Output
+	t.CacheRead += o.CacheRead
+	t.CacheWrite += o.CacheWrite
+	t.Reasoning += o.Reasoning
+}
+
 func (t totals) tokens() int64 {
 	return t.Input + t.Output + t.CacheRead + t.CacheWrite
 }
@@ -122,12 +132,7 @@ func (r *report) writeModelTable(w io.Writer) {
 		}
 		t := *r.byModel[k]
 		writeRow(tw, string(k.Source), k.Model, t)
-		sub.Calls += t.Calls
-		sub.Input += t.Input
-		sub.Output += t.Output
-		sub.CacheRead += t.CacheRead
-		sub.CacheWrite += t.CacheWrite
-		sub.Reasoning += t.Reasoning
+		sub.merge(t)
 		n++
 	}
 	flushSub()
@@ -159,12 +164,7 @@ func (r *report) writeDayTable(w io.Writer, n int) {
 		t := *r.byDay[d]
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n", d,
 			num(int64(t.Calls)), num(t.Input), num(t.Output), num(t.CacheRead), num(t.CacheWrite), num(t.Reasoning))
-		shown.Calls += t.Calls
-		shown.Input += t.Input
-		shown.Output += t.Output
-		shown.CacheRead += t.CacheRead
-		shown.CacheWrite += t.CacheWrite
-		shown.Reasoning += t.Reasoning
+		shown.merge(t)
 	}
 	if len(days) > 0 {
 		fmt.Fprintf(tw, "TOTAL\t%s\t%s\t%s\t%s\t%s\t%s\t\n",

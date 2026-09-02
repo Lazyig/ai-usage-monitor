@@ -77,12 +77,15 @@ type Diagnostic struct {
 
 // Diagnostics returns the self-check failures of the most recent Scan.
 //
-// agent-runtime holds a collector.Collector, so it reaches this through a type
-// assertion and logs whatever comes back:
+// The agent holds a collector.Collector, so a caller that wants to log these
+// has to ask for them through a type assertion:
 //
 //	if d, ok := c.(interface{ Diagnostics() []antigravity.Diagnostic }); ok {
 //	        for _, x := range d.Diagnostics() { log(x) }
 //	}
+//
+// Nothing in the agent does that today; the events themselves already carry the
+// verdict as Confidence=unknown, and these are for investigating why.
 func (c *Collector) Diagnostics() []Diagnostic {
 	c.mu.Lock()
 	defer c.mu.Unlock()

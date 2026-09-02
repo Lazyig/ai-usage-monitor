@@ -82,7 +82,7 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 
-// DB exposes the handle for tests and future extensions.
+// DB exposes the handle to the tests, which check the schema directly.
 func (s *Store) DB() *sql.DB { return s.db }
 
 // Close closes the database.

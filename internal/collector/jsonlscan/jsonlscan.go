@@ -29,11 +29,11 @@ import (
 	"strings"
 )
 
-// MaxLineBytes caps a single JSONL record. These transcripts embed full prompt
+// maxLineBytes caps a single JSONL record. These transcripts embed full prompt
 // and response text, so lines get large; anything past this cannot be a record
 // we could parse, so it is skipped (the offset still advances) rather than
 // buffered.
-const MaxLineBytes = 32 << 20
+const maxLineBytes = 32 << 20
 
 // readBufBytes is the read-ahead buffer used per file.
 const readBufBytes = 256 << 10
@@ -133,7 +133,7 @@ func (s Scanner[T, PT]) Scan(ctx context.Context, prev Cursor[T]) (Cursor[T], er
 		if err := ctx.Err(); err != nil {
 			return Cursor[T]{}, err
 		}
-		key := CursorKey(s.Root, path)
+		key := cursorKey(s.Root, path)
 		fi, err := os.Stat(path)
 		if err != nil {
 			fileErr = append(fileErr, fmt.Errorf("%s: stat %s: %w", s.Name, path, err))
@@ -178,8 +178,10 @@ func (s Scanner[T, PT]) Scan(ctx context.Context, prev Cursor[T]) (Cursor[T], er
 	return next, nil
 }
 
-// CursorKey is the stable, OS independent cursor map key for path.
-func CursorKey(root, path string) string {
+// cursorKey is the stable, OS independent cursor map key for path: relative to
+// the root and slash separated, so a cursor survives a moved root and an agent
+// that moved between OSes.
+func cursorKey(root, path string) string {
 	rel, err := filepath.Rel(root, path)
 	if err != nil {
 		rel = path
@@ -259,7 +261,7 @@ func readAppended(path string, start int64, fn func(offset int64, line []byte) e
 		line, err := r.ReadBytes('\n')
 		if len(line) > 0 && line[len(line)-1] == '\n' {
 			next := off + int64(len(line))
-			if len(line) <= MaxLineBytes {
+			if len(line) <= maxLineBytes {
 				if cbErr := fn(off, line); cbErr != nil {
 					return off, cbErr
 				}

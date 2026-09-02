@@ -67,7 +67,7 @@ func newAgent(cfg agentcfg.Config, dir string, sel selected) (*agent, error) {
 				Arch:         runtime.GOARCH,
 				AgentVersion: version,
 			},
-			HTTPClient: &http.Client{Timeout: transport.DefaultHTTPTimout},
+			HTTPClient: &http.Client{Timeout: transport.DefaultHTTPTimeout},
 			Queue:      q,
 			Logf:       func(format string, args ...any) { lg.Printf(format, args...) },
 		},

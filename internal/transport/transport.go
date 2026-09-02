@@ -28,10 +28,10 @@ const MaxBatchEvents = 2000
 
 // Defaults for the retry policy and the HTTP client.
 const (
-	DefaultAttempts   = 5
-	DefaultBaseDelay  = 500 * time.Millisecond
-	DefaultMaxDelay   = 30 * time.Second
-	DefaultHTTPTimout = 60 * time.Second
+	DefaultAttempts    = 5
+	DefaultBaseDelay   = 500 * time.Millisecond
+	DefaultMaxDelay    = 30 * time.Second
+	DefaultHTTPTimeout = 60 * time.Second
 )
 
 // Device is the identity block sent with every ingest request.
@@ -173,7 +173,7 @@ func (c *Client) httpClient() *http.Client {
 	if c.HTTPClient != nil {
 		return c.HTTPClient
 	}
-	return &http.Client{Timeout: DefaultHTTPTimout}
+	return &http.Client{Timeout: DefaultHTTPTimeout}
 }
 
 func (c *Client) userAgent() string {

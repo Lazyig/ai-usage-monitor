@@ -396,8 +396,8 @@ func TestCorruptCursorStartsOver(t *testing.T) {
 
 func TestCursorKeyIsRelativeAndSlashSeparated(t *testing.T) {
 	root := filepath.Join("var", "logs")
-	if got := CursorKey(root, filepath.Join(root, "a", "b.jsonl")); got != "a/b.jsonl" {
-		t.Errorf("CursorKey = %q, want a/b.jsonl", got)
+	if got := cursorKey(root, filepath.Join(root, "a", "b.jsonl")); got != "a/b.jsonl" {
+		t.Errorf("cursorKey = %q, want a/b.jsonl", got)
 	}
 }
 
