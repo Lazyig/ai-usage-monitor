@@ -1,7 +1,13 @@
 // Date range presets, computed against Asia/Seoul calendar days (matching the
 // API's default tz). `to` is exclusive, per docs/API.md.
 
-export type RangePreset = 'today' | '7d' | '30d' | 'thisMonth' | 'lastMonth' | 'custom'
+export type RangePreset = 'today' | '7d' | '30d' | 'thisMonth' | 'lastMonth' | 'all' | 'custom'
+
+/** Earliest supported `from` for the "전체" (all-time) preset. The API
+ * defaults `from` to "last 30 days" when the param is omitted, so this
+ * preset must send an explicit, sufficiently-early date instead of leaving
+ * `from` blank. */
+const ALL_TIME_FROM = '2020-01-01'
 
 export interface DateRange {
   preset: RangePreset
@@ -42,6 +48,8 @@ export function rangeForPreset(preset: RangePreset, today = kstToday()): DateRan
       const lastMonthLastDay = addDays(thisMonthFirst, -1)
       return { preset, from: firstOfMonth(lastMonthLastDay), to: thisMonthFirst }
     }
+    case 'all':
+      return { preset, from: ALL_TIME_FROM, to: addDays(today, 1) }
     case 'custom':
       return { preset, from: today, to: addDays(today, 1) }
   }
@@ -53,6 +61,7 @@ export const PRESET_LABELS: Record<RangePreset, string> = {
   '30d': '최근 30일',
   thisMonth: '이번 달',
   lastMonth: '지난 달',
+  all: '전체',
   custom: '직접 선택',
 }
 

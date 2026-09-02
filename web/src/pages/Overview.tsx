@@ -3,9 +3,11 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { getSummary, getTimeseries } from '../api/client'
 import type { SummaryDeviceRow, SummaryModelRow, SummarySourceRow } from '../api/types'
 import { Badge } from '../components/Badge'
+import { Card } from '../components/Card'
 import { ChartTooltip } from '../components/ChartTooltip'
 import { type Column, DataTable } from '../components/DataTable'
 import { ErrorBoundary } from '../components/ErrorBoundary'
+import { SegmentedControl } from '../components/SegmentedControl'
 import { StateContainer } from '../components/StateContainer'
 import { StatTile } from '../components/StatTile'
 import { useApiData } from '../hooks/useApiData'
@@ -78,18 +80,21 @@ export function Overview() {
         </StateContainer>
       </ErrorBoundary>
 
-      <div className="chart-card">
-        <div className="panel-title-row">
-          <h2>소스별 사용량 추이</h2>
-          <div className="chart-toggle" role="group" aria-label="차트 값 전환">
-            <button type="button" className={`chip${chartMode === 'cost' ? ' chip-active' : ''}`} onClick={() => setChartMode('cost')}>
-              비용
-            </button>
-            <button type="button" className={`chip${chartMode === 'tokens' ? ' chip-active' : ''}`} onClick={() => setChartMode('tokens')}>
-              토큰
-            </button>
-          </div>
-        </div>
+      <Card
+        className="section"
+        title="소스별 사용량 추이"
+        controls={
+          <SegmentedControl
+            ariaLabel="차트 값 전환"
+            value={chartMode}
+            onChange={setChartMode}
+            options={[
+              { value: 'cost', label: '비용' },
+              { value: 'tokens', label: '토큰' },
+            ]}
+          />
+        }
+      >
         <ErrorBoundary label="차트를 표시할 수 없습니다">
           <StateContainer
             loading={timeseriesState.status === 'loading'}
@@ -100,7 +105,7 @@ export function Overview() {
             {timeseriesState.status === 'success' && <TimeseriesChart series={timeseriesState.data.series} mode={chartMode} />}
           </StateContainer>
         </ErrorBoundary>
-      </div>
+      </Card>
 
       <div className="grid grid-cols-3">
         <div>
