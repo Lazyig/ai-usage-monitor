@@ -134,7 +134,9 @@ export function getSummary(params: RangeParams): Promise<SummaryResponse> {
   return request('/api/v1/summary', { params: params as Params })
 }
 
-export function getTimeseries(params: RangeParams & { bucket?: TimeseriesBucket; group_by?: GroupBy }): Promise<TimeseriesResponse> {
+export function getTimeseries(
+  params: RangeParams & { bucket?: TimeseriesBucket; group_by?: GroupBy; source?: string },
+): Promise<TimeseriesResponse> {
   return request('/api/v1/timeseries', { params: params as Params })
 }
 

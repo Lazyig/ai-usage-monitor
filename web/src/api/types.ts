@@ -58,7 +58,9 @@ export interface TimeseriesPoint {
   output: number
   cache_read: number
   cache_write: number
+  reasoning: number
   cost_usd: number | null
+  events: number
 }
 
 export interface TimeseriesSeries {
