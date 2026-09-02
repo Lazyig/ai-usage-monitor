@@ -177,12 +177,37 @@ func startOfDay(t time.Time) time.Time {
 	return time.Date(y, m, d, 0, 0, 0, 0, t.Location())
 }
 
-// --- queries ---------------------------------------------------------------
-
-func (a *api) handleSummary(w http.ResponseWriter, r *http.Request) {
+// query parses the range and dimension filters every query endpoint shares. It
+// answers 400 itself, so a false second result means the request is done.
+func query(w http.ResponseWriter, r *http.Request) (params, bool) {
 	p, err := parseParams(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return params{}, false
+	}
+	return p, true
+}
+
+// groupBy reads group_by, defaulting to def, and checks it against the columns
+// the store will group on - user input never reaches the SQL text. want is the
+// endpoint's own wording of the allowed values for the 400 it may answer.
+func groupBy(w http.ResponseWriter, r *http.Request, def, want string) (string, bool) {
+	g := r.URL.Query().Get("group_by")
+	if g == "" {
+		g = def
+	}
+	if _, ok := store.GroupColumn(g); !ok {
+		writeError(w, http.StatusBadRequest, "group_by must be "+want)
+		return "", false
+	}
+	return g, true
+}
+
+// --- queries ---------------------------------------------------------------
+
+func (a *api) handleSummary(w http.ResponseWriter, r *http.Request) {
+	p, ok := query(w, r)
+	if !ok {
 		return
 	}
 	sum, err := a.store.Summary(r.Context(), p.filter, a.pricing.Table())
@@ -194,9 +219,8 @@ func (a *api) handleSummary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *api) handleTimeseries(w http.ResponseWriter, r *http.Request) {
-	p, err := parseParams(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	p, ok := query(w, r)
+	if !ok {
 		return
 	}
 	bucket := r.URL.Query().Get("bucket")
@@ -207,15 +231,11 @@ func (a *api) handleTimeseries(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "bucket must be day or hour")
 		return
 	}
-	groupBy := r.URL.Query().Get("group_by")
-	if groupBy == "" {
-		groupBy = "source"
-	}
-	if _, ok := store.GroupColumn(groupBy); !ok {
-		writeError(w, http.StatusBadRequest, "group_by must be source, device, model, project or session")
+	group, ok := groupBy(w, r, "source", "source, device, model, project or session")
+	if !ok {
 		return
 	}
-	ts, err := a.store.Timeseries(r.Context(), p.filter, bucket, groupBy, p.loc, a.pricing.Table())
+	ts, err := a.store.Timeseries(r.Context(), p.filter, bucket, group, p.loc, a.pricing.Table())
 	if err != nil {
 		a.fail(w, "timeseries", err)
 		return
@@ -224,20 +244,15 @@ func (a *api) handleTimeseries(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *api) handleBreakdown(w http.ResponseWriter, r *http.Request) {
-	p, err := parseParams(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	p, ok := query(w, r)
+	if !ok {
 		return
 	}
-	groupBy := r.URL.Query().Get("group_by")
-	if groupBy == "" {
-		groupBy = "model"
-	}
-	if _, ok := store.GroupColumn(groupBy); !ok {
-		writeError(w, http.StatusBadRequest, "group_by must be model, project, device, session or source")
+	group, ok := groupBy(w, r, "model", "model, project, device, session or source")
+	if !ok {
 		return
 	}
-	b, err := a.store.Breakdown(r.Context(), p.filter, groupBy, intParam(r, "limit", 50), a.pricing.Table())
+	b, err := a.store.Breakdown(r.Context(), p.filter, group, intParam(r, "limit", 50), a.pricing.Table())
 	if err != nil {
 		a.fail(w, "breakdown", err)
 		return
@@ -246,9 +261,8 @@ func (a *api) handleBreakdown(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *api) handleEvents(w http.ResponseWriter, r *http.Request) {
-	p, err := parseParams(r)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	p, ok := query(w, r)
+	if !ok {
 		return
 	}
 	page, err := a.store.Events(r.Context(), p.filter, intParam(r, "limit", 200), r.URL.Query().Get("cursor"), a.pricing.Table())
@@ -292,7 +306,12 @@ func (a *api) handleCreateDevice(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, "create device", err)
 		return
 	}
-	// The only time the plaintext token exists outside the agent.
+	writeDeviceToken(w, dev, token)
+}
+
+// writeDeviceToken answers device creation and rotation: the only two responses
+// where the plaintext token exists outside the agent.
+func writeDeviceToken(w http.ResponseWriter, dev store.Device, token string) {
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"id":               dev.ID,
 		"name":             dev.Name,
@@ -308,11 +327,7 @@ func (a *api) handleRotateDevice(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	token, err := a.store.RotateToken(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "device not found")
-			return
-		}
-		a.fail(w, "rotate token", err)
+		a.failDevice(w, "rotate token", err)
 		return
 	}
 	// The old token must stop working now, not when its cache entry expires.
@@ -322,13 +337,7 @@ func (a *api) handleRotateDevice(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, "rotate token", err)
 		return
 	}
-	// The only time the plaintext token exists outside the agent.
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"id":               dev.ID,
-		"name":             dev.Name,
-		"token":            token,
-		"token_created_at": dev.TokenCreatedAt,
-	})
+	writeDeviceToken(w, dev, token)
 }
 
 // handleDeleteDevice revokes the token and, with ?purge=true, erases the device
@@ -338,11 +347,7 @@ func (a *api) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
 	purge := boolParam(r, "purge")
 	deleted, err := a.store.DeleteDevice(r.Context(), id, purge)
 	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "device not found")
-			return
-		}
-		a.fail(w, "delete device", err)
+		a.failDevice(w, "delete device", err)
 		return
 	}
 	a.forgetDevice(id)
@@ -360,11 +365,7 @@ func (a *api) handlePurgeDeviceEvents(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	deleted, err := a.store.PurgeEvents(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			writeError(w, http.StatusNotFound, "device not found")
-			return
-		}
-		a.fail(w, "purge device events", err)
+		a.failDevice(w, "purge device events", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -408,4 +409,14 @@ func (a *api) handleHealth(w http.ResponseWriter, r *http.Request) {
 func (a *api) fail(w http.ResponseWriter, what string, err error) {
 	a.log.Error(what, "err", err)
 	writeError(w, http.StatusInternalServerError, "internal error")
+}
+
+// failDevice is fail for the routes addressed by device id: an unknown id is the
+// caller's mistake (404), anything else is ours.
+func (a *api) failDevice(w http.ResponseWriter, what string, err error) {
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "device not found")
+		return
+	}
+	a.fail(w, what, err)
 }

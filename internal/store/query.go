@@ -1,3 +1,8 @@
+// This file holds the query machinery every aggregate endpoint shares: the
+// WHERE clause, the SQL builder, the single GROUP BY that feeds all of them and
+// the accumulators their rows are folded into. The endpoints themselves live in
+// summary.go (/summary, /breakdown), timeseries.go and events.go.
+
 package store
 
 import (
@@ -258,16 +263,6 @@ type Totals struct {
 	Events         int64   `json:"events"`
 }
 
-// Summary is GET /summary.
-type Summary struct {
-	From     time.Time `json:"from"`
-	To       time.Time `json:"to"`
-	Totals   Totals    `json:"totals"`
-	BySource []Group   `json:"by_source"`
-	ByDevice []Group   `json:"by_device"`
-	ByModel  []Group   `json:"by_model"`
-}
-
 // acc accumulates priced aggregate rows for one output group.
 type acc struct {
 	key, name, source, device string
@@ -299,6 +294,35 @@ func (a *acc) add(r aggRow, usd float64, known, estimated bool) {
 	}
 	if r.last > a.last {
 		a.last = r.last
+	}
+}
+
+// totals is the summary header for everything this accumulator has seen.
+func (a *acc) totals() Totals {
+	return Totals{
+		Input:          a.tok.input,
+		Output:         a.tok.output,
+		CacheRead:      a.tok.cacheRead,
+		CacheWrite:     a.tok.cacheWrite(),
+		Reasoning:      a.tok.reasoning,
+		CostUSD:        round6(a.costUSD),
+		CostKnownRatio: ratio(a.knownTokens, a.tok.total()),
+		Events:         a.tok.events,
+	}
+}
+
+// point renders one timeseries bucket. It carries no cost_known_ratio: a series
+// is about shape over time, and the ratio lives on /summary.
+func (a *acc) point(t string) Point {
+	return Point{
+		T:          t,
+		Input:      a.tok.input,
+		Output:     a.tok.output,
+		CacheRead:  a.tok.cacheRead,
+		CacheWrite: a.tok.cacheWrite(),
+		Reasoning:  a.tok.reasoning,
+		CostUSD:    round6(a.costUSD),
+		Events:     a.tok.events,
 	}
 }
 
@@ -378,104 +402,40 @@ func sortGroups(gs []Group) {
 	})
 }
 
-// --- summary ---------------------------------------------------------------
-
-// Summary aggregates the range once (grouped by device, source, model and UTC
-// day) and folds that single result set into totals and the three breakdowns.
-// The UTC-day grain is what lets pricing honour `effective_from`.
-func (s *Store) Summary(ctx context.Context, f Filter, p Pricer) (Summary, error) {
-	rows, err := s.aggregate(ctx, f, "device_id", dayMs, 0, thresholdsOf(p))
-	if err != nil {
-		return Summary{}, err
-	}
-	names, err := s.deviceNames(ctx)
-	if err != nil {
-		return Summary{}, err
-	}
-
-	var (
-		total     acc
-		bySource  = map[string]*acc{}
-		byDevice  = map[string]*acc{}
-		byModel   = map[string]*acc{}
-		sourceOrd []string
-		deviceOrd []string
-		modelOrd  []string
-	)
-	get := func(m map[string]*acc, ord *[]string, key string, init func(*acc)) *acc {
-		a, ok := m[key]
-		if !ok {
-			a = &acc{}
-			if init != nil {
-				init(a)
-			}
-			m[key] = a
-			*ord = append(*ord, key)
-		}
-		return a
-	}
-	for _, r := range rows {
-		at := fromMillis(r.bucket * dayMs)
-		usd, known, est := priceRow(p, r, at)
-
-		total.add(r, usd, known, est)
-		get(bySource, &sourceOrd, r.source, func(a *acc) { a.key = r.source }).add(r, usd, known, est)
-		get(byDevice, &deviceOrd, r.key, func(a *acc) { a.key = r.key; a.name = names[r.key] }).add(r, usd, known, est)
-		mk := r.model + "\x00" + r.source
-		get(byModel, &modelOrd, mk, func(a *acc) { a.key = r.model }).add(r, usd, known, est)
-	}
-
-	out := Summary{
-		From: f.From.UTC(), To: f.To.UTC(),
-		Totals: Totals{
-			Input:          total.tok.input,
-			Output:         total.tok.output,
-			CacheRead:      total.tok.cacheRead,
-			CacheWrite:     total.tok.cacheWrite(),
-			Reasoning:      total.tok.reasoning,
-			CostUSD:        round6(total.costUSD),
-			CostKnownRatio: ratio(total.knownTokens, total.tok.total()),
-			Events:         total.tok.events,
-		},
-		BySource: collect(bySource, sourceOrd),
-		ByDevice: collect(byDevice, deviceOrd),
-		ByModel:  collect(byModel, modelOrd),
-	}
-	// by_source rows carry no separate source field; by_device rows keep the
-	// device name instead of a source when several sources contributed.
-	for i := range out.BySource {
-		out.BySource[i].Source = ""
-	}
-	return out, nil
+// accSet is an insertion ordered set of output groups. Every grouped list in the
+// API is built the same way - fold the aggregate rows into accumulators, then
+// sort - so a caller only says which key a row belongs to and how a new group
+// starts.
+type accSet struct {
+	byKey map[string]*acc
+	ord   []string
 }
 
-func collect(m map[string]*acc, ord []string) []Group {
-	out := make([]Group, 0, len(ord))
-	for _, k := range ord {
-		out = append(out, m[k].group())
+func newAccSet() *accSet { return &accSet{byKey: map[string]*acc{}} }
+
+// at returns the accumulator for key, calling init the first time key appears.
+func (s *accSet) at(key string, init func(*acc)) *acc {
+	a, ok := s.byKey[key]
+	if !ok {
+		a = &acc{}
+		if init != nil {
+			init(a)
+		}
+		s.byKey[key] = a
+		s.ord = append(s.ord, key)
+	}
+	return a
+}
+
+// groups renders the set as API rows, most expensive first.
+func (s *accSet) groups() []Group {
+	out := make([]Group, 0, len(s.ord))
+	for _, k := range s.ord {
+		out = append(out, s.byKey[k].group())
 	}
 	sortGroups(out)
 	return out
 }
-
-func (s *Store) deviceNames(ctx context.Context) (map[string]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name FROM devices`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]string{}
-	for rows.Next() {
-		var id, name string
-		if err := rows.Scan(&id, &name); err != nil {
-			return nil, err
-		}
-		out[id] = name
-	}
-	return out, rows.Err()
-}
-
-// --- breakdown -------------------------------------------------------------
 
 // GroupColumn maps an API group_by value to its column. It returns ok=false for
 // anything else, so no user input ever reaches the SQL text.
@@ -495,233 +455,19 @@ func GroupColumn(groupBy string) (col string, ok bool) {
 	return "", false
 }
 
-// Breakdown is GET /breakdown.
-type Breakdown struct {
-	GroupBy string  `json:"group_by"`
-	Rows    []Group `json:"rows"`
-}
-
-// Breakdown groups the range by one dimension. Rows are priced per (model, day)
-// and folded; model groupings keep the source split (a model name can appear
-// under more than one tool).
-func (s *Store) Breakdown(ctx context.Context, f Filter, groupBy string, limit int, p Pricer) (Breakdown, error) {
-	col, ok := GroupColumn(groupBy)
-	if !ok {
-		return Breakdown{}, fmt.Errorf("store: unsupported group_by %q", groupBy)
-	}
-	if limit <= 0 || limit > 1000 {
-		limit = 50
-	}
-	rows, err := s.aggregate(ctx, f, col, dayMs, 0, thresholdsOf(p))
+func (s *Store) deviceNames(ctx context.Context) (map[string]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name FROM devices`)
 	if err != nil {
-		return Breakdown{}, err
+		return nil, err
 	}
-	names, err := s.deviceNames(ctx)
-	if err != nil {
-		return Breakdown{}, err
-	}
-
-	groups := map[string]*acc{}
-	var ord []string
-	for _, r := range rows {
-		at := fromMillis(r.bucket * dayMs)
-		usd, known, est := priceRow(p, r, at)
-		key := r.key
-		if groupBy == "model" {
-			key = r.model + "\x00" + r.source
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, err
 		}
-		a, exists := groups[key]
-		if !exists {
-			a = &acc{key: r.key, device: f.Device}
-			if groupBy == "device" {
-				a.name = names[r.key]
-				a.device = r.key
-			}
-			groups[key] = a
-			ord = append(ord, key)
-		}
-		a.add(r, usd, known, est)
+		out[id] = name
 	}
-	out := Breakdown{GroupBy: groupBy, Rows: collect(groups, ord)}
-	if len(out.Rows) > limit {
-		out.Rows = out.Rows[:limit]
-	}
-	return out, nil
-}
-
-// --- timeseries ------------------------------------------------------------
-
-// Point is one bucket of a series.
-type Point struct {
-	T          string  `json:"t"`
-	Input      int64   `json:"input"`
-	Output     int64   `json:"output"`
-	CacheRead  int64   `json:"cache_read"`
-	CacheWrite int64   `json:"cache_write"`
-	Reasoning  int64   `json:"reasoning"`
-	CostUSD    float64 `json:"cost_usd"`
-	Events     int64   `json:"events"`
-}
-
-// Series is one group's points, oldest first.
-type Series struct {
-	Key    string  `json:"key"`
-	Name   string  `json:"name,omitempty"`
-	Points []Point `json:"points"`
-}
-
-// Timeseries is GET /timeseries.
-type Timeseries struct {
-	Bucket  string   `json:"bucket"`
-	GroupBy string   `json:"group_by"`
-	TZ      string   `json:"tz"`
-	Series  []Series `json:"series"`
-}
-
-type tzSegment struct {
-	startMs, endMs int64
-	offsetSec      int64
-}
-
-// bucketSegments splits [from,to) into maximal runs of buckets that share one
-// UTC offset, using the offset in effect at each bucket's *start*. Inside a
-// segment, (ts+offset)/bucketMs assigns every event to the right local bucket,
-// including across a DST change (the transition simply ends the segment).
-func bucketSegments(loc *time.Location, from, to time.Time, bucket string) []tzSegment {
-	if !from.Before(to) {
-		return nil
-	}
-	var segs []tzSegment
-	cur := bucketStart(from.In(loc), bucket)
-	fromMs, toMs := toMillis(from), toMillis(to)
-	for i := 0; cur.Before(to) && i < 1_000_000; i++ {
-		_, off := cur.Zone()
-		next := nextBucket(cur, bucket)
-		if !next.After(cur) { // paranoia: never loop forever
-			break
-		}
-		if n := len(segs); n > 0 && segs[n-1].offsetSec == int64(off) && segs[n-1].endMs == cur.UnixMilli() {
-			segs[n-1].endMs = next.UnixMilli()
-		} else {
-			segs = append(segs, tzSegment{startMs: cur.UnixMilli(), endMs: next.UnixMilli(), offsetSec: int64(off)})
-		}
-		cur = next
-	}
-	for i := range segs {
-		if segs[i].startMs < fromMs {
-			segs[i].startMs = fromMs
-		}
-		if segs[i].endMs > toMs {
-			segs[i].endMs = toMs
-		}
-	}
-	return segs
-}
-
-func bucketStart(t time.Time, bucket string) time.Time {
-	y, m, d := t.Date()
-	if bucket == "hour" {
-		return time.Date(y, m, d, t.Hour(), 0, 0, 0, t.Location())
-	}
-	return time.Date(y, m, d, 0, 0, 0, 0, t.Location())
-}
-
-func nextBucket(t time.Time, bucket string) time.Time {
-	if bucket == "hour" {
-		return bucketStart(t.Add(time.Hour), "hour")
-	}
-	y, m, d := t.Date()
-	// Noon on the next calendar day, then back to that day's start: immune to
-	// zones where local midnight does not exist on a DST day.
-	return bucketStart(time.Date(y, m, d+1, 12, 0, 0, 0, t.Location()), "day")
-}
-
-// Timeseries buckets the range by day or hour in loc and groups by one dimension.
-func (s *Store) Timeseries(ctx context.Context, f Filter, bucket, groupBy string, loc *time.Location, p Pricer) (Timeseries, error) {
-	col, ok := GroupColumn(groupBy)
-	if !ok {
-		return Timeseries{}, fmt.Errorf("store: unsupported group_by %q", groupBy)
-	}
-	bucketMs := dayMs
-	layout := "2006-01-02"
-	switch bucket {
-	case "day", "":
-		bucket = "day"
-	case "hour":
-		bucketMs = hourMs
-		layout = time.RFC3339
-	default:
-		return Timeseries{}, fmt.Errorf("store: unsupported bucket %q", bucket)
-	}
-	names, err := s.deviceNames(ctx)
-	if err != nil {
-		return Timeseries{}, err
-	}
-
-	type cell struct {
-		start int64
-		acc   acc
-	}
-	series := map[string]map[int64]*cell{}
-	var keyOrd []string
-
-	for _, seg := range bucketSegments(loc, f.From, f.To, bucket) {
-		if seg.startMs >= seg.endMs {
-			continue
-		}
-		sf := f
-		sf.From = fromMillis(seg.startMs)
-		sf.To = fromMillis(seg.endMs)
-		rows, err := s.aggregate(ctx, sf, col, bucketMs, seg.offsetSec, thresholdsOf(p))
-		if err != nil {
-			return Timeseries{}, err
-		}
-		for _, r := range rows {
-			startMs := r.bucket*bucketMs - seg.offsetSec*1000
-			at := fromMillis(startMs)
-			usd, known, est := priceRow(p, r, at)
-			m, ok := series[r.key]
-			if !ok {
-				m = map[int64]*cell{}
-				series[r.key] = m
-				keyOrd = append(keyOrd, r.key)
-			}
-			c, ok := m[startMs]
-			if !ok {
-				c = &cell{start: startMs}
-				m[startMs] = c
-			}
-			c.acc.add(r, usd, known, est)
-		}
-	}
-
-	out := Timeseries{Bucket: bucket, GroupBy: groupBy, TZ: loc.String(), Series: []Series{}}
-	sort.Strings(keyOrd)
-	for _, key := range keyOrd {
-		cells := series[key]
-		starts := make([]int64, 0, len(cells))
-		for k := range cells {
-			starts = append(starts, k)
-		}
-		sort.Slice(starts, func(i, j int) bool { return starts[i] < starts[j] })
-		ser := Series{Key: key, Points: make([]Point, 0, len(starts))}
-		if groupBy == "device" {
-			ser.Name = names[key]
-		}
-		for _, st := range starts {
-			a := cells[st]
-			ser.Points = append(ser.Points, Point{
-				T:          time.UnixMilli(st).In(loc).Format(layout),
-				Input:      a.acc.tok.input,
-				Output:     a.acc.tok.output,
-				CacheRead:  a.acc.tok.cacheRead,
-				CacheWrite: a.acc.tok.cacheWrite(),
-				Reasoning:  a.acc.tok.reasoning,
-				CostUSD:    round6(a.acc.costUSD),
-				Events:     a.acc.tok.events,
-			})
-		}
-		out.Series = append(out.Series, ser)
-	}
-	return out, nil
+	return out, rows.Err()
 }
