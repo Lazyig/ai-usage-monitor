@@ -50,7 +50,7 @@ export interface SummaryModelRow extends SummaryRowBase {
 }
 
 export type TimeseriesBucket = 'day' | 'hour'
-export type GroupBy = 'source' | 'device' | 'model' | 'project'
+export type GroupBy = 'source' | 'device' | 'model' | 'project' | 'session'
 
 export interface TimeseriesPoint {
   t: string
@@ -64,7 +64,10 @@ export interface TimeseriesPoint {
 }
 
 export interface TimeseriesSeries {
+  /** For group_by=device this is the device UUID (see `name`). */
   key: string
+  /** Human-readable device name; only populated for group_by=device. */
+  name?: string
   points: TimeseriesPoint[]
 }
 
@@ -72,13 +75,20 @@ export interface TimeseriesResponse {
   bucket: TimeseriesBucket
   group_by: GroupBy
   series: TimeseriesSeries[]
+  /** IANA zone the buckets were computed in; omitted by older servers. */
+  tz?: string
 }
 
-export type BreakdownGroupBy = 'model' | 'project' | 'device' | 'session'
+export type BreakdownGroupBy = 'model' | 'project' | 'device' | 'session' | 'source'
 
 export interface BreakdownRow {
+  /** For group_by=device this is the device UUID (see `name`). */
   key: string
+  /** Human-readable device name; only populated for group_by=device. */
+  name?: string
+  /** Only set when every event behind the row shares one source. */
   source?: Source
+  /** Only set when every event behind the row shares one device. */
   device?: string
   input: number
   output: number
@@ -86,6 +96,8 @@ export interface BreakdownRow {
   cache_write: number
   reasoning: number
   cost_usd: number | null
+  /** Share of tokens whose cost is known; omitted by older servers. */
+  cost_known_ratio?: number
   estimated: boolean
   events: number
   first_seen: string

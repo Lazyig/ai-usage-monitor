@@ -8,6 +8,7 @@ const PRESETS: RangePreset[] = ['today', '7d', '30d', 'thisMonth', 'lastMonth', 
 
 const NAV_ITEMS = [
   { to: '/', label: '개요', end: true },
+  { to: '/agents', label: '에이전트' },
   { to: '/models', label: '모델' },
   { to: '/projects', label: '프로젝트' },
   { to: '/devices', label: '기기' },

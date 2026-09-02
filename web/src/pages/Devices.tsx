@@ -6,6 +6,7 @@ import { Card } from '../components/Card'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { type Column, DataTable } from '../components/DataTable'
 import { StateContainer } from '../components/StateContainer'
+import { DEVICE_TABS, SubTabs } from '../components/SubTabs'
 import { useApiData } from '../hooks/useApiData'
 import { describeError } from '../lib/errors'
 import { formatDateTime, formatFull, formatRelative, isStale } from '../lib/format'
@@ -181,6 +182,7 @@ export function Devices() {
       <div className="page-header">
         <h1>기기</h1>
       </div>
+      <SubTabs items={DEVICE_TABS} ariaLabel="기기 화면 전환" />
 
       <ul className="help-list">
         <li>

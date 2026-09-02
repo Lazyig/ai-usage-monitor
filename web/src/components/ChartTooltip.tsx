@@ -4,10 +4,13 @@ import { labelForKey } from '../lib/colors'
 
 interface ChartTooltipProps extends TooltipProps<ValueType, NameType> {
   formatValue: (v: number) => string
+  /** Resolves a series key to its display name. Defaults to the source label
+   * map; per-device series pass a resolver so UUID keys read as device names. */
+  labelFor?: (key: string) => string
 }
 
 /** Themed tooltip shared by every recharts chart in the app. */
-export function ChartTooltip({ active, payload, label, formatValue }: ChartTooltipProps) {
+export function ChartTooltip({ active, payload, label, formatValue, labelFor = labelForKey }: ChartTooltipProps) {
   if (!active || !payload || payload.length === 0) return null
   return (
     <div
@@ -34,7 +37,7 @@ export function ChartTooltip({ active, payload, label, formatValue }: ChartToolt
                 marginRight: 6,
               }}
             />
-            {labelForKey(String(p.dataKey))}
+            {labelFor(String(p.dataKey))}
           </span>
           <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatValue(Number(p.value))}</span>
         </div>

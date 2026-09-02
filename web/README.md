@@ -48,13 +48,16 @@ should stay well under ~600 KB gzipped total.
 - `src/api/mock.ts` — deterministic mock backend used only when `VITE_MOCK=1`.
 - `src/state/` — `AuthContext` (token/login/logout) and `FiltersContext`
   (global date range + auto-refresh, shared by every page via the top bar).
-- `src/pages/` — one file per route (Overview, Models, Projects, Devices,
-  Downloads, Events, Pricing) plus Login.
+- `src/pages/` — one file per route (Overview, Agents, Models, Projects,
+  DeviceUsage + Devices — the 사용량/관리 sub-tabs of `/devices` —, Downloads,
+  Events, Pricing) plus Login.
 - `src/components/` — shared UI: `TopBar`, `DataTable` (generic sortable
   table), `StateContainer` (loading/error/empty), `StatTile`, `Badge`, charts.
 - `src/lib/` — formatting (`format.ts`), date-range presets (`dateRange.ts`),
   chart data shaping (`chartData.ts`), the fixed categorical color assignment
-  (`colors.ts`).
+  (`colors.ts`), and the source × device matrix (`matrix.ts`) behind the two
+  composition charts — the API has no 2-D grouping, so it fans out one
+  `/breakdown?group_by=device&source=…` per source and pivots.
 
 ## Notes
 

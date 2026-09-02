@@ -55,6 +55,14 @@ export function rangeForPreset(preset: RangePreset, today = kstToday()): DateRan
   }
 }
 
+/** Whole days covered by [from, to) — used to decide whether an hourly
+ * bucket would still be readable. */
+export function rangeDays(from: string, to: string): number {
+  const ms = Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)
+  if (Number.isNaN(ms)) return 1
+  return Math.max(1, Math.round(ms / 86_400_000))
+}
+
 export const PRESET_LABELS: Record<RangePreset, string> = {
   today: '오늘',
   '7d': '최근 7일',

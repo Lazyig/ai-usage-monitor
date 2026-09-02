@@ -21,6 +21,7 @@ import type {
   SummaryResponse,
   SummaryRowBase,
   TimeseriesResponse,
+  TimeseriesSeries,
   UsageEventDTO,
   UsageTotals,
 } from './types'
@@ -329,7 +330,9 @@ function emptyTotals(): SummaryRowBase {
 
 function buildSummary(params: Record<string, string | undefined>): SummaryResponse {
   const { from, to } = normalizeRange(params)
-  const rows = DATASET.filter((r) => inRange(r.date, from, to))
+  let rows = DATASET.filter((r) => inRange(r.date, from, to))
+  if (params.source) rows = rows.filter((r) => r.source === params.source)
+  if (params.device) rows = rows.filter((r) => r.deviceId === params.device)
 
   const totals: UsageTotals = { input: 0, output: 0, cache_read: 0, cache_write: 0, reasoning: 0, cost_usd: 0, cost_known_ratio: 0, events: 0 }
   let knownTokens = 0
@@ -387,25 +390,37 @@ function mergeRow(target: Accumulator, rec: DayRecord) {
   }
 }
 
+// Mirrors the session id handed out by flatEvents() so /breakdown and
+// /timeseries group by exactly the sessions /events reports.
+function sessionKey(r: DayRecord): string {
+  return `sess-${hashStr(r.date + r.deviceId).toString(16)}`
+}
+
 function buildTimeseries(params: Record<string, string | undefined>): TimeseriesResponse {
   const { from, to } = normalizeRange(params)
   const bucket = params.bucket === 'hour' ? 'hour' : 'day'
   const groupBy = (params.group_by as GroupBy) ?? 'source'
   let rows = DATASET.filter((r) => inRange(r.date, from, to))
   if (params.source) rows = rows.filter((r) => r.source === params.source)
+  if (params.device) rows = rows.filter((r) => r.deviceId === params.device)
 
+  // Like the server, group_by=device keys by device UUID and carries the
+  // human-readable name alongside it; every other grouping has no `name`.
   const keyOf = (r: DayRecord): string => {
     switch (groupBy) {
       case 'device':
-        return r.deviceName
+        return r.deviceId
       case 'model':
         return r.model
       case 'project':
         return r.project
+      case 'session':
+        return sessionKey(r)
       default:
         return r.source
     }
   }
+  const names = new Map<string, string>()
 
   const series = new Map<
     string,
@@ -415,6 +430,7 @@ function buildTimeseries(params: Record<string, string | undefined>): Timeseries
   for (const r of rows) {
     const key = keyOf(r)
     if (!series.has(key)) series.set(key, new Map())
+    if (groupBy === 'device') names.set(key, r.deviceName)
     const points = series.get(key)!
 
     if (bucket === 'day') {
@@ -452,13 +468,17 @@ function buildTimeseries(params: Record<string, string | undefined>): Timeseries
     bucket,
     group_by: groupBy,
     series: [...series.entries()]
-      .map(([key, points]) => ({
-        key,
-        points: [...points.entries()]
-          .sort(([a], [b]) => (a < b ? -1 : 1))
-          .map(([t, v]) => ({ t, ...v })),
-      }))
-      .sort((a, b) => a.key.localeCompare(b.key)),
+      .map(([key, points]): TimeseriesSeries => {
+        const name = names.get(key)
+        return {
+          key,
+          ...(name !== undefined ? { name } : {}),
+          points: [...points.entries()]
+            .sort(([a], [b]) => (a < b ? -1 : 1))
+            .map(([t, v]) => ({ t, ...v })),
+        }
+      })
+      .sort((a, b) => (a.name ?? a.key).localeCompare(b.name ?? b.key)),
   }
 }
 
@@ -470,28 +490,43 @@ function buildBreakdown(params: Record<string, string | undefined>): BreakdownRe
   if (params.source) rows = rows.filter((r) => r.source === params.source)
   if (params.device) rows = rows.filter((r) => r.deviceId === params.device)
 
+  // Like the server, group_by=device keys by device UUID and carries the
+  // human-readable name in `name`; every other grouping leaves `name` unset.
   const keyOf = (r: DayRecord): string => {
     switch (groupBy) {
       case 'project':
         return r.project
       case 'device':
-        return r.deviceName
+        return r.deviceId
       case 'session':
-        return `sess-${hashStr(r.date + r.deviceId).toString(16)}`
+        return sessionKey(r)
+      case 'source':
+        return r.source
       default:
         return r.model
     }
   }
 
+  // Rows merge many records, so `source`/`device`/`estimated` are only
+  // meaningful when every merged record agrees — tracked here rather than
+  // taken from whichever record happened to come first.
+  interface RowMeta {
+    sources: Set<Source>
+    devices: Set<string>
+    allEstimated: boolean
+    knownTokens: number
+    totalTokens: number
+  }
+
   const acc = new Map<string, BreakdownRow>()
+  const meta = new Map<string, RowMeta>()
   for (const r of rows) {
     const key = keyOf(r)
     const existing = acc.get(key)
     if (!existing) {
       acc.set(key, {
         key,
-        source: r.source,
-        device: r.deviceName,
+        ...(groupBy === 'device' ? { name: r.deviceName } : {}),
         input: r.input,
         output: r.output,
         cache_read: r.cache_read,
@@ -503,6 +538,7 @@ function buildBreakdown(params: Record<string, string | undefined>): BreakdownRe
         first_seen: `${r.date}T00:00:00Z`,
         last_seen: `${r.date}T23:59:59Z`,
       })
+      meta.set(key, { sources: new Set([r.source]), devices: new Set([r.deviceName]), allEstimated: r.estimated, knownTokens: 0, totalTokens: 0 })
     } else {
       existing.input += r.input
       existing.output += r.output
@@ -513,7 +549,23 @@ function buildBreakdown(params: Record<string, string | undefined>): BreakdownRe
       if (r.cost_usd !== null) existing.cost_usd = (existing.cost_usd ?? 0) + r.cost_usd
       if (r.date < existing.first_seen) existing.first_seen = `${r.date}T00:00:00Z`
       if (r.date > existing.last_seen) existing.last_seen = `${r.date}T23:59:59Z`
+      const m = meta.get(key)!
+      m.sources.add(r.source)
+      m.devices.add(r.deviceName)
+      m.allEstimated = m.allEstimated && r.estimated
     }
+    const m = meta.get(key)!
+    const tokens = r.input + r.output + r.cache_read + r.cache_write
+    m.totalTokens += tokens
+    if (r.cost_usd !== null) m.knownTokens += tokens
+  }
+
+  for (const [key, row] of acc) {
+    const m = meta.get(key)!
+    row.source = m.sources.size === 1 ? [...m.sources][0] : undefined
+    row.device = m.devices.size === 1 ? [...m.devices][0] : undefined
+    row.estimated = m.allEstimated
+    row.cost_known_ratio = m.totalTokens === 0 ? 1 : m.knownTokens / m.totalTokens
   }
 
   const rowsOut = [...acc.values()].sort((a, b) => (b.cost_usd ?? 0) - (a.cost_usd ?? 0)).slice(0, limit)

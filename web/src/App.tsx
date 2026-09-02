@@ -1,6 +1,8 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { RequireAuth } from './components/RequireAuth'
+import { Agents } from './pages/Agents'
+import { DeviceUsage } from './pages/DeviceUsage'
 import { Devices } from './pages/Devices'
 import { Downloads } from './pages/Downloads'
 import { Events } from './pages/Events'
@@ -28,9 +30,12 @@ function App() {
             }
           >
             <Route path="/" element={<Overview />} />
+            <Route path="/agents" element={<Agents />} />
             <Route path="/models" element={<Models />} />
             <Route path="/projects" element={<Projects />} />
-            <Route path="/devices" element={<Devices />} />
+            {/* 기기 splits into two sub-tabs: usage analytics and administration. */}
+            <Route path="/devices" element={<DeviceUsage />} />
+            <Route path="/devices/manage" element={<Devices />} />
             <Route path="/downloads-page" element={<Downloads />} />
             <Route path="/events" element={<Events />} />
             <Route path="/pricing" element={<Pricing />} />

@@ -1,6 +1,9 @@
 export interface SegmentedOption<T extends string> {
   value: T
   label: string
+  /** Greyed out and unselectable — pair it with `title` to say why. */
+  disabled?: boolean
+  title?: string
 }
 
 interface SegmentedControlProps<T extends string> {
@@ -25,6 +28,8 @@ export function SegmentedControl<T extends string>({ value, onChange, options, a
           type="button"
           className={`chip${value === opt.value ? ' chip-active' : ''}`}
           aria-pressed={value === opt.value}
+          disabled={opt.disabled}
+          title={opt.title}
           onClick={() => onChange(opt.value)}
         >
           {opt.label}
