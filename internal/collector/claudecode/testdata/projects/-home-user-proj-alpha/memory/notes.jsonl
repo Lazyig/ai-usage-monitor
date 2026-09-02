@@ -1,0 +1,1 @@
+{"type":"assistant","uuid":"uuid-m001","requestId":"req_m1","timestamp":"2026-08-01T10:06:00.000Z","sessionId":"sess-memory","cwd":"/home/user/proj-alpha","version":"2.1.0","message":{"id":"msg_m001","model":"claude-opus-5","role":"assistant","usage":{"input_tokens":999,"output_tokens":999,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
