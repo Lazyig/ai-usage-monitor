@@ -7,13 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"ai-usage-monitor/internal/collector"
+	"ai-usage-monitor/internal/collector/jsonlscan"
 	"ai-usage-monitor/internal/event"
 )
 
@@ -32,6 +31,30 @@ func New(root string) collector.Collector { return &Collector{root: root} }
 
 // Name implements collector.Collector.
 func (c *Collector) Name() event.Source { return event.SourceCodex }
+
+// fileState is the per-file cursor entry: the shared resume point plus the
+// session context.
+//
+// The session fields are carried in the cursor on purpose: session_meta and
+// turn_context appear once near the top of a rollout file, so a resumed scan
+// that only reads appended bytes would otherwise have no model, cwd or session
+// id for the token_count lines it finds. Embedding jsonlscan.FileState keeps
+// them all in one flat JSON object, exactly as older agents wrote it.
+type fileState struct {
+	jsonlscan.FileState
+
+	SessionID  string `json:"session_id,omitempty"`
+	CWD        string `json:"cwd,omitempty"`
+	CLIVersion string `json:"cli_version,omitempty"`
+	Model      string `json:"model,omitempty"` // most recent turn_context model
+}
+
+type (
+	scanner     = jsonlscan.Scanner[fileState, *fileState]
+	cursorState = jsonlscan.Cursor[fileState]
+)
+
+func decodeCursor(raw []byte) cursorState { return jsonlscan.DecodeCursor[fileState](raw) }
 
 // line is the envelope shared by every rollout record.
 type line struct {
@@ -96,66 +119,24 @@ func (u tokenUsage) isZero() bool {
 // inside its file. Rollout files are append-only, so a line never moves and the
 // key is stable across scans and across a full re-read after truncation.
 func (c *Collector) Scan(ctx context.Context, deviceID string, cur collector.Cursor) ([]event.UsageEvent, collector.Cursor, error) {
-	state := decodeCursor(cur)
-
-	files, err := jsonlFiles(c.root)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, cur, nil // tool not installed on this device
-		}
-		return nil, cur, fmt.Errorf("codex: walk %s: %w", c.root, err)
-	}
-
-	next := cursorState{Files: make(map[string]fileState, len(files))}
-	var (
-		events  []event.UsageEvent
-		fileErr []error
-		okFiles int
-	)
-
-	for _, path := range files {
-		if err := ctx.Err(); err != nil {
-			return events, cur, err
-		}
-
-		key := cursorKey(c.root, path)
-		fi, err := os.Stat(path)
-		if err != nil {
-			fileErr = append(fileErr, fmt.Errorf("codex: stat %s: %w", path, err))
-			continue
-		}
-		ino, hasIno := fileIdentity(fi)
-		prev, seen := state.Files[key]
-		start := startOffset(prev, seen, fi, ino, hasIno)
-
-		// Session context either resumes from the cursor or is rebuilt from the
-		// session_meta / turn_context lines at the top of the file.
-		st := fileState{}
-		if start > 0 {
-			st = prev
-		}
-
-		end, err := readAppended(path, start, func(offset int64, raw []byte) error {
-			if ev, ok := decodeLine(raw, offset, deviceID, &st); ok {
+	var events []event.UsageEvent
+	sc := scanner{
+		Root: c.root,
+		Name: "codex",
+		Line: func(st *fileState, offset int64, raw []byte) error {
+			if ev, ok := decodeLine(raw, offset, deviceID, st); ok {
 				events = append(events, ev)
 			}
 			return nil
-		})
-		if err != nil {
-			fileErr = append(fileErr, fmt.Errorf("codex: read %s: %w", path, err))
-		} else {
-			okFiles++
-		}
-
-		st.Offset = end
-		st.Size = fi.Size()
-		st.ModNS = fi.ModTime().UnixNano()
-		st.Inode, st.HasIno = ino, hasIno
-		next.Files[key] = st
+		},
 	}
 
-	if okFiles == 0 && len(fileErr) > 0 {
-		return events, cur, errors.Join(fileErr...)
+	next, err := sc.Scan(ctx, decodeCursor(cur))
+	switch {
+	case errors.Is(err, jsonlscan.ErrNoRoot):
+		return nil, cur, nil // tool not installed on this device
+	case err != nil:
+		return events, cur, err
 	}
 
 	encoded, err := json.Marshal(next)
@@ -163,15 +144,6 @@ func (c *Collector) Scan(ctx context.Context, deviceID string, cur collector.Cur
 		return events, cur, fmt.Errorf("codex: encode cursor: %w", err)
 	}
 	return events, encoded, nil
-}
-
-// cursorKey is the stable, OS independent cursor map key for path.
-func cursorKey(root, path string) string {
-	rel, err := filepath.Rel(root, path)
-	if err != nil {
-		rel = path
-	}
-	return filepath.ToSlash(rel)
 }
 
 // decodeLine folds one rollout line into st (session metadata, current model)

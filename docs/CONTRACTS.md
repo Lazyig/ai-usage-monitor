@@ -7,7 +7,7 @@
 | 경로 | 소유 작업 | 비고 |
 |---|---|---|
 | `internal/event`, `internal/collector/collector.go`, `internal/pricing` | 공통 (이미 있음) | 수정 시 다른 작업자와 조율 |
-| `internal/collector/claudecode`, `internal/collector/codex` | collectors | |
+| `internal/collector/claudecode`, `internal/collector/codex`, `internal/collector/jsonlscan` | collectors | `jsonlscan` 은 두 수집기가 공유하는 증분 리더 (파일 커서 · 부분 줄 처리 · 커서 JSON) |
 | `internal/store`, `internal/httpapi`, `cmd/server` | server | `docs/API.md` 구현 |
 | `web/` | spa | `docs/API.md` 소비 |
 | `internal/cursor`, `internal/transport`, `internal/agentcfg`, `cmd/agent` | agent-runtime | 수집기 3종을 조립 |
