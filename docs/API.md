@@ -63,7 +63,7 @@
 ### DELETE /devices/{id}/events  → 이벤트만 삭제 (기기·토큰 유지)
 `200 {"id","deleted_events":n,"resync_requested":true}`. 재수집 플래그가 서고, 그 기기의 다음 `POST /ingest` 응답이 `"resync":true` 를 딱 한 번 실어 보낸다.
 
-### GET /pricing  → 현재 로드된 pricing.yaml 항목 목록 `{"rates":[{"match","provider","input","output","cache_read","cache_write","cache_write_5m","cache_write_1h","alias_of","estimated"}]}`
+### GET /pricing  → 현재 로드된 pricing.yaml 항목 목록 `{"rates":[{"match","provider","input","output","cache_read","cache_write","cache_write_5m","cache_write_1h","alias_of","estimated","effective_from","effective_to","note"}]}`. 같은 모델이 기간별로 여러 행일 수 있으며 이벤트 날짜가 `[effective_from, effective_to)` 에 드는 첫 행이 적용된다.
 ### POST /pricing/reload  → 파일 다시 읽기
 
 ### GET /health  (토큰 불필요) → `{"ok":true,"version":"...","events":n,"devices":n,"checks":{"database":"ok","pricing":"ok","frontend":"ok"}}` — 하나라도 실패하면 503

@@ -37,6 +37,20 @@ const PRICING_COLUMNS: Column<PricingRate>[] = [
   rateColumn('cache_write', '캐시 쓰기 ($/1M)', (r) => r.cache_write ?? r.cache_write_5m),
   rateColumn('cache_write_1h', '캐시 쓰기 1h ($/1M)', (r) => r.cache_write_1h),
   { key: 'alias_of', header: '별칭', render: (r) => r.alias_of ?? '-', sortValue: (r) => r.alias_of ?? '' },
+  {
+    key: 'period',
+    header: '적용 기간',
+    render: (r) =>
+      r.effective_from || r.effective_to ? (
+        <span title={r.note ?? undefined}>
+          {r.effective_from ?? '…'} ~ {r.effective_to ?? ''}
+          {r.note && <span className="muted"> ({r.note})</span>}
+        </span>
+      ) : (
+        <span className="muted">상시{r.note ? ` (${r.note})` : ''}</span>
+      ),
+    sortValue: (r) => r.effective_from ?? '',
+  },
 ]
 
 export function Pricing() {

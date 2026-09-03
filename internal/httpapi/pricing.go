@@ -85,6 +85,8 @@ type rateView struct {
 	AliasOf       string   `json:"alias_of,omitempty"`
 	Estimated     bool     `json:"estimated"`
 	EffectiveFrom string   `json:"effective_from,omitempty"`
+	EffectiveTo   string   `json:"effective_to,omitempty"`
+	Note          string   `json:"note,omitempty"`
 }
 
 func rateViews(rates []pricing.Rate) []rateView {
@@ -102,6 +104,8 @@ func rateViews(rates []pricing.Rate) []rateView {
 			AliasOf:       r.AliasOf,
 			Estimated:     r.Estimated,
 			EffectiveFrom: r.EffectiveFrom,
+			EffectiveTo:   r.EffectiveTo,
+			Note:          r.Note,
 		})
 	}
 	return out

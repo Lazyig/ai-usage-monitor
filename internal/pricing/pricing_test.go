@@ -105,3 +105,51 @@ func TestLongContext(t *testing.T) {
 		t.Fatal("nil table must be inert")
 	}
 }
+
+// A model whose price changed is listed once per period; the event date picks
+// the row, boundaries are [from, to), and aliases resolve against the same date.
+func TestPeriods(t *testing.T) {
+	tb, err := Parse([]byte(`
+- match: "gemini-x"
+  effective_from: 2027-01-01
+  input: 1.5
+  output: 7.5
+- match: "gemini-x"
+  effective_from: 2026-04-01
+  effective_to: 2027-01-01
+  input: 0.75
+  output: 3.75
+  note: introductory pricing
+- match: "gemini-x"
+  effective_to: 2026-04-01
+  input: 9
+  output: 9
+- match: "gemini-y"
+  alias_of: "gemini-x"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
+	cases := []struct {
+		at   string
+		want float64
+	}{
+		{"2026-03-31", 9}, {"2026-04-01", 0.75}, {"2026-12-31", 0.75}, {"2027-01-01", 1.5}, {"2030-06-01", 1.5},
+	}
+	for _, c := range cases {
+		r, ok := tb.Lookup("gemini-x", day(c.at))
+		if !ok || *r.Input != c.want {
+			t.Errorf("%s: got %v ok=%v, want %v", c.at, r.Input, ok, c.want)
+		}
+		if a, ok := tb.Lookup("gemini-y", day(c.at)); !ok || *a.Input != c.want || !a.Estimated {
+			t.Errorf("alias %s: got %v ok=%v", c.at, a.Input, ok)
+		}
+	}
+	if r, _ := tb.Lookup("gemini-x", day("2026-06-01")); r.Note != "introductory pricing" {
+		t.Errorf("note = %q", r.Note)
+	}
+	if _, err := Parse([]byte("- match: x\n  effective_from: 2027-01-01\n  effective_to: 2026-01-01\n")); err == nil {
+		t.Error("inverted period must be rejected")
+	}
+}

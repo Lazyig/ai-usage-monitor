@@ -206,6 +206,10 @@ export interface PricingRate {
   cache_write_1h?: number | null
   alias_of?: string
   effective_from?: string
+  /** Exclusive end of the period this row applies to (YYYY-MM-DD). */
+  effective_to?: string
+  /** Free-text qualifier from pricing.yaml, e.g. "introductory pricing". */
+  note?: string
   estimated: boolean
 }
 

@@ -29,8 +29,11 @@ type Rate struct {
 	CacheWrite    *float64 `yaml:"cache_write,omitempty"`    // generic (Codex, Gemini)
 	CacheWrite5m  *float64 `yaml:"cache_write_5m,omitempty"` // Claude
 	CacheWrite1h  *float64 `yaml:"cache_write_1h,omitempty"`
-	EffectiveFrom string   `yaml:"effective_from,omitempty"` // YYYY-MM-DD, optional
+	EffectiveFrom string   `yaml:"effective_from,omitempty"` // YYYY-MM-DD inclusive, optional
+	EffectiveTo   string   `yaml:"effective_to,omitempty"`   // YYYY-MM-DD exclusive, optional
+	Note          string   `yaml:"note,omitempty"`           // e.g. "introductory pricing", shown in the UI
 	effectiveFrom time.Time
+	effectiveTo   time.Time
 
 	// LongContext, when set, replaces the base rates for the WHOLE request once
 	// its prompt (input + every cache class) exceeds Threshold tokens. This is
@@ -88,6 +91,16 @@ func Parse(b []byte) (*Table, error) {
 			}
 			r.effectiveFrom = t
 		}
+		if r.EffectiveTo != "" {
+			t, err := time.Parse("2006-01-02", r.EffectiveTo)
+			if err != nil {
+				return nil, fmt.Errorf("pricing: %q effective_to: %w", r.Match, err)
+			}
+			r.effectiveTo = t
+			if !r.effectiveFrom.IsZero() && !r.effectiveFrom.Before(r.effectiveTo) {
+				return nil, fmt.Errorf("pricing: %q effective_to must be after effective_from", r.Match)
+			}
+		}
 	}
 	return &Table{rates: rates}, nil
 }
@@ -130,10 +143,16 @@ func (t *Table) Lookup(model string, at time.Time) (r Rate, ok bool) {
 	return r, ok
 }
 
+// match returns the first entry whose glob matches and whose period contains
+// `at` ([effective_from, effective_to), both optional). A model with price
+// changes therefore appears several times, each row bounded to its period.
 func (t *Table) match(model string, at time.Time) (Rate, bool) {
 	model = strings.ToLower(model)
 	for _, r := range t.rates {
 		if !r.effectiveFrom.IsZero() && at.Before(r.effectiveFrom) {
+			continue
+		}
+		if !r.effectiveTo.IsZero() && !at.Before(r.effectiveTo) {
 			continue
 		}
 		if okM, _ := path.Match(strings.ToLower(r.Match), model); okM {

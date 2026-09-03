@@ -374,7 +374,9 @@ function buildPricing(): PricingResponse {
         cache_write_5m: p?.cache_write ?? null,
         cache_write_1h: p ? Math.round(p.cache_write * 1.6 * 100) / 100 : null,
         alias_of: m.model === 'gemini-default' ? 'gemini-3.7-flash' : undefined,
-        effective_from: p ? '2026-06-01T00:00:00Z' : undefined,
+        effective_from: p ? '2026-06-01' : undefined,
+        effective_to: p ? '2027-01-01' : undefined,
+        note: p ? 'introductory pricing' : undefined,
         estimated: m.estimated,
       }
     })
