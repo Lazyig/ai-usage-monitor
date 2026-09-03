@@ -108,10 +108,18 @@
   alias_of: "gpt-5.6-sol"         # https://github.com/openai/codex/issues/20981
 
 # ---------------------------------------------------------------------------------------------
-# Google — Antigravity CLI. Thinking tokens bill as output. Intro rates for 3.7/3.6 Flash run
-# through 2026-12-31 and double on 2027-01-01. Suffixes (-control, -a, -c, -exp-a, -low) are
+# Google — Antigravity CLI. Thinking tokens bill as output. Intro rates for 3.8/3.7/3.6 Flash
+# run through 2026-12-31 and double on 2027-01-01. Suffixes (-control, -a, -c, -exp-a, -low) are
 # Antigravity-internal experiment arms / reasoning levels, priced as the base model (estimated).
-# Source: https://ai.google.dev/gemini-api/docs/pricing (2026-09-02)
+# Source: https://ai.google.dev/gemini-api/docs/pricing (2026-09-03)
+- match: "gemini-3.8-flash"       # Antigravity's default since 2026-09; same rates as 3.7 Flash
+  provider: google
+  input: 0.75
+  cache_read: 0.075
+  output: 3.75
+- match: "gemini-3.8-flash-*"
+  provider: google
+  alias_of: "gemini-3.8-flash"
 - match: "gemini-3.7-flash"
   provider: google
   input: 0.75
@@ -120,9 +128,9 @@
 - match: "gemini-3.7-flash-*"
   provider: google
   alias_of: "gemini-3.7-flash"
-- match: "gemini-default"         # Antigravity's documented default model
-  provider: google
-  alias_of: "gemini-3.7-flash"
+- match: "gemini-default"         # Antigravity's documented default model (3.8 Flash since
+  provider: google                # 2026-09: https://antigravity.google/blog/gemini-3-8-flash-in-google-antigravity)
+  alias_of: "gemini-3.8-flash"
 - match: "gemini-3.6-flash"
   provider: google
   input: 0.75
@@ -150,4 +158,4 @@
   alias_of: "gemini-3.1-pro-preview"
 - match: "antigravity-internal"   # title/summary calls with no model recorded; small volume
   provider: google
-  alias_of: "gemini-3.7-flash"
+  alias_of: "gemini-3.8-flash"
