@@ -262,6 +262,10 @@ export function Devices() {
                 </button>
               </div>
               <p style={{ marginTop: 10, marginBottom: 2 }}>Windows (PowerShell) 설치 명령</p>
+              <p className="admin-note" role="note">
+                <strong>관리자 권한 필수</strong> — PowerShell 을 &quot;관리자 권한으로 실행&quot; 한 창에서 실행하세요. 일반 권한에서는 Windows 서비스 등록이 실패해
+                에이전트가 자동 시작되지 않습니다.
+              </p>
               <div className="copy-box-row">
                 <code>{cmds.windows}</code>
                 <button type="button" className="btn btn-sm" onClick={() => navigator.clipboard?.writeText(cmds.windows)}>

@@ -174,13 +174,16 @@ function InstallGuideCard() {
         </div>
         <div className="install-panel">
           <h3>Windows (PowerShell)</h3>
+          <p className="admin-note" role="note">
+            <strong>관리자 권한 필수</strong> — 시작 메뉴에서 PowerShell 을 &quot;관리자 권한으로 실행&quot; 한 뒤 아래 명령을 붙여 넣으세요. 일반 권한에서는
+            서비스 등록이 실패합니다.
+          </p>
           <CommandBox command={cmds.windows} highlight={TOKEN_PLACEHOLDER} />
           <ol className="install-steps">
             <li>기기 관리에서 기기 추가 → 토큰 발급</li>
-            <li>아래 명령을 실행</li>
+            <li>관리자 PowerShell 에서 위 명령을 실행</li>
             <li>1분 안에 기기 관리 목록에 나타남</li>
           </ol>
-          <p className="install-note">관리자 PowerShell 에서 실행하세요.</p>
         </div>
       </div>
       <p className="install-note">
@@ -221,8 +224,8 @@ function UninstallGuideCard() {
             <li>%LOCALAPPDATA%\ai-usage-agent 삭제</li>
             <li>%APPDATA%\ai-usage-agent (설정·커서·큐) 삭제</li>
           </ol>
-          <p className="install-note">
-            관리자 PowerShell 에서 실행하세요. 로컬 상태를 남기려면 명령 끝에 <code> -KeepState</code> 를 붙이세요.
+          <p className="admin-note" role="note">
+            <strong>관리자 권한 필수</strong> — 서비스 삭제에 필요합니다. 로컬 상태를 남기려면 명령 끝에 <code> -KeepState</code> 를 붙이세요.
           </p>
         </div>
       </div>

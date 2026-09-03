@@ -1323,6 +1323,23 @@ a.btn {
   color: var(--text-muted);
 }
 
+/* Prominent requirement (e.g. Windows needs an elevated shell) */
+.admin-note {
+  margin: 6px 0 8px;
+  padding: 8px 10px;
+  border-left: 3px solid #d97706;
+  border-radius: var(--radius-sm);
+  background: rgba(217, 119, 6, 0.1);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.admin-note strong {
+  color: #b45309;
+}
+:root:not([data-theme="light"]) .admin-note strong {
+  color: #fbbf24;
+}
+
 .token-placeholder {
   color: var(--series-4);
   font-weight: 600;
