@@ -1,44 +1,50 @@
 # Model price table. USD per 1M tokens. First matching entry wins (path.Match glob on the
-# lowercased model name), so specific names come before globs. Sources and access dates are
-# in comments; re-check the dated promotions. Cache storage (per hour) is NOT modelled.
+# lowercased model name), so specific names come before globs and NEWER periods come before
+# older ones for the same model. Sources and access dates are in comments.
+#
+# Periods: `effective_from` (inclusive) / `effective_to` (exclusive), YYYY-MM-DD, matched against
+# the event's UTC day. Only put a boundary where the price actually changed; the oldest row of a
+# model has no `effective_from` so nothing near a launch date falls through as "unknown".
+# `note` is shown in the UI. Cache storage (per hour) is NOT modelled.
 #
 # Conventions: `input` excludes cache; `cache_read` = cached input; Claude cache writes are
 # 1.25x (5m) / 2x (1h) of input. `long_context` replaces the rates for the WHOLE request when
-# its prompt (input + cache) exceeds `threshold` tokens. `alias_of` reuses another entry and is
-# shown as "estimated" in the UI.
+# its prompt (input + cache) exceeds `threshold` tokens. `alias_of` reuses another entry (resolved
+# for the same date) and is shown as "estimated".
 
 # ---------------------------------------------------------------------------------------------
 # Anthropic — Claude Code (first-party). No long-context surcharge on Claude 4.6+ (1M ctx at
-# standard rate). Source: https://platform.claude.com/docs/en/about-claude/pricing (2026-09-02)
-- match: "claude-fable-5-1"
+# standard rate). Source: https://platform.claude.com/docs/en/about-claude/pricing and
+# https://platform.claude.com/docs/en/release-notes/api (2026-09-03)
+- match: "claude-fable-5-1"       # launched 2026-09-01
   provider: anthropic
   input: 10.00
-  cache_read: 0.25          # 0.025x, unique to Fable/Mythos 5.1
+  cache_read: 0.25                # 0.025x, unique to Fable/Mythos 5.1
   cache_write_5m: 12.50
   cache_write_1h: 20.00
   output: 50.00
-- match: "claude-fable-5"
+- match: "claude-fable-5"         # launched 2026-06-09
   provider: anthropic
   input: 10.00
   cache_read: 1.00
   cache_write_5m: 12.50
   cache_write_1h: 20.00
   output: 50.00
-- match: "claude-opus-5"
+- match: "claude-opus-5"          # launched 2026-07-24; fast mode ($10/$50) not distinguished in logs
   provider: anthropic
   input: 5.00
   cache_read: 0.50
   cache_write_5m: 6.25
   cache_write_1h: 10.00
   output: 25.00
-  # fast mode (speed=fast) is $10/$50 — not distinguished in the logs we read
-- match: "claude-sonnet-5"
-  provider: anthropic
-  input: 2.00               # the increase to $3/$15 scheduled for 2026-09-01 was cancelled
+- match: "claude-sonnet-5"        # launched 2026-06-30 at introductory $2/$10; made the standard price
+  provider: anthropic             # on 2026-08-10, the scheduled 2026-09-01 rise to $3/$15 was cancelled
+  input: 2.00
   cache_read: 0.20
   cache_write_5m: 2.50
   cache_write_1h: 4.00
   output: 10.00
+  note: 도입가가 정가로 확정(2026-08-10)
 - match: "claude-haiku-4-5"
   provider: anthropic
   input: 1.00
@@ -53,7 +59,7 @@
 - match: "claude-opus-4-6-thinking"
   provider: vertex
   alias_of: "claude-opus-4-6"
-- match: "claude-sonnet-4-6"
+- match: "claude-sonnet-4-6"      # launched 2026-02-17
   provider: vertex
   estimated: true
   input: 3.00
@@ -61,7 +67,7 @@
   cache_write_5m: 3.75
   cache_write_1h: 6.00
   output: 15.00
-- match: "claude-opus-4-6"
+- match: "claude-opus-4-6"        # launched 2026-02-05
   provider: vertex
   estimated: true
   input: 5.00
@@ -69,7 +75,7 @@
   cache_write_5m: 6.25
   cache_write_1h: 10.00
   output: 25.00
-- match: "claude-opus-4-*"
+- match: "claude-opus-4-*"        # opus-4-8 (2026-05-28) and other 4.x: $5/$25
   provider: anthropic
   input: 5.00
   cache_read: 0.50
@@ -78,28 +84,53 @@
   output: 25.00
 
 # ---------------------------------------------------------------------------------------------
-# OpenAI — Codex CLI. terra/sol/luna are distinct public models (20x spread), never glob them.
-# >272K input tokens: 2x input (cached too) and 1.5x output for the full request.
-# Sources: https://developers.openai.com/api/docs/models/gpt-5.6 , .../gpt-5.6-terra ,
-# .../gpt-5.6-luna (2026-09-02). Sol is promotional pricing at least through 2026-11-21.
-- match: "gpt-5.6-sol"
-  provider: openai
+# OpenAI — Codex CLI. terra/sol/luna are distinct public models (launched 2026-07-09), never glob
+# them. >272K input tokens: 2x input (cached too) and 1.5x output for the full request, in every
+# period. Sources: https://developers.openai.com/api/docs/pricing , .../changelog ,
+# .../models/gpt-5.6-sol|terra|luna (2026-09-03). Pre-cut cache_read values are 0.1x input (inferred).
+- match: "gpt-5.6-sol"            # promotional cut 2026-08-21; "at least through 2026-11-21".
+  provider: openai                # No reversion is announced — recheck after 2026-11-21.
+  effective_from: 2026-08-21
   input: 4.00
   cache_read: 0.40
   output: 20.00
   long_context: { threshold: 272000, input: 8.00, cache_read: 0.80, output: 30.00 }
-- match: "gpt-5.6-terra"
+  note: 프로모션 단가(최소 2026-11-21까지)
+- match: "gpt-5.6-sol"            # launch price
   provider: openai
+  effective_to: 2026-08-21
+  input: 5.00
+  cache_read: 0.50
+  output: 30.00
+  long_context: { threshold: 272000, input: 10.00, cache_read: 1.00, output: 45.00 }
+- match: "gpt-5.6-terra"          # 20% cut on 2026-07-30
+  provider: openai
+  effective_from: 2026-07-30
   input: 2.00
   cache_read: 0.20
   output: 12.00
   long_context: { threshold: 272000, input: 4.00, cache_read: 0.40, output: 18.00 }
-- match: "gpt-5.6-luna"
+- match: "gpt-5.6-terra"          # launch price
   provider: openai
+  effective_to: 2026-07-30
+  input: 2.50
+  cache_read: 0.25
+  output: 15.00
+  long_context: { threshold: 272000, input: 5.00, cache_read: 0.50, output: 22.50 }
+- match: "gpt-5.6-luna"           # 80% cut on 2026-07-30
+  provider: openai
+  effective_from: 2026-07-30
   input: 0.20
   cache_read: 0.02
   output: 1.20
   long_context: { threshold: 272000, input: 0.40, cache_read: 0.04, output: 1.80 }
+- match: "gpt-5.6-luna"           # launch price
+  provider: openai
+  effective_to: 2026-07-30
+  input: 1.00
+  cache_read: 0.10
+  output: 6.00
+  long_context: { threshold: 272000, input: 2.00, cache_read: 0.20, output: 9.00 }
 - match: "gpt-5.6"                # bare alias routes to Sol
   provider: openai
   alias_of: "gpt-5.6-sol"
@@ -108,38 +139,70 @@
   alias_of: "gpt-5.6-sol"         # https://github.com/openai/codex/issues/20981
 
 # ---------------------------------------------------------------------------------------------
-# Google — Antigravity CLI. Thinking tokens bill as output. Intro rates for 3.8/3.7/3.6 Flash
-# run through 2026-12-31 and double on 2027-01-01. Suffixes (-control, -a, -c, -exp-a, -low) are
-# Antigravity-internal experiment arms / reasoning levels, priced as the base model (estimated).
-# Source: https://ai.google.dev/gemini-api/docs/pricing (2026-09-03)
-- match: "gemini-3.8-flash"       # Antigravity's default since 2026-09; same rates as 3.7 Flash
+# Google — Antigravity CLI. Thinking tokens bill as output. Suffixes (-control, -a, -c, -exp-a,
+# -low) are Antigravity-internal experiment arms / reasoning levels, priced as the base model
+# (estimated). Sources: https://ai.google.dev/gemini-api/docs/pricing ,
+# https://ai.google.dev/gemini-api/docs/changelog (2026-09-03)
+- match: "gemini-3.8-flash"       # GA 2026-09-02, Antigravity's default since 2026-09; intro price ends 2026-12-31
   provider: google
+  effective_from: 2027-01-01
+  input: 1.50
+  cache_read: 0.15
+  output: 7.50
+- match: "gemini-3.8-flash"
+  provider: google
+  effective_to: 2027-01-01
   input: 0.75
   cache_read: 0.075
   output: 3.75
+  note: 도입가(2026-12-31까지)
 - match: "gemini-3.8-flash-*"
   provider: google
   alias_of: "gemini-3.8-flash"
-- match: "gemini-3.7-flash"
+- match: "gemini-3.7-flash"       # intro price ends 2026-12-31
   provider: google
+  effective_from: 2027-01-01
+  input: 1.50
+  cache_read: 0.15
+  output: 7.50
+- match: "gemini-3.7-flash"       # GA 2026-08-13 at introductory pricing
+  provider: google
+  effective_to: 2027-01-01
   input: 0.75
   cache_read: 0.075
   output: 3.75
+  note: 도입가(2026-12-31까지)
 - match: "gemini-3.7-flash-*"
   provider: google
   alias_of: "gemini-3.7-flash"
-- match: "gemini-default"         # Antigravity's documented default model (3.8 Flash since
-  provider: google                # 2026-09: https://antigravity.google/blog/gemini-3-8-flash-in-google-antigravity)
+- match: "gemini-default"         # Antigravity's documented default model (3.8 Flash since 2026-09:
+  provider: google                # https://antigravity.google/blog/gemini-3-8-flash-in-google-antigravity; same rates as 3.7)
   alias_of: "gemini-3.8-flash"
-- match: "gemini-3.6-flash"
+- match: "gemini-3.6-flash"       # intro price ends 2026-12-31
   provider: google
+  effective_from: 2027-01-01
+  input: 1.50
+  cache_read: 0.15
+  output: 7.50
+- match: "gemini-3.6-flash"       # repriced to the 3.7 Flash intro rate on 2026-08-13 (trade press;
+  provider: google                # Google's pages show only the current row)
+  effective_from: 2026-08-13
+  effective_to: 2027-01-01
   input: 0.75
   cache_read: 0.075
   output: 3.75
+  note: 도입가(2026-12-31까지)
+- match: "gemini-3.6-flash"       # GA 2026-07-21 at $1.50/$7.50, twice the later intro rate
+  provider: google
+  effective_to: 2026-08-13
+  input: 1.50
+  cache_read: 0.15
+  output: 7.50
+  note: 출시가
 - match: "gemini-3.6-flash-*"
   provider: google
   alias_of: "gemini-3.6-flash"
-- match: "gemini-3-flash-preview"
+- match: "gemini-3-flash-preview" # public preview since 2025-12-17
   provider: google
   input: 0.50                     # audio input 1.00 (not distinguished here)
   cache_read: 0.05
@@ -147,7 +210,7 @@
 - match: "gemini-3-flash*"
   provider: google
   alias_of: "gemini-3-flash-preview"
-- match: "gemini-3.1-pro-preview"
+- match: "gemini-3.1-pro-preview" # preview since 2026-02-19
   provider: google
   input: 2.00
   cache_read: 0.20
@@ -156,6 +219,9 @@
 - match: "gemini-3.1-pro*"
   provider: google
   alias_of: "gemini-3.1-pro-preview"
+- match: "gemini-pro-default"     # Antigravity alias seen in logs; assumed to route to 3.1 Pro
+  provider: google
+  alias_of: "gemini-3.1-pro-preview"
 - match: "antigravity-internal"   # title/summary calls with no model recorded; small volume
   provider: google
-  alias_of: "gemini-3.8-flash"
+  alias_of: "gemini-3.7-flash"
