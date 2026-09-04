@@ -75,6 +75,23 @@ export function formatDateTime(iso: string | undefined | null): string {
   }).format(d)
 }
 
+/** "09/04 11:15" in KST — for a timestamp that sits next to a number. */
+export function formatShortDateTime(iso: string | undefined | null): string {
+  if (!iso) return '-'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '-'
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Seoul',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(d)
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? ''
+  return `${get('month')}/${get('day')} ${get('hour')}:${get('minute')}`
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   const units = ['KB', 'MB', 'GB', 'TB']

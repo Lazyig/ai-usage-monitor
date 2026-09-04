@@ -27,7 +27,7 @@ func TestRealTableCoversObservedModels(t *testing.T) {
 	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
 	for _, c := range []struct {
 		model, at string
-		input   float64
+		input     float64
 	}{
 		{"gemini-3.6-flash", "2026-07-25", 1.50}, {"gemini-3.6-flash", "2026-08-13", 0.75}, {"gemini-3.6-flash", "2027-01-01", 1.50},
 		{"gemini-3.6-flash-exp-a", "2026-07-25", 1.50},

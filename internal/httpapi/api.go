@@ -79,6 +79,7 @@ func New(st *store.Store, pr *Pricing, opt Options) http.Handler {
 	mux.Handle("GET /api/v1/summary", a.admin(http.HandlerFunc(a.handleSummary)))
 	mux.Handle("GET /api/v1/timeseries", a.admin(http.HandlerFunc(a.handleTimeseries)))
 	mux.Handle("GET /api/v1/breakdown", a.admin(http.HandlerFunc(a.handleBreakdown)))
+	mux.Handle("GET /api/v1/throughput", a.admin(http.HandlerFunc(a.handleThroughput)))
 	mux.Handle("GET /api/v1/events", a.admin(http.HandlerFunc(a.handleEvents)))
 	mux.Handle("GET /api/v1/devices", a.admin(http.HandlerFunc(a.handleListDevices)))
 	mux.Handle("POST /api/v1/devices", a.admin(http.HandlerFunc(a.handleCreateDevice)))

@@ -261,6 +261,25 @@ func (a *api) handleBreakdown(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, b)
 }
 
+// handleThroughput answers tokens per active minute. It shares the range and
+// filters of the other query endpoints; group_by defaults to source.
+func (a *api) handleThroughput(w http.ResponseWriter, r *http.Request) {
+	p, ok := query(w, r)
+	if !ok {
+		return
+	}
+	group, ok := groupBy(w, r, "source", "source, device, model, project or session")
+	if !ok {
+		return
+	}
+	tp, err := a.store.Throughput(r.Context(), p.filter, group, p.loc)
+	if err != nil {
+		a.fail(w, "throughput", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tp)
+}
+
 func (a *api) handleEvents(w http.ResponseWriter, r *http.Request) {
 	p, ok := query(w, r)
 	if !ok {

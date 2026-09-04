@@ -109,6 +109,42 @@ export interface BreakdownResponse {
   rows: BreakdownRow[]
 }
 
+/** The busiest minute of one token class (GET /throughput). */
+export interface ThroughputPeak {
+  /** Minute start, RFC3339 in the response `tz`. */
+  t: string
+  tokens: number
+}
+
+/** One row of GET /throughput: tokens per *active* minute. A minute is active
+ * when at least one event completed in it, so idle time never dilutes the
+ * rate. `prompt` = input + cache_read + cache_write. */
+export interface ThroughputGroup {
+  key: string
+  /** Human-readable device name; only populated for group_by=device. */
+  name?: string
+  active_minutes: number
+  prompt: number
+  input: number
+  cache_read: number
+  cache_write: number
+  output: number
+  events: number
+  per_minute: { prompt: number; output: number; total: number }
+  /** Omitted when the range holds no events. */
+  peak_prompt?: ThroughputPeak
+  peak_output?: ThroughputPeak
+}
+
+export interface ThroughputResponse {
+  group_by: GroupBy
+  tz: string
+  /** Every group folded together; active minutes are the union. */
+  total: ThroughputGroup
+  /** Busiest first (per_minute.total desc). */
+  groups: ThroughputGroup[]
+}
+
 /** UsageEvent as defined in internal/event, plus the server-computed cost. */
 export interface UsageEventDTO {
   event_id: string

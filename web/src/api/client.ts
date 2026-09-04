@@ -4,11 +4,11 @@
 // touching the network — see mock/handlers.ts.
 import { mockRequest } from './mock/handlers'
 import type {
-  Device,
   BreakdownGroupBy,
   BreakdownResponse,
   CreateDeviceResponse,
   DeleteDeviceResponse,
+  Device,
   DevicesResponse,
   DownloadsManifest,
   EventsResponse,
@@ -19,6 +19,7 @@ import type {
   PurgeDeviceResponse,
   RotateDeviceResponse,
   SummaryResponse,
+  ThroughputResponse,
   TimeseriesBucket,
   TimeseriesResponse,
 } from './types'
@@ -165,6 +166,10 @@ export function getBreakdown(
   params: RangeParams & FilterParams & { group_by: BreakdownGroupBy; limit?: number },
 ): Promise<BreakdownResponse> {
   return request('/api/v1/breakdown', { params: toParams(params) })
+}
+
+export function getThroughput(params: RangeParams & FilterParams & { group_by?: GroupBy }): Promise<ThroughputResponse> {
+  return request('/api/v1/throughput', { params: toParams(params) })
 }
 
 export function getEvents(

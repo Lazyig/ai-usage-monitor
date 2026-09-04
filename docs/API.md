@@ -43,6 +43,17 @@
 {"group_by":"model","rows":[{"key":"claude-opus-5","source":"claude_code","device":"...","input":0,"output":0,"cache_read":0,"cache_write":0,"reasoning":0,"cost_usd":0.0,"estimated":false,"events":0,"first_seen":"...","last_seen":"..."}]}
 ```
 
+### GET /throughput?from&to&tz&group_by=source|device|model|project|session&source=&device=
+활동 분 기준 처리량. 이벤트의 완료 시각이 속한 분(minute)에 그 이벤트의 토큰을 귀속시키고, 이벤트가 하나라도 있는 분만 "활동 분"으로 센다. `per_minute` 는 활동 분 평균, `peak_*` 는 가장 많았던 1분(분 시작 시각은 `tz` 기준 RFC3339). `prompt` = input + cache_read + cache_write. `total` 은 그룹을 합친 값(활동 분은 합집합). 정렬은 `per_minute.total` 내림차순.
+```json
+{"group_by":"source","tz":"Asia/Seoul",
+ "total":{"key":"","active_minutes":0,"prompt":0,"input":0,"cache_read":0,"cache_write":0,"output":0,"events":0,
+          "per_minute":{"prompt":0.0,"output":0.0,"total":0.0},
+          "peak_prompt":{"t":"2026-09-04T11:15:00+09:00","tokens":0},"peak_output":{"t":"...","tokens":0}},
+ "groups":[{"key":"claude_code","name":"(기기일 때)", ...같은 모양}]}
+```
+빈 범위에서는 `peak_*` 가 생략된다. 완료 시각만 알기 때문에 응답 생성 속도(초당 토큰)가 아니라 "그 분에 완료된 토큰량" 의 근사치다.
+
 ### GET /events?from&to&source=&device=&model=&limit=200&cursor=
 원본 이벤트 페이지네이션. `{"events":[UsageEvent + "cost_usd"],"next_cursor":"..."}`
 

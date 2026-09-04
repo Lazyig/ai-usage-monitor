@@ -356,6 +356,19 @@ func TestQueryEndpoints(t *testing.T) {
 		t.Fatalf("breakdown = %+v", bd)
 	}
 
+	w = h.do(http.MethodGet, "/api/v1/throughput?"+rng+"&group_by=model", adminToken, nil)
+	var tp store.Throughput
+	h.decode(w, &tp)
+	if tp.GroupBy != "model" || tp.TZ != DefaultTZ || len(tp.Groups) != 1 || tp.Total.ActiveMinutes != 2 || tp.Groups[0].PerMinute.Output != 50_000 {
+		t.Fatalf("throughput = %+v", tp)
+	}
+	if got := tp.Total.PeakOutput.T.Format(time.RFC3339); got != "2026-09-01T19:00:00+09:00" {
+		t.Fatalf("throughput peak = %s", got)
+	}
+	if w := h.do(http.MethodGet, "/api/v1/throughput?group_by=nope", adminToken, nil); w.Code != http.StatusBadRequest {
+		t.Fatalf("throughput bad group_by = %d", w.Code)
+	}
+
 	w = h.do(http.MethodGet, "/api/v1/events?"+rng+"&limit=1", adminToken, nil)
 	var page store.EventPage
 	h.decode(w, &page)

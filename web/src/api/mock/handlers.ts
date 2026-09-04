@@ -19,6 +19,8 @@ import type {
   Source,
   SummaryResponse,
   SummaryRowBase,
+  ThroughputGroup,
+  ThroughputResponse,
   TimeseriesResponse,
   TimeseriesSeries,
   UsageTotals,
@@ -333,6 +335,102 @@ function buildBreakdown(params: Params): BreakdownResponse {
   return { group_by: groupBy, rows: rowsOut }
 }
 
+// ---- GET /api/v1/throughput ---------------------------------------------
+
+/** The mock dataset is per-day, so active minutes and peaks are synthesized
+ * deterministically from each record: every event occupies roughly 1.5–3.5
+ * minutes of wall clock, and the busiest minute runs 2–3× the average. */
+function buildThroughput(params: Params): ThroughputResponse {
+  const { rows } = selectRecords(params)
+  const groupBy = (params.group_by as ThroughputResponse['group_by']) ?? 'source'
+  const keyOf = (r: DayRecord): string => {
+    switch (groupBy) {
+      case 'project':
+        return r.project
+      case 'device':
+        return r.deviceId
+      case 'session':
+        return sessionKey(r)
+      case 'model':
+        return r.model
+      default:
+        return r.source
+    }
+  }
+  interface Acc {
+    g: ThroughputGroup
+    peakPromptScale: number
+    peakOutputScale: number
+    peakDate: string
+  }
+  const start = (key: string): Acc => ({
+    g: {
+      key,
+      active_minutes: 0,
+      prompt: 0,
+      input: 0,
+      cache_read: 0,
+      cache_write: 0,
+      output: 0,
+      events: 0,
+      per_minute: { prompt: 0, output: 0, total: 0 },
+    },
+    peakPromptScale: 2,
+    peakOutputScale: 2,
+    peakDate: '',
+  })
+  const fold = (a: Acc, r: DayRecord) => {
+    const rng = rngFor('throughput', r.date, r.source, r.model, r.deviceId)
+    a.g.active_minutes += Math.max(1, Math.round(r.events * (1.5 + rng() * 2)))
+    a.g.input += r.input
+    a.g.cache_read += r.cache_read
+    a.g.cache_write += r.cache_write
+    a.g.output += r.output
+    a.g.events += r.events
+    const scale = 2 + rng()
+    if (scale > a.peakPromptScale) {
+      a.peakPromptScale = scale
+      a.peakDate = r.date
+    }
+    if (scale > a.peakOutputScale) a.peakOutputScale = scale
+  }
+  const finish = (a: Acc, name?: string): ThroughputGroup => {
+    const g = a.g
+    g.prompt = g.input + g.cache_read + g.cache_write
+    if (g.active_minutes > 0) {
+      g.per_minute = {
+        prompt: Math.round((g.prompt / g.active_minutes) * 10) / 10,
+        output: Math.round((g.output / g.active_minutes) * 10) / 10,
+        total: Math.round(((g.prompt + g.output) / g.active_minutes) * 10) / 10,
+      }
+      const t = `${a.peakDate || TODAY}T14:07:00+09:00`
+      g.peak_prompt = { t, tokens: Math.round(g.per_minute.prompt * a.peakPromptScale) }
+      g.peak_output = { t, tokens: Math.round(g.per_minute.output * a.peakOutputScale) }
+    }
+    if (name) g.name = name
+    return g
+  }
+
+  const accs = new Map<string, Acc>()
+  const names = new Map<string, string>()
+  const total = start('')
+  for (const r of rows) {
+    const key = keyOf(r)
+    let a = accs.get(key)
+    if (!a) {
+      a = start(key)
+      accs.set(key, a)
+      if (groupBy === 'device') names.set(key, r.deviceName)
+    }
+    fold(a, r)
+    fold(total, r)
+  }
+  // Groups overlap in time, so the union of their minutes is smaller than the sum.
+  total.g.active_minutes = Math.round(total.g.active_minutes * 0.7)
+  const groups = [...accs.entries()].map(([k, a]) => finish(a, names.get(k))).sort((x, y) => y.per_minute.total - x.per_minute.total)
+  return { group_by: groupBy, tz: 'Asia/Seoul', total: finish(total), groups }
+}
+
 // ---- GET /api/v1/events --------------------------------------------------
 
 function buildEvents(params: Params): EventsResponse {
@@ -561,6 +659,7 @@ export async function mockRequest<T>(path: string, opts: MockRequestOptions): Pr
   if (path === '/api/v1/timeseries') return delay(buildTimeseries(params) as unknown as T)
   if (path === '/api/v1/breakdown') return delay(buildBreakdown(params) as unknown as T)
   if (path === '/api/v1/events') return delay(buildEvents(params) as unknown as T)
+  if (path === '/api/v1/throughput') return delay(buildThroughput(params) as unknown as T)
   if (path === '/api/v1/pricing' && method === 'GET') return delay(buildPricing() as unknown as T)
   if (path === '/api/v1/pricing/reload' && method === 'POST') return delay(buildPricing() as unknown as T)
   if (path === '/downloads/manifest.json') return delay(buildManifest() as unknown as T)

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { getBreakdown, getDevices, getTimeseries } from '../api/client'
+import { getBreakdown, getDevices, getThroughput, getTimeseries } from '../api/client'
 import type { BreakdownRow, Source, TimeseriesBucket } from '../api/types'
 import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
@@ -9,6 +9,7 @@ import { costColumn, countColumn, dateTimeColumn, tokenColumn } from '../compone
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { StateContainer } from '../components/StateContainer'
+import { ThroughputCard } from '../components/ThroughputCard'
 import { TrendChart } from '../components/TrendChart'
 import { useApiData } from '../hooks/useApiData'
 import { type Metric, METRIC_OPTIONS, BUCKET_OPTIONS, metricFormat } from '../lib/chartData'
@@ -44,6 +45,10 @@ export function Agents() {
   const trendState = useApiData(
     () => getTimeseries({ from: range.from, to: range.to, bucket: effectiveBucket, group_by: 'source', device: device || undefined }),
     [range.from, range.to, effectiveBucket, device, refreshKey],
+  )
+  const throughputState = useApiData(
+    () => getThroughput({ from: range.from, to: range.to, group_by: 'source', device: device || undefined }),
+    [range.from, range.to, device, refreshKey],
   )
   // The agent × device mix only says something while every device is in play;
   // with one device selected it would be a single band, so it is not fetched.
@@ -157,6 +162,16 @@ export function Agents() {
           </StateContainer>
         </ErrorBoundary>
       </Card>
+
+      <ThroughputCard
+        title="에이전트별 분당 토큰"
+        loading={throughputState.status === 'loading'}
+        error={throughputState.status === 'error' ? throughputState.message : null}
+        onRetry={throughputState.reload}
+        data={throughputState.status === 'success' ? throughputState.data : null}
+        labelFor={(g) => labelForKey(g.key)}
+        keyHeader="에이전트"
+      />
 
       {!device && (
         <Card

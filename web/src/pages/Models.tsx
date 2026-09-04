@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { TooltipProps } from 'recharts'
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent'
-import { getBreakdown, getTimeseries } from '../api/client'
+import { getBreakdown, getThroughput, getTimeseries } from '../api/client'
 import type { BreakdownRow, Source } from '../api/types'
 import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
@@ -19,6 +19,7 @@ import { costColumn, countColumn, tokenColumn } from '../components/columns'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { StateContainer } from '../components/StateContainer'
+import { ThroughputCard } from '../components/ThroughputCard'
 import { TrendChart } from '../components/TrendChart'
 import { type Metric, METRIC_OPTIONS } from '../lib/chartData'
 import {
@@ -76,6 +77,11 @@ export function Models() {
   )
   const timeseriesState = useApiData(
     () => getTimeseries({ from: range.from, to: range.to, bucket: 'day', group_by: 'model', source: source || undefined }),
+    [range.from, range.to, source, refreshKey],
+  )
+
+  const throughputState = useApiData(
+    () => getThroughput({ from: range.from, to: range.to, group_by: 'model', source: source || undefined }),
     [range.from, range.to, source, refreshKey],
   )
 
@@ -192,6 +198,17 @@ export function Models() {
           </StateContainer>
         </ErrorBoundary>
       </Card>
+
+      <ThroughputCard
+        title="모델별 분당 토큰"
+        loading={throughputState.status === 'loading'}
+        error={throughputState.status === 'error' ? throughputState.message : null}
+        onRetry={throughputState.reload}
+        data={throughputState.status === 'success' ? throughputState.data : null}
+        labelFor={(g) => g.key}
+        keyHeader="모델"
+        limit={TOP_N}
+      />
 
       <h2>전체 모델</h2>
       <StateContainer
