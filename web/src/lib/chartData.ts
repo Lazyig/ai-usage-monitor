@@ -25,24 +25,13 @@ export function metricOfPoint(metric: Metric): (p: TimeseriesPoint) => number {
   return metric === 'cost' ? costOfPoint : tokensOfPoint
 }
 
-/** Option list for the 일별/시간별 bucket toggle. Hourly is offered only on
- * short ranges (see `hourlyAllowed`), and says why when it is not. */
-export function bucketOptions(hourlyAllowed: boolean, maxDays: number): {
-  value: TimeseriesBucket
-  label: string
-  disabled?: boolean
-  title?: string
-}[] {
-  return [
-    { value: 'day', label: '일별' },
-    {
-      value: 'hour',
-      label: '시간별',
-      disabled: !hourlyAllowed,
-      title: hourlyAllowed ? undefined : `시간별 보기는 기간이 ${maxDays}일 이하일 때만 쓸 수 있습니다.`,
-    },
-  ]
-}
+/** Option list for the 일별/시간별 bucket toggle. Pages render the toggle only
+ * while the range is short enough for hourly bars (see `hourlyAllowed`); on
+ * wider ranges the toggle is hidden rather than shown with one dead option. */
+export const BUCKET_OPTIONS: { value: TimeseriesBucket; label: string }[] = [
+  { value: 'day', label: '일별' },
+  { value: 'hour', label: '시간별' },
+]
 
 export interface MergedPoint {
   t: string

@@ -13,9 +13,9 @@ import { StateContainer } from '../components/StateContainer'
 import { StatTile } from '../components/StatTile'
 import { TrendChart } from '../components/TrendChart'
 import { useApiData } from '../hooks/useApiData'
-import { type Metric, METRIC_OPTIONS, bucketOptions, metricFormat, seriesTokens, topBy } from '../lib/chartData'
+import { type Metric, METRIC_OPTIONS, BUCKET_OPTIONS, metricFormat, seriesTokens, topBy } from '../lib/chartData'
 import { SOURCE_COLOR_VARS, SOURCE_ORDER, colorForSlot, labelForKey } from '../lib/colors'
-import { HOURLY_MAX_DAYS, hourlyAllowed } from '../lib/dateRange'
+import { hourlyAllowed } from '../lib/dateRange'
 import { formatCompact, formatDateTime, formatFull, formatRelative, formatUsd, isStale } from '../lib/format'
 import { buildMatrix, fetchSourceDeviceMatrix } from '../lib/matrix'
 import { tokensOf } from '../lib/usage'
@@ -204,12 +204,9 @@ export function DeviceUsage() {
         controls={
           <>
             <SegmentedControl ariaLabel="추이 지표 전환" value={trendMetric} onChange={setTrendMetric} options={METRIC_OPTIONS} />
-            <SegmentedControl
-              ariaLabel="추이 단위 전환"
-              value={effectiveBucket}
-              onChange={setBucket}
-              options={bucketOptions(canBucketHourly, HOURLY_MAX_DAYS)}
-            />
+            {canBucketHourly && (
+              <SegmentedControl ariaLabel="추이 단위 전환" value={effectiveBucket} onChange={setBucket} options={BUCKET_OPTIONS} />
+            )}
           </>
         }
       >

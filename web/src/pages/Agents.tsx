@@ -11,9 +11,9 @@ import { SegmentedControl } from '../components/SegmentedControl'
 import { StateContainer } from '../components/StateContainer'
 import { TrendChart } from '../components/TrendChart'
 import { useApiData } from '../hooks/useApiData'
-import { type Metric, METRIC_OPTIONS, bucketOptions, metricFormat } from '../lib/chartData'
+import { type Metric, METRIC_OPTIONS, BUCKET_OPTIONS, metricFormat } from '../lib/chartData'
 import { SOURCE_COLOR_VARS, SOURCE_ORDER, colorForSlot, labelForKey } from '../lib/colors'
-import { HOURLY_MAX_DAYS, hourlyAllowed } from '../lib/dateRange'
+import { hourlyAllowed } from '../lib/dateRange'
 import { formatCompact, formatFull, formatPercent, formatUsd } from '../lib/format'
 import { buildMatrix, fetchSourceDeviceMatrix } from '../lib/matrix'
 import { cacheHitRatio, tokensOf } from '../lib/usage'
@@ -134,12 +134,9 @@ export function Agents() {
         controls={
           <>
             <SegmentedControl ariaLabel="추이 지표 전환" value={trendMetric} onChange={setTrendMetric} options={METRIC_OPTIONS} />
-            <SegmentedControl
-              ariaLabel="추이 단위 전환"
-              value={effectiveBucket}
-              onChange={setBucket}
-              options={bucketOptions(canBucketHourly, HOURLY_MAX_DAYS)}
-            />
+            {canBucketHourly && (
+              <SegmentedControl ariaLabel="추이 단위 전환" value={effectiveBucket} onChange={setBucket} options={BUCKET_OPTIONS} />
+            )}
           </>
         }
       >

@@ -67,8 +67,8 @@ export function rangeDays(from: string, to: string): number {
  * a month is ~720 bars — unreadable, and a large payload. */
 export const HOURLY_MAX_DAYS = 7
 
-/** Whether the hourly bucket may be offered for this range. A range change
- * that outgrows it silently falls the caller back to daily. */
+/** Whether the 일별/시간별 toggle is shown for this range. Beyond the limit the
+ * toggle is hidden and the caller silently falls back to daily. */
 export function hourlyAllowed(range: DateRange): boolean {
   return rangeDays(range.from, range.to) <= HOURLY_MAX_DAYS
 }
