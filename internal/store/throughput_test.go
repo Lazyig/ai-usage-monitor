@@ -23,7 +23,7 @@ func TestThroughput(t *testing.T) {
 		ev(t, "e3", a.ID, event.SourceClaudeCode, "2026-09-01T11:00:00Z", "claude-opus-5", 100, 50, 0, 0),
 		ev(t, "e4", a.ID, event.SourceCodex, "2026-09-01T10:00:30Z", "gpt-5.6-terra", 10_000, 1_000, 0, 0),
 	}
-	if _, _, err := s.InsertEvents(ctx, evs); err != nil {
+	if _, _, _, err := s.InsertEvents(ctx, evs); err != nil {
 		t.Fatal(err)
 	}
 	seoul, _ := time.LoadLocation("Asia/Seoul")

@@ -14,11 +14,11 @@
 {"device":{"id":"<uuid>","name":"macbook","os":"darwin","arch":"arm64","agent_version":"0.1.0"},
  "events":[{ ...UsageEvent JSON (internal/event) ... }]}
 ```
-→ `200 {"accepted":12,"duplicates":3,"rejected":0}`. 배치 최대 5,000건.
+→ `200 {"accepted":12,"duplicates":3,"updated":1,"rejected":0}`. 배치 최대 5,000건.
 `rejected` 는 `event.Valid()` 실패 또는 `device_id` 불일치로 버려진 이벤트 수(나머지는 그대로 저장). `device.id` 는 토큰에 묶인 기기와 일치해야 함(불일치 403).
-`event_id` 중복은 무시(UPSERT 아님, 최초 값 유지). `event_id = sha256(source|native key...)` 로 **기기와 무관**하므로, 같은 호출은 어느 기기·설치에서 올려도 한 번만 저장된다.
+`event_id` 가 이미 있으면 기본적으로 무시(최초 값 유지)하되, 들어온 사본의 `output` 이 저장된 값보다 **크면** 토큰 수·`ts`·`reasoning`·`tool_version` 을 그 사본으로 갱신하고 `updated` 로 센다(기기·소스·모델·세션·`received_at` 은 유지). 스트리밍 응답을 첫 줄만 보고 먼저 보낸 뒤 완성 줄이 뒤따라오는 경우를 위한 것으로, 출력 토큰은 스트리밍 중 늘어나기만 하므로 "더 큰 쪽 = 더 완성된 사본" 이다. `event_id = sha256(source|native key...)` 로 **기기와 무관**하므로, 같은 호출은 어느 기기·설치에서 올려도 한 번만 저장된다.
 
-`DELETE /devices/{id}/events` 로 재수집 플래그가 선 기기에는 응답에 `"resync":true` 가 추가된다(플래그는 이때 소비되어 딱 한 번만 나감. 빈 배치=하트비트도 포함). 에이전트는 이걸 받으면 커서와 오프라인 큐를 버리고 즉시 처음부터 다시 수집한다.
+`DELETE /devices/{id}/events` 또는 `POST /devices/{id}/resync` 로 재수집 플래그가 선 기기에는 응답에 `"resync":true` 가 추가된다(플래그는 이때 소비되어 딱 한 번만 나감. 빈 배치=하트비트도 포함). 에이전트는 이걸 받으면 커서와 오프라인 큐를 버리고 즉시 처음부터 다시 수집한다.
 
 ## 조회 (관리자 토큰)
 
@@ -73,6 +73,9 @@
 
 ### DELETE /devices/{id}/events  → 이벤트만 삭제 (기기·토큰 유지)
 `200 {"id","deleted_events":n,"resync_requested":true}`. 재수집 플래그가 서고, 그 기기의 다음 `POST /ingest` 응답이 `"resync":true` 를 딱 한 번 실어 보낸다.
+
+### POST /devices/{id}/resync  → 삭제 없이 재수집만 요청
+`200 {"id","resync_requested":true}`. 이벤트는 그대로 두고 플래그만 세운다. 에이전트가 처음부터 다시 보내면 같은 `event_id` 는 중복으로 버려지고, 더 완성된 사본(스트리밍 도중 잘린 응답)만 갱신된다. 없으면 `404`.
 
 ### GET /pricing  → 현재 로드된 pricing.yaml 항목 목록 `{"rates":[{"match","provider","input","output","cache_read","cache_write","cache_write_5m","cache_write_1h","alias_of","estimated","effective_from","effective_to","note"}]}`. 같은 모델이 기간별로 여러 행일 수 있으며 이벤트 날짜가 `[effective_from, effective_to)` 에 드는 첫 행이 적용된다.
 ### POST /pricing/reload  → 파일 다시 읽기

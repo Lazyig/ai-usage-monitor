@@ -189,7 +189,7 @@ func seed(t *testing.T, s *Store) (d1, d2 string) {
 		ev(t, "e4", b.ID, event.SourceAntigravity, "2026-09-02T02:00:00Z", "gemini-default", 2_000_000, 100_000, 0, 0),
 		ev(t, "e5", b.ID, event.SourceAntigravity, "2026-09-02T03:00:00Z", "unpriced-model", 1_000_000, 0, 0, 0),
 	}
-	acc, dup, err := s.InsertEvents(ctx, evs)
+	acc, dup, _, err := s.InsertEvents(ctx, evs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestInsertDedupe(t *testing.T) {
 		ev(t, "e1", d1, event.SourceClaudeCode, "2026-09-01T10:00:00Z", "claude-opus-5", 999, 999, 0, 0),
 		ev(t, "e9", d1, event.SourceClaudeCode, "2026-09-03T10:00:00Z", "claude-opus-5", 10, 10, 0, 0),
 	}
-	acc, dup, err := s.InsertEvents(ctx, again)
+	acc, dup, _, err := s.InsertEvents(ctx, again)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestInsertDedupe(t *testing.T) {
 	if c.Events != 6 || c.Devices != 2 {
 		t.Fatalf("counts = %+v", c)
 	}
-	if n, d, err := s.InsertEvents(ctx, nil); n != 0 || d != 0 || err != nil {
+	if n, d, u, err := s.InsertEvents(ctx, nil); n != 0 || d != 0 || u != 0 || err != nil {
 		t.Fatalf("empty batch = %d/%d/%v", n, d, err)
 	}
 }
@@ -449,7 +449,7 @@ func TestTimeseriesDSTDayBoundary(t *testing.T) {
 		ev(t, "n3", d.ID, event.SourceCodex, "2026-03-09T03:30:00Z", "gpt-5.6-terra", 30, 0, 0, 0), // 23:30 EDT, Mar 8
 		ev(t, "n4", d.ID, event.SourceCodex, "2026-03-09T06:00:00Z", "gpt-5.6-terra", 40, 0, 0, 0), // 02:00 EDT, Mar 9
 	}
-	if _, _, err := s.InsertEvents(ctx, evs); err != nil {
+	if _, _, _, err := s.InsertEvents(ctx, evs); err != nil {
 		t.Fatal(err)
 	}
 	f := Filter{From: mustTime(t, "2026-03-07T00:00:00Z"), To: mustTime(t, "2026-03-10T12:00:00Z")}

@@ -284,6 +284,25 @@ func (s *Store) DeleteDevice(ctx context.Context, id string, purge bool) (int64,
 	return deleted, nil
 }
 
+// RequestResync flags a device so its next ingest answers `"resync":true` and
+// the agent re-reads every log from zero. Nothing is deleted: re-sent events
+// are dropped as duplicates or, when a copy is more complete than what was
+// stored (a streamed response caught mid-stream), refresh it. See InsertEvents.
+func (s *Store) RequestResync(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE devices SET resync_requested = 1 WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("store: flag resync: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // ConsumeResync reports whether a re-sync was requested for the device and
 // clears the flag in the same transaction, so exactly one ingest response ever
 // carries it: two agent processes (or a retried request) cannot both be told to

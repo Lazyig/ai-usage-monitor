@@ -24,6 +24,7 @@ type ingestRequest struct {
 type ingestResponse struct {
 	Accepted   int    `json:"accepted"`
 	Duplicates int    `json:"duplicates"`
+	Updated    int    `json:"updated,omitempty"` // known events refreshed with a more complete copy
 	Rejected   int    `json:"rejected"`
 	DeviceID   string `json:"device_id"`        // the token's device; agents adopt it
 	Resync     bool   `json:"resync,omitempty"` // an operator purged this device: rescan from zero
@@ -79,7 +80,7 @@ func (a *api) handleIngest(w http.ResponseWriter, r *http.Request) {
 		good = append(good, e)
 	}
 
-	accepted, duplicates, err := a.store.InsertEvents(r.Context(), good)
+	accepted, duplicates, updated, err := a.store.InsertEvents(r.Context(), good)
 	if err != nil {
 		a.log.Error("insert events", "device", dev.ID, "err", err)
 		writeError(w, http.StatusInternalServerError, "could not store events")
@@ -101,7 +102,7 @@ func (a *api) handleIngest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, ingestResponse{
-		Accepted: accepted, Duplicates: duplicates, Rejected: rejected, DeviceID: dev.ID, Resync: resync,
+		Accepted: accepted, Duplicates: duplicates, Updated: updated, Rejected: rejected, DeviceID: dev.ID, Resync: resync,
 	})
 }
 
@@ -419,6 +420,19 @@ func (a *api) handlePurgeDeviceEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": id, "deleted_events": deleted, "resync_requested": true,
 	})
+}
+
+// handleResyncDevice asks a device to re-read its logs from zero without
+// deleting anything. Re-sent events dedupe on event_id; copies that are more
+// complete than the stored row (streamed responses that were shipped before
+// they finished) refresh it.
+func (a *api) handleResyncDevice(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := a.store.RequestResync(r.Context(), id); err != nil {
+		a.failDevice(w, "request resync", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "resync_requested": true})
 }
 
 // --- pricing ---------------------------------------------------------------

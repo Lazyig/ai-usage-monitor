@@ -15,6 +15,7 @@ import type {
   PricingResponse,
   PurgeDeviceEventsResponse,
   PurgeDeviceResponse,
+  ResyncDeviceResponse,
   RotateDeviceResponse,
   Source,
   SummaryResponse,
@@ -621,6 +622,14 @@ export async function mockRequest<T>(path: string, opts: MockRequestOptions): Pr
       token: `aum_${hashStr(id + tokenCreatedAt).toString(16)}${Date.now().toString(16)}`,
       token_created_at: tokenCreatedAt,
     }
+    return delay(resp as unknown as T)
+  }
+
+  const deviceResyncMatch = /^\/api\/v1\/devices\/([^/]+)\/resync$/.exec(path)
+  if (deviceResyncMatch && method === 'POST') {
+    const id = deviceResyncMatch[1]
+    requireDevice(id)
+    const resp: ResyncDeviceResponse = { id, resync_requested: true }
     return delay(resp as unknown as T)
   }
 

@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react'
-import { createDevice, renameDevice, deleteDevice, getDevices, purgeDevice, purgeDeviceEvents, rotateDevice } from '../api/client'
+import { createDevice, renameDevice, deleteDevice, getDevices, purgeDevice, purgeDeviceEvents, requestResync, rotateDevice } from '../api/client'
 import type { Device } from '../api/types'
 import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
@@ -15,7 +15,7 @@ import { installCommands } from '../lib/installCommands'
 import { useFilters } from '../state/FiltersContext'
 
 interface ConfirmState {
-  kind: 'resync' | 'purge' | 'rotate' | 'revoke' | 'rename'
+  kind: 'resync' | 'reset' | 'purge' | 'rotate' | 'revoke' | 'rename'
   device: Device
 }
 
@@ -106,6 +106,9 @@ export function Devices() {
     setActionNotice(null)
     try {
       if (confirmState.kind === 'resync') {
+        await requestResync(confirmState.device.id)
+        setActionNotice('재동기화를 요청했습니다. 에이전트가 1분 안에 로그를 처음부터 다시 보내며, 기존 통계는 그대로 유지됩니다.')
+      } else if (confirmState.kind === 'reset') {
         const res = await purgeDeviceEvents(confirmState.device.id)
         setActionNotice(`이벤트 ${formatFull(res.deleted_events)}건을 삭제하고 재동기화를 요청했습니다.`)
       } else {
@@ -186,10 +189,19 @@ export function Devices() {
             type="button"
             className="btn btn-sm"
             disabled={!!d.revoked_at}
-            title={d.revoked_at ? '폐기된 기기는 재동기화할 수 없습니다. 먼저 토큰을 재발급하세요.' : undefined}
+            title={d.revoked_at ? '폐기된 기기는 재동기화할 수 없습니다. 먼저 토큰을 재발급하세요.' : '삭제 없이 로그를 처음부터 다시 보내게 합니다'}
             onClick={() => setConfirmState({ kind: 'resync', device: d })}
           >
             재동기화
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-danger"
+            disabled={!!d.revoked_at}
+            title={d.revoked_at ? '폐기된 기기는 초기화할 수 없습니다. 먼저 토큰을 재발급하세요.' : '이 기기의 이벤트를 모두 지운 뒤 다시 받습니다'}
+            onClick={() => setConfirmState({ kind: 'reset', device: d })}
+          >
+            초기화
           </button>
           {d.revoked_at ? (
             <button type="button" className="btn btn-sm btn-danger" disabled>
@@ -301,8 +313,19 @@ export function Devices() {
       {confirmState?.kind === 'resync' && (
         <ConfirmDialog
           title="재동기화"
-          message={`"${confirmState.device.name}" 기기의 이벤트를 모두 삭제합니다. 이 기기의 통계가 잠시 0 이 되었다가 에이전트가 1분 안에 다시 보냅니다.`}
+          message={`"${confirmState.device.name}" 기기의 에이전트가 로그를 처음부터 다시 보냅니다. 기존 이벤트는 지우지 않으며, 이미 있는 이벤트는 무시되고 스트리밍 도중 잘려서 적게 잡힌 응답만 보정됩니다.`}
           confirmLabel="재동기화"
+          danger={false}
+          busy={confirming}
+          onConfirm={onConfirmAction}
+          onCancel={() => setConfirmState(null)}
+        />
+      )}
+      {confirmState?.kind === 'reset' && (
+        <ConfirmDialog
+          title="초기화"
+          message={`"${confirmState.device.name}" 기기의 이벤트를 모두 삭제합니다. 이 기기의 통계가 잠시 0 이 되었다가 에이전트가 1분 안에 다시 보냅니다.`}
+          confirmLabel="초기화"
           busy={confirming}
           onConfirm={onConfirmAction}
           onCancel={() => setConfirmState(null)}

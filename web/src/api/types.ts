@@ -222,6 +222,14 @@ export interface PurgeDeviceEventsResponse {
   resync_requested: boolean
 }
 
+/** POST /api/v1/devices/{id}/resync — asks the agent to re-read its logs from
+ * zero without deleting anything; re-sent events dedupe, and copies that are
+ * more complete than the stored row (responses shipped mid-stream) refresh it. */
+export interface ResyncDeviceResponse {
+  id: string
+  resync_requested: boolean
+}
+
 /** DELETE /api/v1/devices/{id}?purge=true — deletes events AND the device. */
 export interface PurgeDeviceResponse {
   deleted_events: number

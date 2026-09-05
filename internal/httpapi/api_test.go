@@ -204,6 +204,39 @@ func TestIngest(t *testing.T) {
 		t.Fatalf("replay = %+v, want 0 accepted / 3 duplicates", res)
 	}
 
+	// A grown copy of a known event (a streamed response that finished after
+	// the first line was shipped) refreshes the stored row instead of being
+	// dropped, and is reported apart from plain duplicates.
+	grown := sampleEvent("a2", devID, ts.Add(time.Hour), 500_000, 42_000)
+	w = h.do(http.MethodPost, "/api/v1/ingest", devToken, map[string]any{
+		"device": map[string]string{"id": devID, "name": "mac"},
+		"events": []event.UsageEvent{grown, sampleEvent("a1", devID, ts, 1_000_000, 100_000)},
+	})
+	h.decode(w, &res)
+	if res.Accepted != 0 || res.Duplicates != 1 || res.Updated != 1 {
+		t.Fatalf("grown copy = %+v, want 0 accepted / 1 duplicate / 1 updated", res)
+	}
+
+	// An operator can ask for a resync without purging: the flag rides on the
+	// next ingest exactly once and the events stay.
+	if w := h.do(http.MethodPost, "/api/v1/devices/"+devID+"/resync", adminToken, nil); w.Code != http.StatusOK {
+		t.Fatalf("resync = %d %s", w.Code, w.Body)
+	}
+	if w := h.do(http.MethodPost, "/api/v1/devices/nope/resync", adminToken, nil); w.Code != http.StatusNotFound {
+		t.Fatalf("resync unknown = %d", w.Code)
+	}
+	w = h.do(http.MethodPost, "/api/v1/ingest", devToken, map[string]any{"device": map[string]string{"id": devID, "name": "mac"}, "events": []any{}})
+	h.decode(w, &res)
+	if !res.Resync {
+		t.Fatalf("ingest after resync request = %+v, want resync=true", res)
+	}
+	w = h.do(http.MethodPost, "/api/v1/ingest", devToken, map[string]any{"device": map[string]string{"id": devID, "name": "mac"}, "events": []any{}})
+	var again ingestResponse // fresh: `resync` is omitempty, so decoding into res would keep the old true
+	h.decode(w, &again)
+	if again.Resync {
+		t.Fatal("resync flag must be consumed once")
+	}
+
 	// The heartbeat and the self-reported metadata landed.
 	w = h.do(http.MethodGet, "/api/v1/devices", adminToken, nil)
 	var devs struct{ Devices []store.Device }

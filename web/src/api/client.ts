@@ -17,6 +17,7 @@ import type {
   PricingResponse,
   PurgeDeviceEventsResponse,
   PurgeDeviceResponse,
+  ResyncDeviceResponse,
   RotateDeviceResponse,
   SummaryResponse,
   ThroughputResponse,
@@ -203,8 +204,14 @@ export function rotateDevice(id: string): Promise<RotateDeviceResponse> {
   return request(`/api/v1/devices/${encodeURIComponent(id)}/rotate`, { method: 'POST' })
 }
 
-/** Deletes the device's events only; the agent re-sends its full history on
- * its next heartbeat (<= 1 min). Used for "재동기화". */
+/** Flags the device for a full re-read without deleting anything (<= 1 min
+ * until the agent hears it). Used for "재동기화". */
+export function requestResync(id: string): Promise<ResyncDeviceResponse> {
+  return request(`/api/v1/devices/${encodeURIComponent(id)}/resync`, { method: 'POST' })
+}
+
+/** Deletes the device's events, then the agent re-sends its full history on
+ * its next heartbeat (<= 1 min). Used for "초기화". */
 export function purgeDeviceEvents(id: string): Promise<PurgeDeviceEventsResponse> {
   return request(`/api/v1/devices/${encodeURIComponent(id)}/events`, { method: 'DELETE' })
 }
