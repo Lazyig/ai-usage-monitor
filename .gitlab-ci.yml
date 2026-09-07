@@ -46,7 +46,7 @@ variables:
 
 test:
   stage: test
-  image: golang:1.26-alpine
+  image: golang:1.27-alpine
   needs: []
   cache:
     - <<: *go-mod-cache
@@ -64,7 +64,7 @@ test:
 
 build:agents:
   stage: build
-  image: golang:1.26-alpine
+  image: golang:1.27-alpine
   needs: []
   rules:
     - <<: *if-default-deploy
