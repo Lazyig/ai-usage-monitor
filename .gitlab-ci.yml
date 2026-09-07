@@ -142,6 +142,7 @@ release:
       policy: pull-push
   variables:
     KO_DOCKER_REPO: $CI_REGISTRY_IMAGE
+    GOTOOLCHAIN: "auto"
     DOCKER_CONFIG: /tmp/.docker
   script:
     - *set-version
