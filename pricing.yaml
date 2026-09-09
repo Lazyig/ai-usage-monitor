@@ -88,15 +88,15 @@
 # them. >272K input tokens: 2x input (cached too) and 1.5x output for the full request, in every
 # period. Sources: https://developers.openai.com/api/docs/pricing , .../changelog ,
 # .../models/gpt-5.6-sol|terra|luna (2026-09-03). Pre-cut cache_read values are 0.1x input (inferred).
-- match: "gpt-6-astra"            # launched 2026-09-03 (1M context)
+- match: "gpt-6-astra"            # launched 2026-09-03 (1M context). Source: https://developers.openai.com/api/docs/pricing
   provider: openai
   input: 10.00
   cache_read: 1.00
   output: 50.00
-- match: "gpt-6"                  # bare alias routes to Astra
+- match: "gpt-6-astra*"           # dated snapshots / reasoning suffixes
   provider: openai
   alias_of: "gpt-6-astra"
-- match: "gpt-6-*"                # variants route to Astra
+- match: "gpt-6"                  # bare alias routes to Astra
   provider: openai
   alias_of: "gpt-6-astra"
 - match: "gpt-5.6-sol"            # promotional cut 2026-08-21; "at least through 2026-11-21".

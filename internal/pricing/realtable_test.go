@@ -35,11 +35,16 @@ func TestRealTableCoversObservedModels(t *testing.T) {
 		{"gpt-5.6-sol", "2026-08-01", 5.00}, {"gpt-5.6-sol", "2026-08-21", 4.00}, {"codex-auto-review", "2026-08-01", 5.00},
 		{"gpt-5.6-terra", "2026-07-15", 2.50}, {"gpt-5.6-terra", "2026-07-30", 2.00},
 		{"gpt-5.6-luna", "2026-07-15", 1.00}, {"gpt-5.6-luna", "2026-08-01", 0.20},
+		{"gpt-6-astra", "2026-09-09", 10.00}, {"gpt-6-astra-2026-09-03", "2026-09-09", 10.00},
 		{"claude-sonnet-5", "2026-07-01", 2.00}, {"claude-sonnet-5", "2026-10-01", 2.00},
 	} {
 		r, ok := tb.Lookup(c.model, day(c.at))
 		if !ok || r.Input == nil || *r.Input != c.input {
 			t.Errorf("%s @ %s: got %v ok=%v, want input %v", c.model, c.at, r.Input, ok, c.input)
 		}
+	}
+	// gpt-6-* glob should NOT match other potential gpt-6 sibling models
+	if _, ok := tb.Lookup("gpt-6-luna", time.Now()); ok {
+		t.Errorf("gpt-6-luna should not match gpt-6-astra glob")
 	}
 }
