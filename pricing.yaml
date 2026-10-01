@@ -15,7 +15,7 @@
 # ---------------------------------------------------------------------------------------------
 # Anthropic — Claude Code (first-party). No long-context surcharge on Claude 4.6+ (1M ctx at
 # standard rate). Source: https://platform.claude.com/docs/en/about-claude/pricing and
-# https://platform.claude.com/docs/en/release-notes/api (2026-09-24)
+# https://platform.claude.com/docs/en/release-notes/api (2026-10-01)
 - match: "claude-opus-5-5"        # launched 2026-09-22
   provider: anthropic
   input: 4.00
@@ -35,6 +35,19 @@
 - match: "claude-5.5*"
   provider: anthropic
   alias_of: "claude-opus-5-5"
+- match: "claude-sonnet-5-5"      # launched 2026-09-28
+  provider: anthropic
+  input: 2.00
+  cache_read: 0.20
+  cache_write_5m: 2.50
+  cache_write_1h: 4.00
+  output: 10.00
+- match: "claude-sonnet-5-5*"     # dated snapshots / reasoning suffixes
+  provider: anthropic
+  alias_of: "claude-sonnet-5-5"
+- match: "claude-sonnet-5.5*"
+  provider: anthropic
+  alias_of: "claude-sonnet-5-5"
 - match: "claude-fable-5-1"       # launched 2026-09-01
   provider: anthropic
   input: 10.00
@@ -106,7 +119,17 @@
 # OpenAI — Codex CLI. terra/sol/luna are distinct public models (launched 2026-07-09), never glob
 # them. >272K input tokens: 2x input (cached too) and 1.5x output for the full request, in every
 # period. Sources: https://developers.openai.com/api/docs/pricing , .../changelog ,
-# .../models/gpt-5.6-sol|terra|luna , .../models/gpt-6-astra|sol|luna (2026-09-24). Pre-cut cache_read values are 0.1x input (inferred).
+# .../models/gpt-5.6-sol|terra|luna , .../models/gpt-6-astra|sol|luna , .../models/gpt-6.1-sol (2026-10-01). Pre-cut cache_read values are 0.1x input (inferred).
+- match: "gpt-6.1-sol"            # launched 2026-09-29 (1M context); first OpenAI model with billed cache writes
+  provider: openai
+  input: 2.00
+  cache_read: 0.10
+  cache_write: 2.50
+  output: 10.00
+  long_context: { threshold: 272000, input: 4.00, cache_read: 0.20, cache_write: 5.00, output: 15.00 }
+- match: "gpt-6.1-sol*"           # dated snapshots / reasoning suffixes
+  provider: openai
+  alias_of: "gpt-6.1-sol"
 - match: "gpt-6-astra"            # launched 2026-09-03 (1M context). Source: https://developers.openai.com/api/docs/pricing
   provider: openai
   input: 10.00
