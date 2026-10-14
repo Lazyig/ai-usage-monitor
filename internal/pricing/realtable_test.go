@@ -13,7 +13,7 @@ func TestRealTableCoversObservedModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, m := range []string{"claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-fable-5-1", "claude-opus-5-5", "claude-opus-5-5-20260922", "claude-opus-5.5", "claude-5-5", "claude-5.5", "claude-sonnet-5-5", "claude-sonnet-5-5-20260928", "claude-sonnet-5.5", "claude-haiku-4-5", "claude-haiku-4-5-20251001", "gpt-6", "gpt-6-astra", "gpt-6-sol", "gpt-6-sol-2026-09-22", "gpt-6-luna", "gpt-6-luna-2026-09-22", "gpt-6.1-sol", "gpt-6.1-sol-2026-09-29", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna", "codex-auto-review", "gemini-3.8-flash", "gemini-3.8-flash-control", "gemini-3.7-flash", "gemini-3.7-flash-control", "gemini-default", "gemini-3-flash-a", "gemini-3-flash-c", "gemini-3.6-flash", "gemini-3.6-flash-exp-a", "gemini-3.1-pro-low", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "antigravity-internal"} {
+	for _, m := range []string{"claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-fable-5-1", "claude-opus-5-5", "claude-opus-5-5-20260922", "claude-opus-5.5", "claude-5-5", "claude-5.5", "claude-sonnet-5-5", "claude-sonnet-5-5-20260928", "claude-sonnet-5.5", "claude-haiku-4-5", "claude-haiku-4-5-20251001", "gpt-6", "gpt-6-astra", "gpt-6-sol", "gpt-6-sol-2026-09-22", "gpt-6-luna", "gpt-6-luna-2026-09-22", "gpt-6.1-sol", "gpt-6.1-sol-2026-09-29", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna", "codex-auto-review", "gemini-4-argon", "gemini-4-argon-low", "gemini-3.8-flash", "gemini-3.8-flash-control", "gemini-3.7-flash", "gemini-3.7-flash-control", "gemini-default", "gemini-3-flash-a", "gemini-3-flash-c", "gemini-3.6-flash", "gemini-3.6-flash-exp-a", "gemini-3.1-pro-low", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "antigravity-internal"} {
 		c := tb.Cost(event.UsageEvent{Model: m, Timestamp: time.Now(), Input: 1e6, Output: 1e6, CacheRead: 1e6})
 		if !c.Known {
 			t.Errorf("%s: no price", m)
@@ -31,6 +31,8 @@ func TestRealTableCoversObservedModels(t *testing.T) {
 	}{
 		{"gemini-3.6-flash", "2026-07-25", 1.50}, {"gemini-3.6-flash", "2026-08-13", 0.75}, {"gemini-3.6-flash", "2027-01-01", 1.50},
 		{"gemini-3.6-flash-exp-a", "2026-07-25", 1.50},
+		{"gemini-4-argon", "2026-10-13", 2.00}, {"gemini-4-argon", "2026-11-30", 2.00}, {"gemini-4-argon", "2026-12-01", 4.00},
+		{"gemini-4-argon-low", "2026-12-01", 4.00},
 		{"gemini-3.7-flash-control", "2026-09-01", 0.75}, {"gemini-default", "2027-02-01", 1.50},
 		{"gpt-5.6-sol", "2026-08-01", 5.00}, {"gpt-5.6-sol", "2026-08-21", 4.00}, {"codex-auto-review", "2026-08-01", 5.00},
 		{"gpt-5.6-terra", "2026-07-15", 2.50}, {"gpt-5.6-terra", "2026-07-30", 2.00},
