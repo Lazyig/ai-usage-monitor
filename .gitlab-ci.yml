@@ -110,6 +110,7 @@ build:web:
   script:
     - cd web
     - npm ci --prefer-offline --no-audit --no-fund
+    - npm test
     - npm run build
   artifacts:
     paths:

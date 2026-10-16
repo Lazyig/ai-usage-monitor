@@ -40,6 +40,10 @@ npm run preview      # serve the last build locally
 `npm run build` must produce zero TypeScript errors (`tsc -b` runs first) and
 should stay well under ~600 KB gzipped total.
 
+Run `npm test` for the date-range refresh regression tests. Relative presets
+follow the current Seoul date on manual/automatic refresh, within 60 seconds
+of a date change, and when returning to the tab. Custom dates stay fixed.
+
 ## Structure
 
 - `src/api/types.ts` — every API response/request shape, mirroring `docs/API.md`.

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { type DateRange, type RangePreset, customRange, rangeForPreset } from '../lib/dateRange'
 
 interface FiltersContextValue {
@@ -21,11 +21,40 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
   const [autoRefresh, setAutoRefresh] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
 
+  const syncRange = useCallback(() => {
+    setRange((current) => {
+      if (current.preset === 'custom') return current
+      const next = rangeForPreset(current.preset)
+      return current.from === next.from && current.to === next.to ? current : next
+    })
+  }, [])
+
+  const refresh = useCallback(() => {
+    syncRange()
+    setRefreshKey((k) => k + 1)
+  }, [syncRange])
+
+  // Keep relative presets current even when automatic data refresh is off.
+  // Focus/visibility events also cover sleeping devices and throttled tabs.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') syncRange()
+    }
+    const id = setInterval(syncRange, AUTO_REFRESH_MS)
+    window.addEventListener('focus', syncRange)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(id)
+      window.removeEventListener('focus', syncRange)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [syncRange])
+
   useEffect(() => {
     if (!autoRefresh) return
-    const id = setInterval(() => setRefreshKey((k) => k + 1), AUTO_REFRESH_MS)
+    const id = setInterval(refresh, AUTO_REFRESH_MS)
     return () => clearInterval(id)
-  }, [autoRefresh])
+  }, [autoRefresh, refresh])
 
   const value = useMemo<FiltersContextValue>(
     () => ({
@@ -35,9 +64,9 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
       autoRefresh,
       toggleAutoRefresh: () => setAutoRefresh((v) => !v),
       refreshKey,
-      refresh: () => setRefreshKey((k) => k + 1),
+      refresh,
     }),
-    [range, autoRefresh, refreshKey],
+    [range, autoRefresh, refreshKey, refresh],
   )
 
   return <FiltersContext.Provider value={value}>{children}</FiltersContext.Provider>
