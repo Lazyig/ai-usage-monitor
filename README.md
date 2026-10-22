@@ -1,6 +1,6 @@
-# ai-usage-monitor
+<p align="center"><img src="assets/banner.svg" alt="ai-usage-monitor — token usage and API-equivalent cost across Claude Code, Codex CLI and Antigravity CLI" width="100%"></p>
 
-<img src="assets/icon.png" width="96" alt="icon">
+# ai-usage-monitor
 
 > [!IMPORTANT]
 > **이 저장소의 코드, 테스트, 문서, 빌드 스크립트는 전부 AI 코딩 에이전트(Claude Code 등)가 작성했습니다.**
@@ -187,3 +187,7 @@ scripts/       에이전트 빌드, 설치/제거 스크립트
 pricing.yaml   모델별 단가
 docs/          API 명세(API.md), 배포 설정(DEPLOY.md)
 ```
+
+## 라이선스
+
+[MIT](LICENSE)
