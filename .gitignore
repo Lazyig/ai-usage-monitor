@@ -10,3 +10,4 @@ cmd/server/kodata/downloads/*
 *.db-*
 state.json
 .claude/worktrees/
+__pycache__/

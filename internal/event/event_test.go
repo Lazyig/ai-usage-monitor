@@ -1,6 +1,24 @@
 package event
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
+
+func TestValidRejectsNegativeReasoning(t *testing.T) {
+	e := UsageEvent{EventID: "test", DeviceID: "test", Source: SourceCodex, Model: "gpt-6-sol", Timestamp: time.Now(), Output: 10}
+	if !e.Valid() {
+		t.Fatal("valid event rejected")
+	}
+	e.Reasoning = -1
+	if e.Valid() {
+		t.Fatal("negative reasoning must be rejected before storage")
+	}
+	e.Reasoning = 10
+	if !e.Valid() {
+		t.Fatal("reasoning equal to output must remain valid")
+	}
+}
 
 // The whole point of scheme 2: the same model call hashes to the same id no
 // matter which device, agent install or run reports it.

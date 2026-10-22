@@ -2,6 +2,7 @@ package main
 
 import (
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,11 +10,68 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"ai-usage-monitor/internal/agentcfg"
 	"ai-usage-monitor/internal/event"
 )
+
+func TestResyncFromPartialQueueFlushIsNotLost(t *testing.T) {
+	dir := setupState(t)
+	var calls, received atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := calls.Add(1)
+		if n == 3 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		zr, err := gzip.NewReader(r.Body)
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		defer zr.Close()
+		var body struct{ Events []event.UsageEvent }
+		if err := json.NewDecoder(zr).Decode(&body); err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		received.Add(int32(len(body.Events)))
+		fmt.Fprintf(w, `{"accepted":%d,"duplicates":0,"resync":%t}`, len(body.Events), n == 2)
+	}))
+	defer srv.Close()
+	cfg, _, err := agentcfg.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ServerURL = srv.URL
+	ag, err := newAgent(cfg, dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ag.client.Attempts = 1
+	if err := ag.tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	first := received.Load()
+	if first == 0 {
+		t.Fatal("fixture history was not collected")
+	}
+	for range 2 {
+		if err := ag.client.Queue.Enqueue([]byte(`{"events":[]}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := ag.tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if received.Load() != 2*first {
+		t.Fatalf("resync lost after partial flush: %d events, want %d", received.Load(), 2*first)
+	}
+}
 
 // ingestServer is a minimal /api/v1/ingest that counts what reached it and can
 // ask for a resync exactly once, the way the real server does.

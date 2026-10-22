@@ -19,8 +19,12 @@ type modelTotals struct {
 
 // TestIntegrationRealHome reads the real ~/.gemini/antigravity-cli, read-only,
 // checks every event and that the returned cursor makes a rescan a no-op, and
-// logs the per-model sums. It skips when the CLI is not installed on this machine.
+// logs the per-model sums. Opt in with AI_USAGE_INTEGRATION=1. It skips when
+// the CLI is not installed on this machine.
 func TestIntegrationRealHome(t *testing.T) {
+	if os.Getenv("AI_USAGE_INTEGRATION") != "1" {
+		t.Skip("real-home logs require AI_USAGE_INTEGRATION=1")
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Skip("no home directory")

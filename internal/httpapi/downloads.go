@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	texttemplate "text/template"
+
+	"ai-usage-monitor/scripts"
 )
 
 // manifest mirrors the manifest.json CI writes next to the agent binaries.
@@ -126,8 +128,8 @@ func (a *api) handleDownloadFile(w http.ResponseWriter, r *http.Request) {
 // directory ships no install.sh of its own.
 func (a *api) serveGeneratedInstall(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
-	if err := installSh.Execute(w, map[string]string{"Server": baseURL(r)}); err != nil {
-		a.log.Error("render install.sh", "err", err)
+	if _, err := io.WriteString(w, scripts.UnixInstaller(baseURL(r))); err != nil {
+		a.log.Error("write install.sh", "err", err)
 	}
 }
 
@@ -190,77 +192,4 @@ var downloadsHTML = template.Must(template.New("downloads").Funcs(template.FuncM
 </table>
 {{else}}<p>No binaries published yet.</p>{{end}}
 <p><a href="/downloads/manifest.json">manifest.json</a> · <a href="/health">/health</a></p>
-`))
-
-// installSh is the fallback installer, used when the downloads directory has no
-// install.sh of its own. Binary names follow ai-usage-agent_<os>_<arch>.
-var installSh = texttemplate.Must(texttemplate.New("install.sh").Parse(`#!/bin/sh
-# ai-usage-agent installer
-#   curl -fsSL {{.Server}}/downloads/install.sh | sh -s -- --server {{.Server}} --token aum_...
-set -eu
-
-SERVER="{{.Server}}"
-TOKEN=""
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --server) SERVER="$2"; shift 2 ;;
-    --server=*) SERVER="${1#*=}"; shift ;;
-    --token) TOKEN="$2"; shift 2 ;;
-    --token=*) TOKEN="${1#*=}"; shift ;;
-    -h|--help)
-      echo "usage: install.sh --server <url> --token <aum_...>"; exit 0 ;;
-    *) echo "install.sh: unknown option $1" >&2; exit 2 ;;
-  esac
-done
-
-if [ -z "$TOKEN" ]; then
-  echo "install.sh: --token is required (create one with POST /api/v1/devices)" >&2
-  echo "usage: curl -fsSL $SERVER/downloads/install.sh | sh -s -- --server $SERVER --token aum_..." >&2
-  exit 2
-fi
-
-os=$(uname -s | tr '[:upper:]' '[:lower:]')
-case "$os" in
-  linux|darwin) ;;
-  *) echo "install.sh: unsupported OS $os (use the Windows binary from $SERVER/downloads/)" >&2; exit 1 ;;
-esac
-
-arch=$(uname -m)
-case "$arch" in
-  x86_64|amd64) arch=amd64 ;;
-  arm64|aarch64) arch=arm64 ;;
-  *) echo "install.sh: unsupported architecture $arch" >&2; exit 1 ;;
-esac
-
-name="ai-usage-agent_${os}_${arch}"
-if [ "$(id -u)" = "0" ]; then
-  dest="/usr/local/bin"
-else
-  dest="$HOME/.local/bin"
-fi
-mkdir -p "$dest"
-
-tmp=$(mktemp "${TMPDIR:-/tmp}/ai-usage-agent.XXXXXX")
-trap 'rm -f "$tmp"' EXIT INT TERM
-
-echo "downloading $SERVER/downloads/$name"
-if command -v curl >/dev/null 2>&1; then
-  curl -fsSL "$SERVER/downloads/$name" -o "$tmp"
-elif command -v wget >/dev/null 2>&1; then
-  wget -qO "$tmp" "$SERVER/downloads/$name"
-else
-  echo "install.sh: need curl or wget" >&2; exit 1
-fi
-
-chmod 0755 "$tmp"
-mv "$tmp" "$dest/ai-usage-agent"
-trap - EXIT INT TERM
-echo "installed $dest/ai-usage-agent"
-
-case ":$PATH:" in
-  *":$dest:"*) ;;
-  *) echo "note: $dest is not on your PATH" >&2 ;;
-esac
-
-"$dest/ai-usage-agent" install --server "$SERVER" --token "$TOKEN"
 `))

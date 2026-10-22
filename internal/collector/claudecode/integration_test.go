@@ -16,8 +16,11 @@ import (
 
 // TestIntegrationRealHome reads the real Claude Code transcripts on this machine
 // read-only. It only checks sanity, never exact numbers, and skips when the tool
-// is not installed. Run with -v to see the per-model totals table.
+// is not installed. Opt in with AI_USAGE_INTEGRATION=1; -v prints totals.
 func TestIntegrationRealHome(t *testing.T) {
+	if os.Getenv("AI_USAGE_INTEGRATION") != "1" {
+		t.Skip("real-home logs require AI_USAGE_INTEGRATION=1")
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Skipf("no home directory: %v", err)

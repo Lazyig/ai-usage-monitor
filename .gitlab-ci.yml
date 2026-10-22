@@ -49,6 +49,8 @@ variables:
 test:
   stage: test
   image: golang:1.27-alpine
+  before_script:
+    - apk add --no-cache curl
   needs: []
   cache:
     - <<: *go-mod-cache

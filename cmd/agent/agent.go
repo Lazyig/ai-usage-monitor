@@ -90,12 +90,14 @@ func (a *agent) tick(ctx context.Context) error {
 func (a *agent) pass(ctx context.Context, resyncOK bool) error {
 	resync := false
 
-	if st, err := a.client.Flush(ctx); err != nil {
-		a.noteErr("queue flush", err)
-	} else if st.Requests > 0 {
+	flushed, flushErr := a.client.Flush(ctx)
+	resync = flushed.Resync // earlier batches can succeed before a later one fails
+	if flushed.Requests > 0 {
 		a.lastContact = time.Now()
-		resync = resync || st.Resync
-		a.log.Printf("queue: replayed %d batch(es), accepted=%d duplicates=%d", st.Requests, st.Accepted, st.Duplicates)
+		a.log.Printf("queue: replayed %d batch(es), accepted=%d duplicates=%d", flushed.Requests, flushed.Accepted, flushed.Duplicates)
+	}
+	if flushErr != nil {
+		a.noteErr("queue flush", flushErr)
 	}
 
 	var (
@@ -144,12 +146,12 @@ func (a *agent) pass(ctx context.Context, resyncOK bool) error {
 	}
 
 	st, err := a.client.PushStats(ctx, events)
+	resync = resync || st.Resync
 	switch {
 	case err == nil:
 		a.lastContact = time.Now()
 		a.authWarned = false
 		a.saveCursors(next)
-		resync = resync || st.Resync
 	case transport.Queued(err):
 		// Not delivered, but safely on disk: the cursor may advance.
 		a.saveCursors(next)

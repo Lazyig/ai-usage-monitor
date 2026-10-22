@@ -97,7 +97,7 @@ func (e UsageEvent) Valid() bool {
 		return false
 	case e.Input < 0 || e.Output < 0 || e.CacheRead < 0 || e.CacheWrite < 0 || e.CacheWrite5m < 0 || e.CacheWrite1h < 0:
 		return false
-	case e.Reasoning > e.Output:
+	case e.Reasoning < 0 || e.Reasoning > e.Output:
 		return false
 	}
 	return strings.TrimSpace(string(e.Source)) != ""

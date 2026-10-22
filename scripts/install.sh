@@ -8,9 +8,12 @@ SERVER=""; TOKEN=""; PREFIX=""; NO_SERVICE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --server) SERVER="$2"; shift 2;;
+    --server=*) SERVER="${1#*=}"; shift;;
     --token) TOKEN="$2"; shift 2;;
+    --token=*) TOKEN="${1#*=}"; shift;;
     --prefix) PREFIX="$2"; shift 2;;
     --no-service) NO_SERVICE=1; shift;;
+    -h|--help) echo "usage: install.sh --server <url> [--token <token>] [--prefix <directory>] [--no-service]"; exit 0;;
     *) echo "unknown arg $1" >&2; exit 2;;
   esac
 done
@@ -28,15 +31,23 @@ if [ -z "$PREFIX" ]; then
 fi
 mkdir -p "$PREFIX"
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+download() {
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$1" -o "$2"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$2" "$1"
+  else
+    echo "need curl or wget" >&2; exit 1
+  fi
+}
 echo "downloading $SERVER/downloads/$name"
-curl -fsSL "$SERVER/downloads/$name" -o "$tmp/$name"
-curl -fsSL "$SERVER/downloads/manifest.json" -o "$tmp/manifest.json"
+download "$SERVER/downloads/$name" "$tmp/$name"
+download "$SERVER/downloads/manifest.json" "$tmp/manifest.json"
 want=$(tr -d '\n ' < "$tmp/manifest.json" | sed -n "s/.*\"name\":\"$name\"[^}]*\"sha256\":\"\([a-f0-9]*\)\".*/\1/p")
-if [ -n "$want" ]; then
-  if command -v sha256sum >/dev/null; then got=$(sha256sum "$tmp/$name" | cut -d' ' -f1); else got=$(shasum -a 256 "$tmp/$name" | cut -d' ' -f1); fi
-  [ "$got" = "$want" ] || { echo "sha256 mismatch: got $got want $want" >&2; exit 1; }
-  echo "sha256 ok"
-fi
+[ "${#want}" = 64 ] || { echo "manifest has no valid sha256 for $name" >&2; exit 1; }
+if command -v sha256sum >/dev/null; then got=$(sha256sum "$tmp/$name" | cut -d' ' -f1); else got=$(shasum -a 256 "$tmp/$name" | cut -d' ' -f1); fi
+[ "$got" = "$want" ] || { echo "sha256 mismatch: got $got want $want" >&2; exit 1; }
+echo "sha256 ok"
 # Stop a running service first so the restart picks up the new binary cleanly.
 if [ -x "$PREFIX/ai-usage-agent" ]; then "$PREFIX/ai-usage-agent" stop >/dev/null 2>&1 || true; fi
 install -m 0755 "$tmp/$name" "$PREFIX/ai-usage-agent"

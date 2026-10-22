@@ -15,12 +15,15 @@ $tmp = "$dst.new"
 Write-Host "downloading $Server/downloads/$name"
 Invoke-WebRequest -Uri "$Server/downloads/$name" -OutFile $tmp -UseBasicParsing
 $manifest = Invoke-RestMethod -Uri "$Server/downloads/manifest.json" -UseBasicParsing
-$want = ($manifest.files | Where-Object { $_.name -eq $name }).sha256
-if ($want) {
-  $got = (Get-FileHash -Algorithm SHA256 $tmp).Hash.ToLower()
-  if ($got -ne $want) { Remove-Item -Force $tmp; throw "sha256 mismatch: got $got want $want" }
-  Write-Host "sha256 ok"
+$entries = @($manifest.files | Where-Object { $_.name -eq $name })
+if ($entries.Count -ne 1 -or $entries[0].sha256 -notmatch '^[a-fA-F0-9]{64}$') {
+  Remove-Item -Force $tmp
+  throw "manifest has no unique valid sha256 for $name"
 }
+$want = $entries[0].sha256.ToLower()
+$got = (Get-FileHash -Algorithm SHA256 $tmp).Hash.ToLower()
+if ($got -ne $want) { Remove-Item -Force $tmp; throw "sha256 mismatch: got $got want $want" }
+Write-Host "sha256 ok"
 # Stop a running service (and any stray process) before replacing the binary.
 $svc = Get-Service -Name ai-usage-agent -ErrorAction SilentlyContinue
 if ($svc -and $svc.Status -ne 'Stopped') {

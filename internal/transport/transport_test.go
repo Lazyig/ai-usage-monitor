@@ -13,11 +13,80 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"ai-usage-monitor/internal/event"
 )
+
+func TestTemporaryHTTPResponsesKeepUndeliveredBatches(t *testing.T) {
+	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooManyRequests} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			var recover atomic.Bool
+			var calls atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if !recover.Load() {
+					w.WriteHeader(status)
+					return
+				}
+				writeAccepted(w, 1, 0)
+			}))
+			defer srv.Close()
+			c := newClient(t, srv)
+			_, err := c.PushStats(context.Background(), makeEvents(1))
+			if !Queued(err) || calls.Load() != int32(c.Attempts) {
+				t.Fatalf("temporary response: err=%v calls=%d", err, calls.Load())
+			}
+			if n, _, _ := c.Queue.Stats(); n != 1 {
+				t.Fatalf("queued batches = %d, want 1", n)
+			}
+			// Flushing during a rate limit must not permanently discard it.
+			if _, err := c.Flush(context.Background()); err == nil {
+				t.Fatal("flush unexpectedly succeeded")
+			}
+			if n, _, _ := c.Queue.Stats(); n != 1 {
+				t.Fatalf("retryable flush lost the batch: %d", n)
+			}
+			recover.Store(true)
+			if st, err := c.Flush(context.Background()); err != nil || st.Accepted != 1 {
+				t.Fatalf("recovery: %+v %v", st, err)
+			}
+			if n, _, _ := c.Queue.Stats(); n != 0 {
+				t.Fatalf("delivered batch remains queued: %d", n)
+			}
+		})
+	}
+}
+
+func TestInvalidAcknowledgementsAreQueued(t *testing.T) {
+	for _, kind := range []string{"html", "truncated", "oversized"} {
+		t.Run(kind, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch kind {
+				case "html":
+					fmt.Fprint(w, "<html>temporary proxy error</html>")
+				case "truncated":
+					w.Header().Set("Content-Length", "1000")
+					writeAccepted(w, 1, 0)
+				case "oversized":
+					writeAccepted(w, 1, 0)
+					fmt.Fprint(w, strings.Repeat(" ", 1<<20))
+				}
+			}))
+			defer srv.Close()
+			c := newClient(t, srv)
+			c.Attempts = 2
+			if _, err := c.PushStats(context.Background(), makeEvents(1)); !Queued(err) {
+				t.Fatalf("invalid acknowledgement was treated as delivered: %v", err)
+			}
+			if n, _, _ := c.Queue.Stats(); n != 1 {
+				t.Fatalf("queued batches = %d, want 1", n)
+			}
+		})
+	}
+}
 
 // recorder collects the decoded bodies of every ingest request.
 type recorder struct {

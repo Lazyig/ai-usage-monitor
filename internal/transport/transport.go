@@ -460,23 +460,31 @@ func (c *Client) sendOnce(ctx context.Context, payload []byte, count int) (Stats
 		return Stats{}, fmt.Errorf("transport: ingest: %w", err), true // network: retry
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
 
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized, resp.StatusCode == http.StatusForbidden:
 		return Stats{}, &AuthError{StatusCode: resp.StatusCode, Body: snippet(body)}, false
+	case resp.StatusCode == http.StatusRequestTimeout, resp.StatusCode == http.StatusTooManyRequests:
+		return Stats{}, fmt.Errorf("transport: ingest: temporary HTTP %d: %s", resp.StatusCode, snippet(body)), true
 	case resp.StatusCode/100 == 4:
 		return Stats{}, &PermanentError{StatusCode: resp.StatusCode, Body: snippet(body)}, false
 	case resp.StatusCode/100 != 2:
 		return Stats{}, fmt.Errorf("transport: ingest: HTTP %d: %s", resp.StatusCode, snippet(body)), true
 	}
+	if readErr != nil {
+		return Stats{}, fmt.Errorf("transport: ingest response: %w", readErr), true
+	}
+	if len(body) > 1<<20 {
+		return Stats{}, errors.New("transport: ingest response exceeds 1 MiB"), true
+	}
 
 	var out ingestResponse
 	if err := json.Unmarshal(body, &out); err != nil {
-		// A 2xx we cannot parse still means the server took the batch; treating
-		// it as a failure would resend events forever.
-		c.logf("ingest: unparsable 2xx response: %v", err)
-		return Stats{Requests: 1}, nil, false
+		// A proxy can return a 2xx error page before the batch reaches the
+		// server. Retry within the normal bound, then retain the batch in the
+		// offline queue. Replaying an already-stored event is idempotent.
+		return Stats{}, fmt.Errorf("transport: ingest acknowledgement: %w", err), true
 	}
 	st := Stats{Accepted: out.Accepted, Duplicates: out.Duplicates, Updated: out.Updated, Requests: 1, Resync: out.Resync}
 	if count >= 0 {

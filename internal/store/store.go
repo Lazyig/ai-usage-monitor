@@ -1,9 +1,9 @@
 // Package store is the SQLite persistence layer: schema migrations, event
 // ingestion and every aggregate query behind docs/API.md.
 //
-// The database is opened with a single connection (SetMaxOpenConns(1)) so there
-// is exactly one writer and no SQLITE_BUSY dance; WAL keeps reads cheap anyway
-// and the workload is a handful of agents pushing batches every minute.
+// A single writer connection serializes writes; a separate read-only pool
+// serves dashboard queries alongside it using WAL. In-memory tests share one
+// connection because their databases are local to that connection.
 package store
 
 import (
@@ -93,7 +93,7 @@ func Open(path string) (*Store, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := s.migrate(ctx); err != nil {
-		db.Close()
+		s.Close()
 		return nil, err
 	}
 	return s, nil

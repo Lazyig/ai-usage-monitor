@@ -92,7 +92,7 @@ export function Pricing() {
         empty={state.status === 'success' && state.data.rates.length === 0}
         emptyMessage="가격표 항목이 없습니다."
       >
-        {state.status === 'success' && <DataTable columns={PRICING_COLUMNS} rows={state.data.rates} rowKey={(r) => r.match} initialSortKey="match" initialSortDir="asc" size="small" />}
+            {state.status === 'success' && <DataTable columns={PRICING_COLUMNS} rows={state.data.rates} rowKey={(r) => `${r.match}:${r.effective_from ?? ''}:${r.effective_to ?? ''}`} initialSortKey="match" initialSortDir="asc" size="small" />}
       </StateContainer>
     </div>
   )
