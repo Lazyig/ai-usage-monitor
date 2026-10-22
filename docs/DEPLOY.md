@@ -15,6 +15,27 @@
 플래그를 주지 않으면 환경변수가, 둘 다 없으면 기본값이 쓰인다. `--version` 은 버전만 출력한다(`version` 은 ldflags 로 주입).
 기동 로그에 설정이 한 줄 찍히지만 토큰 값은 절대 찍지 않는다(`admin_token_set=true/false` 만).
 
+## GHCR 이미지로 실행
+
+`main` 브랜치의 이미지는 `ghcr.io/lazyig/ai-usage-monitor:latest` 로 배포한다. 짧은 커밋 SHA(8자리)나 `v*` 태그로도 버전을 지정할 수 있다. 이미지는 `linux/amd64`, `linux/arm64` 를 지원하며 대시보드, 에이전트 6종, 설치/제거 스크립트, 단가표를 포함한다.
+
+```sh
+export ADMIN_TOKEN="$(openssl rand -hex 32)"
+# 이 값을 안전한 곳에 보관한다. 대시보드 로그인과 관리 API 에 사용한다.
+docker volume create ai-usage-data
+docker run -d --name ai-usage-monitor --restart unless-stopped \
+  -p 127.0.0.1:8080:8080 \
+  -v ai-usage-data:/data \
+  -e ADMIN_TOKEN \
+  -e DB_PATH=/data/usage.db \
+  -e PRICING_PATH=/var/run/ko/pricing.yaml \
+  ghcr.io/lazyig/ai-usage-monitor:latest
+```
+
+`ko` 는 이미지의 데이터 경로를 `KO_DATA_PATH=/var/run/ko` 로 설정한다. 서버의 다운로드 경로는 이를 따라가지만, 단가표 기본값은 상대 경로 `pricing.yaml` 이므로 위처럼 `PRICING_PATH` 를 지정해야 한다. `/data` 볼륨에는 SQLite 데이터만 보존하며 `/var/run/ko` 는 마운트로 덮지 않는다. 외부에 공개할 때는 HTTPS 리버스 프록시를 앞에 둔다.
+
+GitHub Actions 는 `GITHUB_TOKEN` 으로 이미지를 게시한다. GHCR 패키지를 처음 만들면 패키지 설정에서 공개 여부를 확인하고, 익명으로 내려받으려면 visibility 를 Public 으로 설정한다.
+
 ## 볼륨
 
 `DB_PATH` 가 있는 디렉터리 하나만 PVC 로 붙이면 된다. WAL 모드라 `usage.db`, `usage.db-wal`, `usage.db-shm` 세 파일이 같은 디렉터리에 생기므로 파일이 아니라 **디렉터리**를 마운트한다.
