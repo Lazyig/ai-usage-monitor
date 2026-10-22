@@ -46,9 +46,20 @@ var Sources = []event.Source{
 // SourceConfig is the per-tool configuration. Root is the directory the
 // matching collector reads; a missing root is not an error, it just means the
 // tool is not installed on this device.
+//
+// ExtraRoots are further directories with Root's layout that the same
+// collector also reads (only Antigravity has one today: its desktop app keeps
+// conversations beside the CLI's). nil means "the defaults" and is filled in
+// on load; an explicit empty list turns them off.
 type SourceConfig struct {
-	Enabled bool   `json:"enabled"`
-	Root    string `json:"root"`
+	Enabled    bool     `json:"enabled"`
+	Root       string   `json:"root"`
+	ExtraRoots []string `json:"extra_roots"`
+}
+
+// Roots is Root followed by ExtraRoots.
+func (sc SourceConfig) Roots() []string {
+	return append([]string{sc.Root}, sc.ExtraRoots...)
 }
 
 // Config is config.json.
@@ -99,10 +110,15 @@ func (c *Config) Source(s event.Source) *SourceConfig {
 	}
 	sc, ok := c.Sources[s]
 	if !ok || sc == nil {
-		sc = &SourceConfig{Enabled: true, Root: DefaultRoot(s)}
+		sc = defaultSource(s)
 		c.Sources[s] = sc
 	}
 	return sc
+}
+
+// defaultSource is an enabled source at its default roots.
+func defaultSource(s event.Source) *SourceConfig {
+	return &SourceConfig{Enabled: true, Root: DefaultRoot(s), ExtraRoots: DefaultExtraRoots(s)}
 }
 
 // homeDir is the user's home directory. On Windows os.UserHomeDir already
@@ -131,6 +147,17 @@ func DefaultRoot(s event.Source) string {
 		return filepath.Join(home, ".gemini", "antigravity-cli")
 	}
 	return ""
+}
+
+// DefaultExtraRoots are the directories read in addition to DefaultRoot. The
+// Antigravity desktop app writes the same conversation databases as the CLI,
+// under ~/.gemini/antigravity. Never nil, so a filled-in config is told apart
+// from one written before the field existed.
+func DefaultExtraRoots(s event.Source) []string {
+	if s == event.SourceAntigravity {
+		return []string{filepath.Join(homeDir(), ".gemini", "antigravity")}
+	}
+	return []string{}
 }
 
 // StateDir is where config.json, cursors.json and queue/ live:
@@ -182,7 +209,7 @@ func Defaults() Config {
 		IDScheme:        event.IDScheme,
 	}
 	for _, s := range Sources {
-		cfg.Sources[s] = &SourceConfig{Enabled: true, Root: DefaultRoot(s)}
+		cfg.Sources[s] = defaultSource(s)
 	}
 	return cfg
 }
@@ -283,11 +310,14 @@ func (c *Config) fillDefaults() {
 	for _, s := range Sources {
 		sc, ok := c.Sources[s]
 		if !ok || sc == nil {
-			c.Sources[s] = &SourceConfig{Enabled: true, Root: DefaultRoot(s)}
+			c.Sources[s] = defaultSource(s)
 			continue
 		}
 		if sc.Root == "" {
 			sc.Root = DefaultRoot(s)
+		}
+		if sc.ExtraRoots == nil {
+			sc.ExtraRoots = DefaultExtraRoots(s)
 		}
 	}
 }

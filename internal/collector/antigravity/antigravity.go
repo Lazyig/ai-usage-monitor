@@ -1,5 +1,6 @@
-// Package antigravity reads the Antigravity CLI's local conversation databases
-// (~/.gemini/antigravity-cli) and turns every model call into a UsageEvent.
+// Package antigravity reads Antigravity's local conversation databases — the
+// CLI's (~/.gemini/antigravity-cli) and the desktop app's (~/.gemini/antigravity),
+// which share one layout — and turns every model call into a UsageEvent.
 //
 // Local database layout:
 //
@@ -41,17 +42,30 @@ import (
 // summary generation, step_type 23) or in gen rows that lost their model id.
 const internalModel = "antigravity-internal"
 
-// Collector implements collector.Collector for the Antigravity CLI.
+// Collector implements collector.Collector for Antigravity.
 type Collector struct {
-	root string
+	roots []string
 
 	mu    sync.Mutex
 	diags []Diagnostic
 }
 
-// New returns a collector reading root, normally ~/.gemini/antigravity-cli.
-// A missing root is not an error, Scan just returns no events.
-func New(root string) collector.Collector { return &Collector{root: root} }
+// New returns a collector reading every root, normally the CLI's
+// ~/.gemini/antigravity-cli and the desktop app's ~/.gemini/antigravity, which
+// keep the same layout. Conversation ids are UUIDs, so the cursor (keyed by
+// file name) stays unambiguous across roots. A missing root is not an error,
+// it just contributes no events.
+func New(roots ...string) collector.Collector {
+	var keep []string
+	seen := map[string]bool{}
+	for _, r := range roots {
+		if r != "" && !seen[filepath.Clean(r)] {
+			seen[filepath.Clean(r)] = true
+			keep = append(keep, r)
+		}
+	}
+	return &Collector{roots: keep}
+}
 
 // Name implements collector.Collector.
 func (c *Collector) Name() event.Source { return event.SourceAntigravity }
@@ -134,35 +148,37 @@ func (c *Collector) Scan(ctx context.Context, deviceID string, cur collector.Cur
 		c.mu.Unlock()
 	}()
 
-	paths := conversationFiles(c.root)
-	if len(paths) == 0 {
-		// Tool not installed on this device: empty result, no error.
-		return nil, marshalCursor(next, cur), nil
-	}
-
-	projects := loadProjects(c.root)
-
-	for _, path := range paths {
-		if err := ctx.Err(); err != nil {
-			return events, marshalCursor(next, cur), err
-		}
-		name := filepath.Base(path)
-		convID := strings.TrimSuffix(name, ".db")
-		prev, ok := state.Files[name]
-		if !ok {
-			prev = fileCursor{GenIdx: freshIdx, StepIdx: freshIdx}
-		}
-		evs, fc, diag, err := c.scanConversation(ctx, deviceID, path, convID, projects[convID], prev)
-		if err != nil {
-			// Unreadable conversation (locked, corrupt, mid-write): keep the
-			// old cursor so the next run retries it, and carry on.
-			next.Files[name] = prev
+	// A root without conversations (tool not installed there) simply
+	// contributes nothing: an empty result is not an error.
+	for _, root := range c.roots {
+		paths := conversationFiles(root)
+		if len(paths) == 0 {
 			continue
 		}
-		events = append(events, evs...)
-		next.Files[name] = fc
-		if diag != nil {
-			diags = append(diags, *diag)
+		projects := loadProjects(root)
+
+		for _, path := range paths {
+			if err := ctx.Err(); err != nil {
+				return events, marshalCursor(next, cur), err
+			}
+			name := filepath.Base(path)
+			convID := strings.TrimSuffix(name, ".db")
+			prev, ok := state.Files[name]
+			if !ok {
+				prev = fileCursor{GenIdx: freshIdx, StepIdx: freshIdx}
+			}
+			evs, fc, diag, err := c.scanConversation(ctx, deviceID, path, convID, projects[convID], prev)
+			if err != nil {
+				// Unreadable conversation (locked, corrupt, mid-write): keep the
+				// old cursor so the next run retries it, and carry on.
+				next.Files[name] = prev
+				continue
+			}
+			events = append(events, evs...)
+			next.Files[name] = fc
+			if diag != nil {
+				diags = append(diags, *diag)
+			}
 		}
 	}
 	return events, marshalCursor(next, cur), nil

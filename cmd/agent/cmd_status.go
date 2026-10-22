@@ -71,15 +71,16 @@ func cmdStatus(args []string) error {
 		if _, compiled := registry[s]; !compiled {
 			enabled = "no (collector not in this build)"
 		}
+		roots := usedRoots(s, *sc)
 		present := "no"
-		if dirExists(sc.Root) {
+		if anyDirExists(roots) {
 			present = "yes"
 		}
 		state := "none (will scan from the beginning)"
 		if n := cur.Size(s); n > 0 {
 			state = fmt.Sprintf("%s bytes of state", num(int64(n)))
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", s, enabled, sc.Root, present, state)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", s, enabled, strings.Join(roots, ", "), present, state)
 	}
 	tw.Flush()
 	fmt.Fprintln(out)

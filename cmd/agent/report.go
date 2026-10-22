@@ -222,10 +222,10 @@ func printScan(w io.Writer, cfg agentcfg.Config, res []scanResult, events []even
 		}
 		if r.Err != nil {
 			status = "ERROR: " + r.Err.Error()
-		} else if !dirExists(r.Root) {
-			status = "not installed (no " + r.Root + ")"
+		} else if !anyDirExists(r.Roots) {
+			status = "not installed (no " + strings.Join(r.Roots, " or ") + ")"
 		}
-		fmt.Fprintf(w, "  %-13s %-55s %s  [%s]\n", r.Source, r.Root, status, r.Took.Round(time.Millisecond))
+		fmt.Fprintf(w, "  %-13s %-55s %s  [%s]\n", r.Source, strings.Join(r.Roots, ", "), status, r.Took.Round(time.Millisecond))
 	}
 	fmt.Fprintln(w)
 

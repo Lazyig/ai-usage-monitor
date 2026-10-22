@@ -13,14 +13,34 @@ import (
 	"ai-usage-monitor/internal/event"
 )
 
-// factory builds a collector for one source, given the log root from the config.
-type factory func(root string) collector.Collector
+// factory builds a collector for one source, given its log roots from the
+// config (Root first, then ExtraRoots).
+type factory func(roots []string) collector.Collector
 
 // registry is the single place that knows which collectors are compiled in.
+// Only Antigravity reads more than one root (CLI and desktop app).
 var registry = map[event.Source]factory{
-	event.SourceClaudeCode:  claudecode.New,
-	event.SourceCodex:       codex.New,
-	event.SourceAntigravity: antigravity.New,
+	event.SourceClaudeCode:  func(roots []string) collector.Collector { return claudecode.New(roots[0]) },
+	event.SourceCodex:       func(roots []string) collector.Collector { return codex.New(roots[0]) },
+	event.SourceAntigravity: func(roots []string) collector.Collector { return antigravity.New(roots...) },
+}
+
+// usedRoots is what a source's collector actually reads, for display.
+func usedRoots(s event.Source, sc agentcfg.SourceConfig) []string {
+	if s == event.SourceAntigravity {
+		return sc.Roots()
+	}
+	return []string{sc.Root}
+}
+
+// anyDirExists reports whether at least one of the roots is present.
+func anyDirExists(roots []string) bool {
+	for _, r := range roots {
+		if dirExists(r) {
+			return true
+		}
+	}
+	return false
 }
 
 // known lists the compiled-in sources in agentcfg.Sources order.
@@ -74,7 +94,7 @@ func sourceNames() []string {
 // active is one collector plus the configuration it was built from.
 type active struct {
 	Source    event.Source
-	Root      string
+	Roots     []string
 	Collector collector.Collector
 }
 
@@ -92,7 +112,8 @@ func build(cfg agentcfg.Config, sel selected) []active {
 		if !sc.Enabled {
 			continue
 		}
-		out = append(out, active{Source: s, Root: sc.Root, Collector: registry[s](sc.Root)})
+		roots := usedRoots(s, *sc)
+		out = append(out, active{Source: s, Roots: roots, Collector: registry[s](roots)})
 	}
 	return out
 }

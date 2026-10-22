@@ -67,7 +67,7 @@ func cmdScan(args []string) error {
 		start := time.Now()
 		// A nil cursor means "everything": scan is a full, read-only pass.
 		events, _, err := a.Collector.Scan(ctx, cfg.DeviceID, nil)
-		res := scanResult{Source: a.Source, Root: a.Root, Took: time.Since(start), Err: err}
+		res := scanResult{Source: a.Source, Roots: a.Roots, Took: time.Since(start), Err: err}
 		for _, e := range events {
 			if !cutoff.IsZero() && e.Timestamp.Before(cutoff) {
 				res.Skipped++
@@ -100,7 +100,7 @@ func cmdScan(args []string) error {
 // scanResult is the per-collector outcome shown above the tables.
 type scanResult struct {
 	Source  event.Source
-	Root    string
+	Roots   []string
 	Kept    int
 	Skipped int
 	Took    time.Duration
