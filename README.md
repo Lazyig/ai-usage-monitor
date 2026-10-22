@@ -33,11 +33,12 @@ Claude Code · Codex CLI · Antigravity CLI 를 여러 기기에서 쓸 때, 각
   | 도구 | 읽는 위치 |
   |---|---|
   | Claude Code | `~/.claude/projects` |
-  | Codex CLI | `~/.codex/sessions` |
+  | Codex CLI | `~/.codex/sessions` (끝난 세션을 압축한 `.jsonl.zst` 포함) |
   | Antigravity CLI | `~/.gemini/antigravity-cli` |
+  | Antigravity 데스크톱 앱 | `~/.gemini/antigravity` |
 
   - **처음 실행하면 위 위치에 남아 있는 과거 이력 전체를 보내고**, 이후에는 읽은 위치(커서)부터 새로 생긴 기록만 보냅니다. 같은 호출은 서버에서 한 번만 저장되므로 다시 보내도 중복되지 않습니다.
-  - 특정 도구를 빼거나 경로를 바꾸려면 에이전트 상태 디렉터리의 `config.json` 에서 `sources.<도구>.enabled` / `root` 를 고친 뒤 서비스를 재시작하세요.
+  - 특정 도구를 빼거나 경로를 바꾸려면 에이전트 상태 디렉터리의 `config.json` 에서 `sources.<도구>.enabled` / `root` 를 고친 뒤 서비스를 재시작하세요. `extra_roots` 는 `root` 와 같은 구조로 함께 읽을 추가 폴더 목록입니다(현재 Antigravity 만 사용, 기본값은 데스크톱 앱 폴더, 빈 목록 `[]` 이면 끔).
   - 서버에 닿지 못하면 보낼 데이터를 로컬 큐에 쌓았다가 다시 보냅니다. 큐는 최대 500 MB 이고 넘치면 **오래된 것부터 버립니다**. 원본 로그가 남아 있다면 `ai-usage-agent rescan` 으로 다시 수집할 수 있습니다.
 
 - **서버** (`cmd/server`)는 cgo 없는 단일 Go 바이너리입니다. SQLite 에 이벤트를 저장하고, JSON API 와 대시보드(React SPA, 바이너리에 내장)를 제공하며, 에이전트 바이너리와 설치 스크립트를 `/downloads/` 로 배포합니다.
@@ -149,7 +150,7 @@ ai-usage-agent uninstall | start | stop | restart
 | 작업 | 서버의 기존 데이터 | 결과 |
 |---|---|---|
 | 재동기화 | 유지 | 에이전트가 로그를 처음부터 다시 보냄(중복은 무시) |
-| 초기화 | 삭제 | 삭제 후 에이전트가 처음부터 다시 수집함. **수집 중단이 아님** |
+| 초기화 | 삭제 | 삭제 후 에이전트가 처음부터 다시 수집함. **수집 중단이 아님**. 기기에서 이미 지워진 로그(예: Claude Code 가 오래된 대화를 정리한 경우)의 사용량은 돌아오지 않으므로 보통은 재동기화를 쓰세요 |
 | 토큰 재발급 | 유지 | 이전 토큰 무효, 기기에 새 토큰으로 재설치 필요 |
 | 토큰 폐기 | 유지 | 이 기기의 전송을 더 받지 않음 |
 | 완전 삭제 | 삭제 | 기기와 그 데이터를 모두 지움 |
