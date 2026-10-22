@@ -13,8 +13,8 @@
 # for the same date) and is shown as "estimated".
 
 # ---------------------------------------------------------------------------------------------
-# Anthropic — Claude Code (first-party). No long-context surcharge on Claude 4.6+ (1M ctx at
-# standard rate). Source: https://platform.claude.com/docs/en/about-claude/pricing and
+# Anthropic — Claude Code (first-party). Claude 4.6+ uses standard rates across its context
+# window, except Haiku 5.5 (>100K prompt tokens). Source: https://platform.claude.com/docs/en/about-claude/pricing and
 # https://platform.claude.com/docs/en/release-notes/api (2026-10-01)
 - match: "claude-opus-5-5"        # launched 2026-09-22
   provider: anthropic
@@ -77,6 +77,23 @@
   cache_write_1h: 4.00
   output: 10.00
   note: 도입가가 정가로 확정(2026-08-10)
+# Haiku 5.5 launched 2026-10-07. Prices verified 2026-10-23 against
+# https://platform.claude.com/docs/en/about-claude/pricing#long-context-pricing
+# The threshold includes cache reads and writes; higher rates apply to the WHOLE request.
+- match: "claude-haiku-5-5"
+  provider: anthropic
+  input: 0.10
+  cache_read: 0.01
+  cache_write_5m: 0.125
+  cache_write_1h: 0.20
+  output: 0.50
+  long_context: { threshold: 100000, input: 0.50, cache_read: 0.05, cache_write_5m: 0.625, cache_write_1h: 1.00, output: 2.50 }
+- match: "claude-haiku-5-5*"
+  provider: anthropic
+  alias_of: "claude-haiku-5-5"
+- match: "claude-haiku-5.5*"
+  provider: anthropic
+  alias_of: "claude-haiku-5-5"
 - match: "claude-haiku-4-5*"
   provider: anthropic
   input: 1.00

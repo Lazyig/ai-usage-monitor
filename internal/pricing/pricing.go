@@ -37,7 +37,7 @@ type Rate struct {
 
 	// LongContext, when set, replaces the base rates for the WHOLE request once
 	// its prompt (input + every cache class) exceeds Threshold tokens. This is
-	// how OpenAI (>272K) and Gemini Pro (>200K) bill; Claude 4.6+ has no such tier.
+	// how OpenAI (>272K), Gemini Pro (>200K), and Haiku 5.5 (>100K) bill.
 	LongContext *LongContext `yaml:"long_context,omitempty"`
 }
 

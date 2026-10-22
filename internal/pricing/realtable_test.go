@@ -1,6 +1,7 @@
 package pricing_test
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -20,7 +21,7 @@ func TestRealTableCoversObservedModels(t *testing.T) {
 		}
 		t.Logf("%-28s in+out+cache(1M each) = $%.3f estimated=%v", m, c.USD, c.Estimated)
 	}
-	if th := tb.Thresholds(); len(th) != 2 || th[0] != 200000 || th[1] != 272000 {
+	if th := tb.Thresholds(); len(th) != 3 || th[0] != 100000 || th[1] != 200000 || th[2] != 272000 {
 		t.Errorf("thresholds = %v", th)
 	}
 	// Period rows: the dated price changes must resolve by event date.
@@ -88,5 +89,50 @@ func TestRealTableCoversObservedModels(t *testing.T) {
 	// gpt-6.1-sol bills cache writes ($2.50/1M) separately from input
 	if c := tb.Cost(event.UsageEvent{Model: "gpt-6.1-sol", Timestamp: time.Now(), CacheWrite: 100_000}); c.USD < 0.25-1e-6 || c.USD > 0.25+1e-6 {
 		t.Errorf("gpt-6.1-sol cache write cost = %v, want 0.25", c.USD)
+	}
+}
+
+// Haiku 5.5 charges the higher tier for the whole request only when the
+// prompt, including every cache class, exceeds 100K. Output does not count.
+func TestRealTableHaiku55Pricing(t *testing.T) {
+	tb, err := pricing.Load("../../pricing.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)
+	for _, model := range []string{"claude-haiku-5-5", "claude-haiku-5-5-20261007", "claude-haiku-5.5"} {
+		for _, tc := range []struct {
+			name  string
+			input int64
+			want  float64
+		}{
+			{"at_100k", 10_000, 0.0161},
+			{"above_100k", 10_001, 0.0805005},
+		} {
+			t.Run(model+"/"+tc.name, func(t *testing.T) {
+				e := event.UsageEvent{
+					Model: model, Timestamp: at, Input: tc.input, Output: 20_000,
+					CacheRead: 60_000, CacheWrite5m: 20_000, CacheWrite1h: 10_000,
+				}
+				c := tb.Cost(e)
+				if !c.Known || math.Abs(c.USD-tc.want) > 1e-9 {
+					t.Fatalf("cost = %+v, want %v known", c, tc.want)
+				}
+				if c.Estimated != (model != "claude-haiku-5-5") {
+					t.Fatalf("estimated = %v for %s", c.Estimated, model)
+				}
+				// Aggregation must price each request's tier, not the sum's size.
+				if c := tb.CostFor(e, 100_000); !c.Known || math.Abs(c.USD-(float64(tc.input)*0.10/1e6+0.0151)) > 1e-9 {
+					t.Fatalf("aggregate standard tier = %+v", c)
+				}
+			})
+		}
+	}
+	c := tb.Cost(event.UsageEvent{Model: "claude-haiku-5-5", Timestamp: at, Input: 1, Output: 1_000_000})
+	if !c.Known || c.Estimated || math.Abs(c.USD-0.5000001) > 1e-9 {
+		t.Fatalf("output must not trigger the long-context tier: %+v", c)
+	}
+	if _, ok := tb.Lookup("claude-haiku-5-unknown", at); ok {
+		t.Fatal("unlisted Haiku models must remain unknown")
 	}
 }
