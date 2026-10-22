@@ -5,7 +5,7 @@ package antigravity
 // It is a Go port of research/antigravity/pb.py with one important difference:
 // pb.py guesses whether a length-delimited field is a nested message or a
 // string, we never guess. Callers descend only along the paths that PLAN.md
-// §9.2/§9.3 documents as messages, and read bytes as text only where the field
+// §6.2/§6.3 documents as messages, and read bytes as text only where the field
 // map says "string". That keeps us away from the prompt-text fields entirely.
 //
 // The reader is lazy: nothing is materialised into a tree, a lookup just walks

@@ -1,11 +1,11 @@
 package antigravity
 
-// Field-map specific decoding. Every path below is quoted from PLAN.md §9.2
-// (gen_metadata.data) and §9.3 (steps.metadata); keep the two in sync.
+// Field-map specific decoding. Every path below is quoted from PLAN.md §6.2
+// (gen_metadata.data) and §6.3 (steps.metadata); keep the two in sync.
 
 import "time"
 
-// step_type values seen in the wild (PLAN.md §9.3). Only informational here:
+// step_type values seen in the wild (PLAN.md §6.3). Only informational here:
 // we key off the presence of usage/model, not the type.
 const (
 	stepTypeModelGeneration = 15 // one or more gen_metadata rows
@@ -74,7 +74,7 @@ func readUsage(m message) (usage, error) {
 	return u, nil
 }
 
-// identityOK is self-check 1 of PLAN.md §9.7: total output must be the sum of
+// identityOK is self-check 1 of PLAN.md §6.6: total output must be the sum of
 // thoughts and response, or equal the response when thoughts are not recorded
 // (Claude via Vertex). Rows that carry no output at all are not checked.
 func (u usage) identityOK() bool {

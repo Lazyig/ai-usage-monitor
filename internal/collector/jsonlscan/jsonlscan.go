@@ -38,7 +38,7 @@ const maxLineBytes = 32 << 20
 // readBufBytes is the read-ahead buffer used per file.
 const readBufBytes = 256 << 10
 
-// ErrNoRoot reports that the scanned root does not exist. docs/CONTRACTS.md
+// ErrNoRoot reports that the scanned root does not exist. PLAN.md §2.5
 // requires a device without the tool installed to produce an empty result, not
 // a failure, so collectors translate this into "no events, cursor unchanged".
 var ErrNoRoot = errors.New("jsonlscan: root does not exist")

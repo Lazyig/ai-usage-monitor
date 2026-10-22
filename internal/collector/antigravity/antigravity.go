@@ -2,13 +2,13 @@
 // (~/.gemini/antigravity-cli) and turns every model call into a UsageEvent.
 //
 // Layout and field numbers come from the reverse engineering recorded in
-// PLAN.md §9 (scripts under research/antigravity/). In short:
+// PLAN.md §6 (scripts under research/antigravity/). In short:
 //
 //	<root>/conversations/<conversation-id>.db   one SQLite file per conversation
 //	  gen_metadata(idx, data BLOB)              one row per model call, tokens in
-//	                                            a protobuf blob (PLAN.md §9.2)
+//	                                            a protobuf blob (PLAN.md §6.2)
 //	  steps(idx, step_type, metadata BLOB)      step timestamps + a copy of the
-//	                                            last call's usage (PLAN.md §9.3)
+//	                                            last call's usage (PLAN.md §6.3)
 //	<root>/conversation_summaries.db            conversation -> workspace URIs
 //
 // Two safety rules shape the implementation:
@@ -40,7 +40,7 @@ import (
 
 // internalModel labels calls that only exist in steps.metadata.9 (title and
 // summary generation, step_type 23) or in gen rows that lost their model id.
-// PLAN.md §9.4: 128 such calls on the reference machine.
+// PLAN.md §6.4: 128 such calls on the reference machine.
 const internalModel = "antigravity-internal"
 
 // Collector implements collector.Collector for the Antigravity CLI.
@@ -58,7 +58,7 @@ func New(root string) collector.Collector { return &Collector{root: root} }
 // Name implements collector.Collector.
 func (c *Collector) Name() event.Source { return event.SourceAntigravity }
 
-// Diagnostic records the self-checks of PLAN.md §9.7 for one conversation.
+// Diagnostic records the self-checks of PLAN.md §6.6 for one conversation.
 // A Diagnostic is only produced when at least one check failed; every event of
 // that conversation is then emitted with Confidence=unknown.
 type Diagnostic struct {
@@ -93,22 +93,6 @@ func (c *Collector) Diagnostics() []Diagnostic {
 	copy(out, c.diags)
 	return out
 }
-
-// LastDiagnostics is the package-level side channel: the diagnostics of the
-// most recent Scan by any Collector in this process. Convenience for callers
-// that do not keep the concrete type around.
-func LastDiagnostics() []Diagnostic {
-	lastDiagMu.Lock()
-	defer lastDiagMu.Unlock()
-	out := make([]Diagnostic, len(lastDiags))
-	copy(out, lastDiags)
-	return out
-}
-
-var (
-	lastDiagMu sync.Mutex
-	lastDiags  []Diagnostic
-)
 
 // fileCursor is the per-conversation resume point. It stays deliberately small:
 // request ids are not persisted, re-emitting a few events is harmless because
@@ -150,9 +134,6 @@ func (c *Collector) Scan(ctx context.Context, deviceID string, cur collector.Cur
 		c.mu.Lock()
 		c.diags = diags
 		c.mu.Unlock()
-		lastDiagMu.Lock()
-		lastDiags = diags
-		lastDiagMu.Unlock()
 	}()
 
 	paths := conversationFiles(c.root)
@@ -198,7 +179,7 @@ func marshalCursor(st cursorState, fallback collector.Cursor) collector.Cursor {
 }
 
 // conversationFiles lists <root>/conversations/*.db. A missing or unreadable
-// directory yields no files and no error: docs/CONTRACTS.md requires a device
+// directory yields no files and no error: PLAN.md §2.5 requires a device
 // without the tool installed to produce an empty result, not a failure.
 func conversationFiles(root string) []string {
 	if root == "" {
@@ -220,7 +201,7 @@ func conversationFiles(root string) []string {
 }
 
 // openRO opens a SQLite file read-only and immutable, which is what makes it
-// safe to read while the CLI holds the file open (PLAN.md §9.1).
+// safe to read while the CLI holds the file open (PLAN.md §6.1).
 //
 // The conversation files are WAL databases. immutable=1 makes SQLite ignore
 // any -wal companion, so calls the CLI has written but not yet checkpointed
@@ -257,7 +238,7 @@ func roDSN(path string) string {
 }
 
 // loadProjects reads <root>/conversation_summaries.db, mapping conversation id
-// to the first workspace URI (PLAN.md §9.5, Project column). Absent or
+// to the first workspace URI (PLAN.md §6.5, Project column). Absent or
 // unreadable summaries simply mean "no project".
 func loadProjects(root string) map[string]string {
 	out := map[string]string{}
@@ -378,7 +359,7 @@ func (c *Collector) scanConversation(ctx context.Context, deviceID, path, convID
 			continue
 		}
 		if g.Model == "" && !g.Usage.Present {
-			continue // PLAN.md §9.4: failed/aborted call, nothing to report
+			continue // PLAN.md §6.4: failed/aborted call, nothing to report
 		}
 		ts, ok := stepTime[g.StepUUID]
 		if !ok {
@@ -412,7 +393,7 @@ func (c *Collector) scanConversation(ctx context.Context, deviceID, path, convID
 	}
 
 	// (2) steps rows whose usage never showed up in gen_metadata: title and
-	// summary generation, model unknown (PLAN.md §9.4).
+	// summary generation, model unknown (PLAN.md §6.4).
 	for _, s := range steps {
 		if s.Idx > next.StepIdx {
 			next.StepIdx = s.Idx
@@ -447,7 +428,7 @@ func (c *Collector) scanConversation(ctx context.Context, deviceID, path, convID
 }
 
 // clampReasoning keeps Reasoning within Output. Reasoning is a subset of Output
-// in every observed row (the identity of PLAN.md §9.7 check 1); should a schema
+// in every observed row (the identity of PLAN.md §6.6 check 1); should a schema
 // change break that, the self-check reports it and the event stays valid per
 // event.UsageEvent.Valid instead of being dropped downstream.
 func clampReasoning(u usage) int64 {
@@ -511,7 +492,7 @@ func readGens(ctx context.Context, db *sql.DB) ([]genRow, int, error) {
 	return out, failures, rows.Err()
 }
 
-// runSelfChecks implements PLAN.md §9.7. It returns nil when every check
+// runSelfChecks implements PLAN.md §6.6. It returns nil when every check
 // passed, otherwise a Diagnostic naming the failures; the caller then drops the
 // conversation to Confidence=unknown but still emits its events.
 func runSelfChecks(convID, path string, gens []genRow, stepTime map[string]time.Time, decodeFailures int) *Diagnostic {
@@ -572,7 +553,7 @@ func runSelfChecks(convID, path string, gens []genRow, stepTime map[string]time.
 	return &d
 }
 
-// knownModel is self-check 3 of PLAN.md §9.7: an unexpected provider prefix is
+// knownModel is self-check 3 of PLAN.md §6.6: an unexpected provider prefix is
 // treated as possible schema drift.
 func knownModel(m string) bool {
 	return strings.HasPrefix(m, "gemini-") || strings.HasPrefix(m, "claude-") || m == internalModel

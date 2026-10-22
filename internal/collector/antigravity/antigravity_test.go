@@ -15,7 +15,7 @@ import (
 
 // ---------------------------------------------------------------------------
 // Synthetic fixture: the same tables the CLI creates (see the schema dumped in
-// PLAN.md §9.1), filled with hand-encoded protobuf blobs.
+// PLAN.md §6.1), filled with hand-encoded protobuf blobs.
 // ---------------------------------------------------------------------------
 
 const (
@@ -115,7 +115,7 @@ func buildStandardConversation(t *testing.T, root string) *sql.DB {
 		usage: usageFixture{uncached: 5000, cached: 60000, hasCached: true,
 			output: 410, response: 410, requestID: "req_vrtx_1"},
 	}))
-	// Neither model nor usage: an aborted call (PLAN.md §9.4, 43 such rows).
+	// Neither model nor usage: an aborted call (PLAN.md §6.4, 43 such rows).
 	insertGen(t, db, 2, cat(encMsg(1, encString(21, "ignored")), encString(4, "uuid-2")))
 
 	insertStep(t, db, 0, stepTypeModelGeneration, encStep(stepFixture{
@@ -182,7 +182,7 @@ func TestScanEmitsExpectedEvents(t *testing.T) {
 			t.Fatalf("identity fields wrong: %+v", e)
 		}
 		if e.CacheWrite != 0 || e.CacheWrite5m != 0 || e.CacheWrite1h != 0 {
-			t.Fatal("Antigravity never records cache writes (PLAN.md §9.5)")
+			t.Fatal("Antigravity never records cache writes (PLAN.md §6.5)")
 		}
 	}
 
@@ -231,8 +231,8 @@ func TestScanEmitsExpectedEvents(t *testing.T) {
 		seen[e.EventID] = true
 	}
 
-	if len(c.(*Collector).Diagnostics()) != 0 || len(LastDiagnostics()) != 0 {
-		t.Fatalf("unexpected diagnostics: %+v", LastDiagnostics())
+	if d := c.(*Collector).Diagnostics(); len(d) != 0 {
+		t.Fatalf("unexpected diagnostics: %+v", d)
 	}
 
 	// Cursor round trip: nothing new on a second pass.
@@ -315,7 +315,7 @@ func TestScanRereadsWhenFileShrank(t *testing.T) {
 func TestSelfCheckDowngradesConfidence(t *testing.T) {
 	root := t.TempDir()
 	db := newConversation(t, root, testConvID)
-	// 1.4.3 != 1.4.9 + 1.4.10 -> schema drift (PLAN.md §9.7 check 1).
+	// 1.4.3 != 1.4.9 + 1.4.10 -> schema drift (PLAN.md §6.6 check 1).
 	insertGen(t, db, 0, encGen(genFixture{
 		stepUUID: "uuid-0", model: "gemini-3.7-flash", trajectoryID: "traj-1",
 		usage: usageFixture{uncached: 10, output: 999, thoughts: 700, hasThink: true, response: 200, requestID: "r0"},
@@ -338,9 +338,6 @@ func TestSelfCheckDowngradesConfidence(t *testing.T) {
 	}
 	if diags[0].ConversationID != testConvID {
 		t.Fatalf("diagnostic conversation = %q", diags[0].ConversationID)
-	}
-	if len(LastDiagnostics()) != 1 {
-		t.Fatal("package-level side channel not populated")
 	}
 }
 
