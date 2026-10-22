@@ -31,7 +31,9 @@ volumeMounts:
   - { name: data, mountPath: /data }              # PVC
   - { name: pricing, mountPath: /config }         # ConfigMap
 livenessProbe:
-  httpGet: { path: /health, port: 8080 }
+  httpGet: { path: /health/live, port: 8080 }
+readinessProbe:
+  httpGet: { path: /health/ready, port: 8080 }
 ```
 
 단가를 고쳤으면 재시작 없이 반영할 수 있다.
