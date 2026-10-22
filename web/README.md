@@ -16,24 +16,17 @@ npm run dev
 ```
 
 Vite's dev server proxies `/api`, `/downloads` and `/health` to
-`http://localhost:8080` (see `vite.config.ts`), so run the Go server (`cmd/server`)
-alongside it for a real backend, or use mock mode instead:
+`http://localhost:8080` (see `vite.config.ts`), so run the Go server alongside it
+and log in with the same token:
 
 ```sh
-VITE_MOCK=1 npm run dev
+ADMIN_TOKEN=dev go run ./cmd/server   # from the repository root
 ```
-
-In mock mode `src/api/client.ts` serves deterministic fake data shaped exactly
-like `docs/API.md` (see `src/api/mock.ts`) — useful since the server is written
-in parallel and may not be running yet. Log in with any non-empty token except
-`invalid`/`bad` (those simulate a 401 to exercise the login error state).
 
 ## Build
 
 ```sh
 npm run build        # production build -> dist/
-npm run build:mock   # same, but with VITE_MOCK=1 baked in (sanity-check only,
-                      # do not ship this artifact)
 npm run preview      # serve the last build locally
 ```
 
@@ -48,13 +41,11 @@ of a date change, and when returning to the tab. Custom dates stay fixed.
 
 - `src/api/types.ts` — every API response/request shape, mirroring `docs/API.md`.
 - `src/api/client.ts` — the single fetch wrapper (auth header injection, 401
-  handling, mock-mode dispatch).
-- `src/api/mock.ts` — deterministic mock backend used only when `VITE_MOCK=1`.
+  handling).
 - `src/state/` — `AuthContext` (token/login/logout) and `FiltersContext`
   (global date range + auto-refresh, shared by every page via the top bar).
 - `src/pages/` — one file per route (Overview, Agents, Models, Projects,
-  DeviceUsage + Devices — the 사용량/관리 sub-tabs of `/devices` —, Downloads,
-  Events, Pricing) plus Login.
+  DeviceUsage (기기), Devices (기기 관리), Downloads, Events, Pricing) plus Login.
 - `src/components/` — shared UI: `TopBar`, `DataTable` (generic sortable
   table), `StateContainer` (loading/error/empty), `StatTile`, `Badge`, charts.
 - `src/lib/` — formatting (`format.ts`), date-range presets (`dateRange.ts`),

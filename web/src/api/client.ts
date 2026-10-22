@@ -1,8 +1,5 @@
-// Single fetch wrapper for the admin API. Adds the Bearer token, surfaces
-// 401s to the auth layer, and (when VITE_MOCK=1) transparently serves
-// deterministic fake data shaped exactly like docs/API.md instead of
-// touching the network — see mock/handlers.ts.
-import { mockRequest } from './mock/handlers'
+// Single fetch wrapper for the admin API. Adds the Bearer token and surfaces
+// 401s to the auth layer.
 import type {
   BreakdownGroupBy,
   BreakdownResponse,
@@ -13,7 +10,6 @@ import type {
   DownloadsManifest,
   EventsResponse,
   GroupBy,
-  HealthResponse,
   PricingResponse,
   PurgeDeviceEventsResponse,
   PurgeDeviceResponse,
@@ -26,7 +22,6 @@ import type {
 } from './types'
 import { readStored, removeStored, writeStored } from '../lib/storage'
 
-const MOCK = import.meta.env.VITE_MOCK === '1'
 const TOKEN_KEY = 'aum_admin_token'
 
 let authToken: string | null = readStored(TOKEN_KEY)
@@ -88,17 +83,6 @@ async function safeJson(res: Response): Promise<{ error?: string } | null> {
 
 async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const token = opts.token ?? authToken
-
-  if (MOCK) {
-    try {
-      return await mockRequest<T>(path, { method: opts.method, params: opts.params, body: opts.body, token })
-    } catch (e) {
-      const err = e as { status?: number; message: string }
-      if (err.status === 401) unauthorizedHandler?.()
-      throw new ApiError(err.status ?? 500, err.message)
-    }
-  }
-
   const url = new URL(path, window.location.origin)
   if (opts.params) {
     for (const [k, v] of Object.entries(opts.params)) {
@@ -231,8 +215,4 @@ export function reloadPricing(): Promise<PricingResponse> {
 
 export function getDownloadsManifest(): Promise<DownloadsManifest> {
   return request('/downloads/manifest.json')
-}
-
-export function getHealth(): Promise<HealthResponse> {
-  return request('/health')
 }

@@ -191,10 +191,6 @@ export interface DevicesResponse {
   devices: Device[]
 }
 
-export interface CreateDeviceRequest {
-  name: string
-}
-
 export interface CreateDeviceResponse {
   id: string
   name: string
@@ -273,14 +269,4 @@ export interface DownloadsManifest {
   version: string
   built_at: string
   files: DownloadFile[]
-}
-
-export interface HealthResponse {
-  ok: boolean
-  version: string
-  events: number
-}
-
-export interface ApiErrorBody {
-  error: string
 }
