@@ -791,3 +791,24 @@ func TestBackoffStaysWithinBounds(t *testing.T) {
 		t.Error("backoff produced no jitter")
 	}
 }
+
+// Events the server refreshed in place (a grown streaming copy, a model filled
+// in) were delivered fine and must not be reported as rejected.
+func TestUpdatedEventsAreNotCountedAsRejected(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := decodeIngest(t, w, r); !ok {
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"accepted":6,"duplicates":2,"updated":2,"rejected":0}`))
+	}))
+	defer srv.Close()
+
+	accepted, duplicates, rejected, err := newClient(t, srv).Push(context.Background(), makeEvents(10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accepted != 6 || duplicates != 2 || rejected != 0 {
+		t.Errorf("accepted=%d duplicates=%d rejected=%d, want 6/2/0", accepted, duplicates, rejected)
+	}
+}

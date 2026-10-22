@@ -49,11 +49,12 @@ type ingestRequest struct {
 	Events []event.UsageEvent `json:"events"`
 }
 
-// ingestResponse is the server's reply. Anything neither accepted nor a
-// duplicate is counted as rejected by the caller.
+// ingestResponse is the server's reply. Anything neither accepted, a duplicate
+// nor an update of a stored copy is counted as rejected by the caller.
 type ingestResponse struct {
 	Accepted   int    `json:"accepted"`
 	Duplicates int    `json:"duplicates"`
+	Updated    int    `json:"updated"` // stored copy refreshed (grown output, model filled in)
 	DeviceID   string `json:"device_id"`
 	Resync     bool   `json:"resync"` // an operator purged this device's data
 }
@@ -145,6 +146,7 @@ type Client struct {
 type Stats struct {
 	Accepted   int
 	Duplicates int
+	Updated    int
 	Rejected   int
 	Requests   int
 
@@ -158,6 +160,7 @@ type Stats struct {
 func (s *Stats) add(o Stats) {
 	s.Accepted += o.Accepted
 	s.Duplicates += o.Duplicates
+	s.Updated += o.Updated
 	s.Rejected += o.Rejected
 	s.Requests += o.Requests
 	s.Resync = s.Resync || o.Resync
@@ -475,9 +478,9 @@ func (c *Client) sendOnce(ctx context.Context, payload []byte, count int) (Stats
 		c.logf("ingest: unparsable 2xx response: %v", err)
 		return Stats{Requests: 1}, nil, false
 	}
-	st := Stats{Accepted: out.Accepted, Duplicates: out.Duplicates, Requests: 1, Resync: out.Resync}
+	st := Stats{Accepted: out.Accepted, Duplicates: out.Duplicates, Updated: out.Updated, Requests: 1, Resync: out.Resync}
 	if count >= 0 {
-		if r := count - out.Accepted - out.Duplicates; r > 0 {
+		if r := count - out.Accepted - out.Duplicates - out.Updated; r > 0 {
 			st.Rejected = r
 		}
 	}

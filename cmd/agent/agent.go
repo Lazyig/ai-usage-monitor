@@ -167,8 +167,8 @@ func (a *agent) pass(ctx context.Context, resyncOK bool) error {
 		a.noteErr("push", err)
 	}
 
-	a.log.Printf("tick: scanned %s (%d events) | accepted=%d duplicates=%d rejected=%d | %s",
-		strings.Join(counts, " "), len(events), st.Accepted, st.Duplicates, st.Rejected, a.queueSummary())
+	a.log.Printf("tick: scanned %s (%d events) | accepted=%d duplicates=%d updated=%d rejected=%d | %s",
+		strings.Join(counts, " "), len(events), st.Accepted, st.Duplicates, st.Updated, st.Rejected, a.queueSummary())
 	out := errors.Join(append(scanErr, ignoreHandled(err))...)
 	if resync && resyncOK {
 		return errors.Join(out, a.resync(ctx))
