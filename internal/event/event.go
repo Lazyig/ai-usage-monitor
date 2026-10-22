@@ -18,6 +18,11 @@ const (
 	SourceAntigravity Source = "antigravity"
 )
 
+// UnknownModel is the placeholder a collector records when a log line has
+// usage but no model it can resolve yet. The server lets a later copy of the
+// same event replace it (see store.InsertEvents).
+const UnknownModel = "unknown"
+
 // IDScheme is the version of the EventID derivation in NewEventID. Agents store
 // the scheme their cursors were built with; bumping it makes an upgraded agent
 // rescan once so its history is re-sent under the new ids.

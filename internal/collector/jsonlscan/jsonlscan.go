@@ -3,7 +3,8 @@
 //
 // It owns the parts those collectors would otherwise each reimplement:
 //
-//   - walking a root for *.jsonl files,
+//   - walking a root for *.jsonl files (and, on request, the *.jsonl.zst files
+//     Codex compresses finished rollouts into),
 //   - a per-file resume point (offset/size/mtime/inode) that survives a restart,
 //   - streaming the appended bytes without ever consuming a partial trailing
 //     line, so a record still being written is read whole on the next scan,
@@ -27,6 +28,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 // maxLineBytes caps a single JSONL record. These transcripts embed full prompt
@@ -108,6 +111,17 @@ type Scanner[T any, PT StatePtr[T]] struct {
 	SkipDir func(name string) bool
 	// Line handles one appended line. It must not retain the line's bytes.
 	Line LineFunc[PT]
+	// Compressed also reads *.jsonl.zst. Offsets are counted in the
+	// decompressed stream, so a line keeps the offset it had before the file
+	// was compressed and the events built from it keep their ids.
+	Compressed bool
+}
+
+// zstdExt marks a compressed transcript.
+const zstdExt = ".jsonl.zst"
+
+func isCompressed(path string) bool {
+	return strings.HasSuffix(strings.ToLower(path), zstdExt)
 }
 
 // Scan reads what is new since prev and returns the cursor to store.
@@ -143,6 +157,19 @@ func (s Scanner[T, PT]) Scan(ctx context.Context, prev Cursor[T]) (Cursor[T], er
 		stored, seen := prev.Files[key]
 		start := startOffset(PT(&stored).Base(), seen, fi, ino, hasIno)
 
+		compressed := isCompressed(path)
+		if compressed {
+			// A compressed transcript is written once and never appended to:
+			// the same size and mtime mean it was already read to the end, so
+			// it is not even opened. Any change means a full re-read.
+			if b := PT(&stored).Base(); seen && fi.Size() == b.Size && fi.ModTime().UnixNano() == b.ModNS {
+				next.Files[key] = stored
+				okFiles++
+				continue
+			}
+			start = 0
+		}
+
 		// Whatever the collector kept about this file describes the bytes it
 		// already consumed, so a re-read from zero starts clean.
 		var st T
@@ -155,8 +182,14 @@ func (s Scanner[T, PT]) Scan(ctx context.Context, prev Cursor[T]) (Cursor[T], er
 			return s.Line(p, offset, line)
 		})
 		if err != nil {
-			// Keep whatever was consumed so the next scan resumes there.
 			fileErr = append(fileErr, fmt.Errorf("%s: read %s: %w", s.Name, path, err))
+			if compressed {
+				// A compressed file cannot be resumed mid-stream: forget it so
+				// the next scan reads it again from the start (the server drops
+				// the events it already has by EventID).
+				continue
+			}
+			// Keep whatever was consumed so the next scan resumes there.
 		} else {
 			okFiles++
 		}
@@ -189,8 +222,9 @@ func cursorKey(root, path string) string {
 	return filepath.ToSlash(rel)
 }
 
-// Files lists every *.jsonl below Root, in lexical order. Both tools nest their
-// transcripts (per project and session, or per date), so the walk recurses.
+// Files lists every *.jsonl below Root (plus *.jsonl.zst when Compressed), in
+// lexical order. Both tools nest their transcripts (per project and session,
+// or per date), so the walk recurses.
 func (s Scanner[T, PT]) Files() ([]string, error) {
 	var out []string
 	err := filepath.WalkDir(s.Root, func(path string, d fs.DirEntry, err error) error {
@@ -206,7 +240,7 @@ func (s Scanner[T, PT]) Files() ([]string, error) {
 			}
 			return nil
 		}
-		if strings.EqualFold(filepath.Ext(d.Name()), ".jsonl") {
+		if strings.EqualFold(filepath.Ext(d.Name()), ".jsonl") || (s.Compressed && isCompressed(d.Name())) {
 			out = append(out, path)
 		}
 		return nil
@@ -241,7 +275,8 @@ func startOffset(prev *FileState, seen bool, fi fs.FileInfo, ino uint64, hasIno 
 // readAppended streams path from start to the end of the last complete line and
 // returns the offset just past it. A trailing line without a newline is a record
 // still being written: it is neither parsed nor counted, so the next scan picks
-// it up whole.
+// it up whole. A compressed file is always read from the start of its
+// decompressed stream (Scan never resumes one part way).
 func readAppended(path string, start int64, fn func(offset int64, line []byte) error) (int64, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -249,13 +284,25 @@ func readAppended(path string, start int64, fn func(offset int64, line []byte) e
 	}
 	defer f.Close()
 
-	if start > 0 {
+	var src io.Reader = f
+	switch {
+	case isCompressed(path):
+		// One goroutine and low-memory mode: these are read once each, in the
+		// background, next to the user's own work.
+		dec, err := zstd.NewReader(f, zstd.WithDecoderConcurrency(1), zstd.WithDecoderLowmem(true))
+		if err != nil {
+			return 0, err
+		}
+		defer dec.Close()
+		src = dec
+		start = 0
+	case start > 0:
 		if _, err := f.Seek(start, io.SeekStart); err != nil {
 			return start, err
 		}
 	}
 
-	r := bufio.NewReaderSize(f, readBufBytes)
+	r := bufio.NewReaderSize(src, readBufBytes)
 	off := start
 	for {
 		line, err := r.ReadBytes('\n')

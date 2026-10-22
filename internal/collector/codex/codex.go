@@ -16,9 +16,9 @@ import (
 	"ai-usage-monitor/internal/event"
 )
 
-// unknownModel is used for token_count lines that precede the first
-// turn_context and whose session_meta carries no model.
-const unknownModel = "unknown"
+// unknownModel is used for token_count lines that precede every record naming
+// a model (session_meta, thread_settings_applied, turn_context).
+const unknownModel = event.UnknownModel
 
 // Collector reads one Codex sessions directory.
 type Collector struct {
@@ -70,7 +70,28 @@ type sessionMeta struct {
 	CLIVersion     string `json:"cli_version"`
 	ThreadSource   string `json:"thread_source"`    // user | subagent | guardian_review
 	ParentThreadID string `json:"parent_thread_id"` // set for sub-agent sessions
-	Model          string `json:"model"`
+	Model          string `json:"model"`            // older CLIs only
+
+	// Newer CLIs and Codex Desktop name the session's starting model here
+	// instead ({"provenance":{"type":"model","model":"gpt-6.1-sol"}}).
+	BaseInstructions *struct {
+		Provenance *struct {
+			Type  string `json:"type"`
+			Model string `json:"model"`
+		} `json:"provenance"`
+	} `json:"base_instructions"`
+}
+
+// startModel is the model the session started on, from whichever field this
+// CLI version writes.
+func (m sessionMeta) startModel() string {
+	if m.Model != "" {
+		return m.Model
+	}
+	if bi := m.BaseInstructions; bi != nil && bi.Provenance != nil && (bi.Provenance.Type == "" || bi.Provenance.Type == "model") {
+		return bi.Provenance.Model
+	}
+	return ""
 }
 
 type turnContext struct {
@@ -88,9 +109,16 @@ type turnContext struct {
 //	rate_limits.plan_type               string ("free", "plus", ...)
 //
 // plus rate_limits.secondary with the same primary shape and rate_limits.credits.
+//
+// The thread_settings_applied payload is read for its model: Codex Desktop
+// writes it when a session starts or switches model, often with no
+// turn_context at all.
 type eventMsg struct {
-	Type string     `json:"type"`
-	Info *tokenInfo `json:"info"` // null on some token_count lines
+	Type           string     `json:"type"`
+	Info           *tokenInfo `json:"info"` // null on some token_count lines
+	ThreadSettings *struct {
+		Model string `json:"model"`
+	} `json:"thread_settings"`
 }
 
 type tokenInfo struct {
@@ -123,6 +151,8 @@ func (c *Collector) Scan(ctx context.Context, deviceID string, cur collector.Cur
 	sc := scanner{
 		Root: c.root,
 		Name: "codex",
+		// Codex compresses finished rollouts in place (rollout-*.jsonl.zst).
+		Compressed: true,
 		Line: func(st *fileState, offset int64, raw []byte) error {
 			if ev, ok := decodeLine(raw, offset, deviceID, st); ok {
 				events = append(events, ev)
@@ -166,8 +196,8 @@ func decodeLine(raw []byte, offset int64, deviceID string, st *fileState) (event
 		}
 		st.CWD = m.CWD
 		st.CLIVersion = m.CLIVersion
-		if m.Model != "" && st.Model == "" {
-			st.Model = m.Model
+		if model := m.startModel(); model != "" && st.Model == "" {
+			st.Model = model
 		}
 		return event.UsageEvent{}, false
 
@@ -183,6 +213,13 @@ func decodeLine(raw []byte, offset int64, deviceID string, st *fileState) (event
 	case "event_msg":
 		var em eventMsg
 		if err := json.Unmarshal(l.Payload, &em); err != nil {
+			return event.UsageEvent{}, false
+		}
+		if em.Type == "thread_settings_applied" {
+			// Like turn_context: the latest applied model covers what follows.
+			if em.ThreadSettings != nil && em.ThreadSettings.Model != "" {
+				st.Model = em.ThreadSettings.Model
+			}
 			return event.UsageEvent{}, false
 		}
 		if em.Type != "token_count" || em.Info == nil || em.Info.LastTokenUsage == nil {
