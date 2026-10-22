@@ -75,7 +75,7 @@ func TestStateDirOverrides(t *testing.T) {
 func TestDefaultRoots(t *testing.T) {
 	home := setHome(t)
 
-	// The PLAN.md path table: identical relative layout on every OS, only the
+	// The default source directory layout: identical relative layout on every OS, only the
 	// home directory differs ($HOME vs %USERPROFILE%).
 	cases := []struct {
 		source event.Source

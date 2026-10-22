@@ -2,11 +2,8 @@ package antigravity
 
 // Minimal, schema-less protobuf wire-format reader.
 //
-// It is a Go port of research/antigravity/pb.py with one important difference:
-// pb.py guesses whether a length-delimited field is a nested message or a
-// string, we never guess. Callers descend only along the paths that PLAN.md
-// §6.2/§6.3 documents as messages, and read bytes as text only where the field
-// map says "string". That keeps us away from the prompt-text fields entirely.
+// Callers explicitly select nested message paths and text fields. The reader
+// does not guess field types or decode prompt content.
 //
 // The reader is lazy: nothing is materialised into a tree, a lookup just walks
 // the buffer skipping over fields it does not care about. Decoding a 160 KB row
@@ -142,7 +139,7 @@ func (m message) find(num int) (field, bool, error) {
 
 // resolve walks path, descending through length-delimited fields, and returns
 // the field named by the last element. Callers must only pass paths whose
-// intermediate elements PLAN.md documents as nested messages.
+// intermediate elements the collector treats as nested messages.
 func (m message) resolve(path ...int) (field, bool, error) {
 	if len(path) == 0 || len(path) > maxDepth {
 		return field{}, false, errMalformed

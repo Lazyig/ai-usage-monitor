@@ -158,6 +158,8 @@ ai-usage-agent uninstall | start | stop | restart
 
 ## 알려진 제한
 
+- Antigravity 수집은 비공식 로컬 데이터 형식에 의존하므로 CLI 업데이트로 동작이 달라질 수 있습니다.
+
 - Claude Code · Codex 도 공식 API 가 아닌 로컬 로그 형식에 의존합니다.
 - 관리자는 단일 토큰 하나뿐이며, 사용자·권한 구분이 없습니다. 개인 또는 소규모 기기군을 전제로 합니다.
 - 서버는 SQLite 단일 인스턴스입니다. 수평 확장을 고려하지 않았습니다.

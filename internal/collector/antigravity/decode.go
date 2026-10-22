@@ -1,11 +1,11 @@
 package antigravity
 
-// Field-map specific decoding. Every path below is quoted from PLAN.md §6.2
-// (gen_metadata.data) and §6.3 (steps.metadata); keep the two in sync.
+// Field-map specific decoding of gen_metadata.data and steps.metadata.
+// Keep shared usage fields in sync between the two sources.
 
 import "time"
 
-// step_type values seen in the wild (PLAN.md §6.3). Only informational here:
+// step_type values seen in the wild. Only informational here:
 // we key off the presence of usage/model, not the type.
 const (
 	stepTypeModelGeneration = 15 // one or more gen_metadata rows
@@ -18,12 +18,12 @@ const (
 // Fields 1, 6, 7 and 8 of that struct are NOT tokens (model constant, tool
 // count, bot id, session kv) and are deliberately never read.
 type usage struct {
-	Uncached    int64  // .2  prompt tokens that were not a cache hit
-	Cached      int64  // .5  cache-hit prompt tokens (absent => 0)
-	Output      int64  // .3  total output, thoughts included
-	Thoughts    int64  // .9  reasoning tokens; absent on Claude rows
-	Response    int64  // .10 candidate tokens
-	RequestID   string // .11 dedupe key (Gemini: base64-ish, Claude: req_vrtx_…)
+	Uncached    int64  //.2  prompt tokens that were not a cache hit
+	Cached      int64  //.5  cache-hit prompt tokens (absent => 0)
+	Output      int64  //.3  total output, thoughts included
+	Thoughts    int64  //.9  reasoning tokens; absent on Claude rows
+	Response    int64  //.10 candidate tokens
+	RequestID   string //.11 dedupe key (Gemini: base64-ish, Claude: req_vrtx_…)
 	HasThoughts bool
 	HasOutput   bool
 	HasResponse bool
@@ -74,7 +74,7 @@ func readUsage(m message) (usage, error) {
 	return u, nil
 }
 
-// identityOK is self-check 1 of PLAN.md §6.6: total output must be the sum of
+// identityOK checks that total output must be the sum of
 // thoughts and response, or equal the response when thoughts are not recorded
 // (Claude via Vertex). Rows that carry no output at all are not checked.
 func (u usage) identityOK() bool {

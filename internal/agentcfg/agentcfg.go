@@ -106,7 +106,7 @@ func (c *Config) Source(s event.Source) *SourceConfig {
 }
 
 // homeDir is the user's home directory. On Windows os.UserHomeDir already
-// resolves %USERPROFILE%, which is what the PLAN.md path table uses.
+// resolves %USERPROFILE%, which is what the default source directory layout uses.
 func homeDir() string {
 	if h, err := os.UserHomeDir(); err == nil && h != "" {
 		return h
@@ -117,7 +117,7 @@ func homeDir() string {
 	return "."
 }
 
-// DefaultRoot is the per-source log directory from the PLAN.md path table.
+// DefaultRoot is the per-source log directory from the default source directory layout.
 // The relative layout is identical on every OS; only the home directory differs
 // ($HOME on linux/macOS, %USERPROFILE% on Windows).
 func DefaultRoot(s event.Source) string {

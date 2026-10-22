@@ -10,7 +10,7 @@ import (
 // ---------------------------------------------------------------------------
 // Test-only protobuf encoder. It is deliberately independent of the decoder so
 // the round trip proves something, and it lets the fixtures below mirror the
-// real field map of PLAN.md §6.2/§6.3 byte for byte.
+// real field map of the field layout byte for byte.
 // ---------------------------------------------------------------------------
 
 func putVarint(dst []byte, v uint64) []byte {
@@ -77,7 +77,7 @@ type usageFixture struct {
 
 func encUsage(num int, u usageFixture) []byte {
 	parts := [][]byte{
-		encVarint(1, 1298), // model constant, NOT tokens (PLAN.md §6.2)
+		encVarint(1, 1298), // model constant, NOT tokens
 		encVarint(2, uint64(u.uncached)),
 		encVarint(3, uint64(u.output)),
 	}
