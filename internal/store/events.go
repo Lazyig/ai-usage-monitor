@@ -42,6 +42,8 @@ func (s *Store) InsertEvents(ctx context.Context, evs []event.UsageEvent) (accep
 	defer ins.Close()
 	// device_id, source, model, session, project and received_at stay as first
 	// recorded: the identity of the event does not change, only its final size.
+	// The one exception is the model placeholder (event.UnknownModel), filled
+	// in below when a later copy names the model.
 	upd, err := tx.PrepareContext(ctx, `
 		UPDATE usage_events SET
 			ts = ?, input = ?, output = ?, cache_read = ?, cache_write_5m = ?, cache_write_1h = ?, cache_write = ?,
@@ -51,6 +53,11 @@ func (s *Store) InsertEvents(ctx context.Context, evs []event.UsageEvent) (accep
 		return 0, 0, 0, err
 	}
 	defer upd.Close()
+	fill, err := tx.PrepareContext(ctx, `UPDATE usage_events SET model = ? WHERE event_id = ? AND model = ?`)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defer fill.Close()
 
 	received := nowMillis()
 	for _, e := range evs {
@@ -78,7 +85,19 @@ func (s *Store) InsertEvents(ctx context.Context, evs []event.UsageEvent) (accep
 		}
 		if n, err = res.RowsAffected(); err != nil {
 			return 0, 0, 0, err
-		} else if n > 0 {
+		}
+		if e.Model != event.UnknownModel {
+			res, err = fill.ExecContext(ctx, e.Model, e.EventID, event.UnknownModel)
+			if err != nil {
+				return 0, 0, 0, fmt.Errorf("store: fill model of %s: %w", e.EventID, err)
+			}
+			filled, err := res.RowsAffected()
+			if err != nil {
+				return 0, 0, 0, err
+			}
+			n += filled
+		}
+		if n > 0 {
 			updated++
 		} else {
 			duplicates++

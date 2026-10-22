@@ -68,3 +68,50 @@ func TestInsertEventsRefreshesGrownCopies(t *testing.T) {
 		t.Fatalf("events after resync request = %+v", c)
 	}
 }
+
+// A collector that could not tell the model at first stores event.UnknownModel;
+// a later copy of the same event that names it fills it in. A known model is
+// never replaced, and a placeholder never overwrites a known one.
+func TestInsertEventsFillsInAnUnknownModel(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	d, _, err := s.CreateDevice(ctx, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	modelOf := func() string {
+		t.Helper()
+		page, err := s.Events(ctx, Filter{From: mustTime(t, "2026-10-21T00:00:00Z"), To: mustTime(t, "2026-10-22T00:00:00Z")}, 10, "", nil)
+		if err != nil || len(page.Events) != 1 {
+			t.Fatalf("events = %+v, %v", page, err)
+		}
+		return page.Events[0].Model
+	}
+
+	first := ev(t, "c1", d.ID, event.SourceCodex, "2026-10-21T13:43:01Z", event.UnknownModel, 60, 10, 40, 0)
+	if _, _, _, err := s.InsertEvents(ctx, []event.UsageEvent{first}); err != nil {
+		t.Fatal(err)
+	}
+
+	named := first
+	named.Model = "gpt-6.1-sol"
+	acc, dup, upd, err := s.InsertEvents(ctx, []event.UsageEvent{named})
+	if err != nil || acc != 0 || dup != 0 || upd != 1 {
+		t.Fatalf("named copy = %d/%d/%d, %v; want 0/0/1", acc, dup, upd, err)
+	}
+	if got := modelOf(); got != "gpt-6.1-sol" {
+		t.Fatalf("model = %q, want it filled in", got)
+	}
+
+	for _, m := range []string{event.UnknownModel, "gpt-6-astra"} {
+		again := first
+		again.Model = m
+		acc, dup, upd, err := s.InsertEvents(ctx, []event.UsageEvent{again})
+		if err != nil || acc != 0 || dup != 1 || upd != 0 {
+			t.Fatalf("copy with %q = %d/%d/%d, %v; want a plain duplicate", m, acc, dup, upd, err)
+		}
+		if got := modelOf(); got != "gpt-6.1-sol" {
+			t.Fatalf("model = %q after a copy with %q", got, m)
+		}
+	}
+}
