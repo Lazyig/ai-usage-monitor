@@ -137,8 +137,25 @@ export interface FilterParams {
   device?: string
 }
 
-export function getSummary(params: RangeParams & FilterParams): Promise<SummaryResponse> {
-  return request('/api/v1/summary', { params: toParams(params) })
+/**
+ * The server always sends cost_usd as a number and reports how much of a row
+ * it could price in cost_known_ratio (1 when the row has no tokens). A row with
+ * nothing priced has an unknown cost, not $0; the UI spells that cost_usd:
+ * null, which renders "—" with a 단가 미상 badge and sorts last.
+ */
+export function markUnpriced<T extends { cost_usd: number | null; cost_known_ratio?: number }>(row: T): T {
+  return row.cost_known_ratio === 0 ? { ...row, cost_usd: null } : row
+}
+
+export async function getSummary(params: RangeParams & FilterParams): Promise<SummaryResponse> {
+  const s = await request<SummaryResponse>('/api/v1/summary', { params: toParams(params) })
+  return {
+    ...s,
+    totals: markUnpriced(s.totals),
+    by_source: s.by_source.map(markUnpriced),
+    by_device: s.by_device.map(markUnpriced),
+    by_model: s.by_model.map(markUnpriced),
+  }
 }
 
 export function getTimeseries(
@@ -147,10 +164,11 @@ export function getTimeseries(
   return request('/api/v1/timeseries', { params: toParams(params) })
 }
 
-export function getBreakdown(
+export async function getBreakdown(
   params: RangeParams & FilterParams & { group_by: BreakdownGroupBy; limit?: number },
 ): Promise<BreakdownResponse> {
-  return request('/api/v1/breakdown', { params: toParams(params) })
+  const b = await request<BreakdownResponse>('/api/v1/breakdown', { params: toParams(params) })
+  return { ...b, rows: b.rows.map(markUnpriced) }
 }
 
 export function getThroughput(params: RangeParams & FilterParams & { group_by?: GroupBy }): Promise<ThroughputResponse> {

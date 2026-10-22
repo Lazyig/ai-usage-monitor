@@ -1,3 +1,14 @@
+import { Button, Menu, MenuDivider, MenuItem, MenuList, MenuPopover, MenuTrigger, Spinner } from '@fluentui/react-components'
+import {
+  ArrowReset20Regular,
+  ArrowSync20Regular,
+  Delete20Regular,
+  Desktop20Regular,
+  Edit20Regular,
+  KeyReset20Regular,
+  MoreHorizontal20Regular,
+  Prohibited20Regular,
+} from '@fluentui/react-icons'
 import { useMemo, useState, type FormEvent } from 'react'
 import { createDevice, renameDevice, deleteDevice, getDevices, purgeDevice, purgeDeviceEvents, requestResync, rotateDevice } from '../api/client'
 import type { Device } from '../api/types'
@@ -137,32 +148,83 @@ export function Devices() {
     {
       key: 'name',
       header: '이름',
+      media: () => <Desktop20Regular />,
       render: (d) => (
-        <div className="name-cell">
-          <span>
-            {d.name} {!d.revoked_at && isStale(d.last_seen) && <Badge kind="stale" />}{' '}
-            {d.revoked_at && <Badge kind="revoked" title={`폐기 시각: ${formatDateTime(d.revoked_at)}`} />}
-            {d.hostname && d.hostname !== d.name && (
-              <span className="muted name-cell-hostname" title="에이전트가 보고한 호스트명">
-                {d.hostname}
-              </span>
-            )}
-          </span>
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label={`"${d.name}" 이름 변경`}
-            title="이름 변경"
-            onClick={() => setConfirmState({ kind: 'rename', device: d })}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M12 20h9" />
-              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-            </svg>
-          </button>
-        </div>
+        <span>
+          {d.name} {!d.revoked_at && isStale(d.last_seen) && <Badge kind="stale" />}{' '}
+          {d.revoked_at && <Badge kind="revoked" title={`폐기 시각: ${formatDateTime(d.revoked_at)}`} />}{' '}
+          {(rotating === d.id || revoking === d.id) && (
+            <Spinner size="extra-tiny" label={rotating === d.id ? '재발급 중…' : '폐기 중…'} labelPosition="after" className="inline-flex align-middle" />
+          )}
+        </span>
       ),
+      // The agent-reported hostname, when the operator renamed the device.
+      description: (d) =>
+        d.hostname && d.hostname !== d.name ? <span title="에이전트가 보고한 호스트명">{d.hostname}</span> : undefined,
       sortValue: (d) => d.name,
+      // Fluent row actions, revealed on hover/focus: rename, then the overflow
+      // menu with destructive items last and in red.
+      actions: (d) => {
+        const busy = rotating === d.id || revoking === d.id
+        return (
+          <>
+            <Button
+              appearance="subtle"
+              icon={<Edit20Regular />}
+              aria-label={`"${d.name}" 이름 변경`}
+              title="이름 변경"
+              onClick={() => setConfirmState({ kind: 'rename', device: d })}
+            />
+            <Menu positioning="below-end">
+              <MenuTrigger disableButtonEnhancement>
+                <Button
+                  appearance="subtle"
+                  icon={busy ? <Spinner size="tiny" /> : <MoreHorizontal20Regular />}
+                  disabled={busy}
+                  aria-label={`"${d.name}" 작업`}
+                  title={busy ? (rotating === d.id ? '재발급 중…' : '폐기 중…') : '작업'}
+                />
+              </MenuTrigger>
+              <MenuPopover>
+                <MenuList>
+                  <MenuItem icon={<KeyReset20Regular />} onClick={() => setConfirmState({ kind: 'rotate', device: d })}>
+                    토큰 재발급
+                  </MenuItem>
+                  <MenuItem
+                    icon={<ArrowSync20Regular />}
+                    disabled={!!d.revoked_at}
+                    title={d.revoked_at ? '폐기된 기기는 재동기화할 수 없습니다. 먼저 토큰을 재발급하세요.' : '삭제 없이 로그를 처음부터 다시 보내게 합니다'}
+                    onClick={() => setConfirmState({ kind: 'resync', device: d })}
+                  >
+                    재동기화
+                  </MenuItem>
+                  <MenuDivider />
+                  <MenuItem
+                    className="menu-danger"
+                    icon={<ArrowReset20Regular />}
+                    disabled={!!d.revoked_at}
+                    title={d.revoked_at ? '폐기된 기기는 초기화할 수 없습니다. 먼저 토큰을 재발급하세요.' : '이 기기의 이벤트를 모두 지운 뒤 다시 받습니다'}
+                    onClick={() => setConfirmState({ kind: 'reset', device: d })}
+                  >
+                    초기화
+                  </MenuItem>
+                  <MenuItem
+                    className="menu-danger"
+                    icon={<Prohibited20Regular />}
+                    disabled={!!d.revoked_at}
+                    onClick={() => setConfirmState({ kind: 'revoke', device: d })}
+                  >
+                    {d.revoked_at ? '폐기됨' : '토큰 폐기'}
+                  </MenuItem>
+                  <MenuItem className="menu-danger" icon={<Delete20Regular />} onClick={() => setConfirmState({ kind: 'purge', device: d })}>
+                    완전 삭제
+                  </MenuItem>
+                </MenuList>
+              </MenuPopover>
+            </Menu>
+          </>
+        )
+      },
     },
     { key: 'os', header: 'OS / Arch', render: (d) => `${d.os}/${d.arch}`, sortValue: (d) => `${d.os}/${d.arch}` },
     { key: 'agent_version', header: '에이전트 버전', render: (d) => d.agent_version, sortValue: (d) => d.agent_version },
@@ -177,61 +239,23 @@ export function Devices() {
     countColumn('events_total', '누적 이벤트', (d) => d.events_total),
     dateTimeColumn('token_created_at', '토큰 발급일', (d) => d.token_created_at),
     dateTimeColumn('revoked_at', '폐기 시각', (d) => d.revoked_at, { fallback: '-' }),
-    {
-      key: 'actions',
-      header: '',
-      render: (d) => (
-        <div className="action-group">
-          <button type="button" className="btn btn-sm" disabled={rotating === d.id} onClick={() => setConfirmState({ kind: 'rotate', device: d })}>
-            {rotating === d.id ? '재발급 중…' : '토큰 재발급'}
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm"
-            disabled={!!d.revoked_at}
-            title={d.revoked_at ? '폐기된 기기는 재동기화할 수 없습니다. 먼저 토큰을 재발급하세요.' : '삭제 없이 로그를 처음부터 다시 보내게 합니다'}
-            onClick={() => setConfirmState({ kind: 'resync', device: d })}
-          >
-            재동기화
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-danger"
-            disabled={!!d.revoked_at}
-            title={d.revoked_at ? '폐기된 기기는 초기화할 수 없습니다. 먼저 토큰을 재발급하세요.' : '이 기기의 이벤트를 모두 지운 뒤 다시 받습니다'}
-            onClick={() => setConfirmState({ kind: 'reset', device: d })}
-          >
-            초기화
-          </button>
-          {d.revoked_at ? (
-            <button type="button" className="btn btn-sm btn-danger" disabled>
-              폐기됨
-            </button>
-          ) : (
-            <button type="button" className="btn btn-sm btn-danger" disabled={revoking === d.id} onClick={() => setConfirmState({ kind: 'revoke', device: d })}>
-              {revoking === d.id ? '폐기 중…' : '토큰 폐기'}
-            </button>
-          )}
-          <button type="button" className="btn btn-sm btn-danger" onClick={() => setConfirmState({ kind: 'purge', device: d })}>
-            완전 삭제
-          </button>
-        </div>
-      ),
-    },
   ]
 
   return (
     <div>
-      <div className="page-header">
+      <div className="mt-2 mb-5 flex flex-wrap items-center justify-between gap-3 [&>h1]:m-0">
         <h1>기기</h1>
       </div>
 
-      <ul className="help-list">
+      <ul className="mx-0 mt-0 mb-4 flex list-none flex-col gap-0.75 p-0 text-200 text-fg2 [&_strong]:text-fg1">
         <li>
           <strong>토큰 재발급</strong> — 기존 토큰을 즉시 무효화하고 새 토큰을 발급합니다. 기기 이력은 그대로 유지되며, 폐기된 기기도 다시 살아납니다.
         </li>
         <li>
-          <strong>재동기화</strong> — 이 기기의 이벤트를 모두 지우고, 에이전트가 다음 하트비트(1분 이내)에 전체 이력을 다시 보내도록 합니다.
+          <strong>재동기화</strong> — 아무것도 지우지 않고, 에이전트가 다음 하트비트(1분 이내)에 로그를 처음부터 다시 보내도록 합니다. 이미 있는 이벤트는 무시되고 빠진 것만 채워집니다.
+        </li>
+        <li>
+          <strong>초기화</strong> — 이 기기의 이벤트를 모두 지운 뒤 에이전트가 다시 보내도록 합니다. 에이전트 PC에서 이미 지워진 로그(예: Claude Code는 오래된 대화 기록을 자동 삭제)의 사용량은 되돌릴 수 없으니, 보통은 재동기화를 쓰세요.
         </li>
         <li>
           <strong>토큰 폐기</strong> — 토큰만 무효화합니다. 이벤트 기록은 그대로 유지됩니다.
@@ -241,8 +265,8 @@ export function Devices() {
         </li>
       </ul>
 
-      <Card className="section" title="기기 추가">
-        <form className="field-row" onSubmit={onCreate}>
+      <Card className="mb-6" title="기기 추가">
+        <form className="mb-3 flex flex-wrap items-end gap-2 max-phone:flex-col max-phone:items-stretch" onSubmit={onCreate}>
           <div className="field">
             <label htmlFor="device-name">이름</label>
             <input id="device-name" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="예: macbook-pro" />
@@ -251,34 +275,34 @@ export function Devices() {
             {creating ? '등록 중…' : '추가'}
           </button>
         </form>
-        {createError && <p className="login-error">{createError}</p>}
+        {createError && <p className="text-200 text-danger">{createError}</p>}
       </Card>
 
       {newToken &&
         (() => {
           const cmds = installCommands(origin, newToken.token)
           return (
-            <div className="copy-box">
+            <div className="mx-0 my-3 rounded-md border border-warning-stroke bg-warning-bg p-3 [&_code]:min-w-0 [&_code]:flex-1 [&_code]:overflow-x-auto [&_code]:rounded-md [&_code]:border [&_code]:border-stroke2 [&_code]:bg-bg1 [&_code]:px-2.5 [&_code]:py-2 [&_code]:font-mono [&_code]:text-200 [&_code]:whitespace-pre">
               <strong>{newToken.name}</strong>의 토큰이 발급되었습니다. 이 토큰은 다시 표시되지 않으니 지금 복사하세요.
-              <div className="copy-box-row">
+              <div className="mt-1.5 flex items-center gap-2 [&_.btn]:shrink-0">
                 <code>{newToken.token}</code>
                 <button type="button" className="btn btn-sm" onClick={() => navigator.clipboard?.writeText(newToken.token)}>
                   복사
                 </button>
               </div>
               <p style={{ marginTop: 10, marginBottom: 2 }}>Linux / macOS 설치 명령</p>
-              <div className="copy-box-row">
+              <div className="mt-1.5 flex items-center gap-2 [&_.btn]:shrink-0">
                 <code>{cmds.unix}</code>
                 <button type="button" className="btn btn-sm" onClick={() => navigator.clipboard?.writeText(cmds.unix)}>
                   복사
                 </button>
               </div>
               <p style={{ marginTop: 10, marginBottom: 2 }}>Windows (PowerShell) 설치 명령</p>
-              <p className="admin-note" role="note">
+              <p className="mx-0 mt-1.5 mb-2 rounded-md border border-warning-stroke bg-warning-bg px-3 py-2 text-200 leading-200 [&_strong]:text-warning-fg" role="note">
                 <strong>관리자 권한 필수</strong> — PowerShell 을 &quot;관리자 권한으로 실행&quot; 한 창에서 실행하세요. 일반 권한에서는 Windows 서비스 등록이 실패해
                 에이전트가 자동 시작되지 않습니다.
               </p>
-              <div className="copy-box-row">
+              <div className="mt-1.5 flex items-center gap-2 [&_.btn]:shrink-0">
                 <code>{cmds.windows}</code>
                 <button type="button" className="btn btn-sm" onClick={() => navigator.clipboard?.writeText(cmds.windows)}>
                   복사
@@ -288,9 +312,9 @@ export function Devices() {
           )
         })()}
 
-      {actionNotice && <p className="toast-success">{actionNotice}</p>}
+      {actionNotice && <p className="mx-0 my-2 rounded-md border border-success-stroke bg-success-bg px-3 py-2 text-300 text-fg1">{actionNotice}</p>}
       {actionError && (
-        <p className="login-error" role="alert">
+        <p className="text-200 text-danger" role="alert">
           작업에 실패했습니다: {actionError}
         </p>
       )}
@@ -324,7 +348,7 @@ export function Devices() {
       {confirmState?.kind === 'reset' && (
         <ConfirmDialog
           title="초기화"
-          message={`"${confirmState.device.name}" 기기의 이벤트를 모두 삭제합니다. 이 기기의 통계가 잠시 0 이 되었다가 에이전트가 1분 안에 다시 보냅니다.`}
+          message={`"${confirmState.device.name}" 기기의 이벤트를 모두 삭제합니다. 이 기기의 통계가 잠시 0 이 되었다가 에이전트가 1분 안에 다시 보냅니다. 에이전트 PC에서 이미 지워진 로그의 사용량은 돌아오지 않습니다.`}
           confirmLabel="초기화"
           busy={confirming}
           onConfirm={onConfirmAction}

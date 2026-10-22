@@ -1,3 +1,4 @@
+import { Folder20Regular } from '@fluentui/react-icons'
 import { getBreakdown } from '../api/client'
 import type { BreakdownRow } from '../api/types'
 import { type Column, DataTable } from '../components/DataTable'
@@ -9,15 +10,24 @@ import { shortenProjectKey } from '../lib/format'
 import { tokensOf } from '../lib/usage'
 import { useFilters } from '../state/FiltersContext'
 
+/** Last path segment of a cwd or workspace URI ("C:\a\b" and "file:///a/b" → "b"). */
+function projectName(key: string): string {
+  const segments = key.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, '').split(/[\\/]/).filter(Boolean)
+  return segments[segments.length - 1] ?? key
+}
+
+// File-list layout: folder icon, folder name, the full location underneath.
 const PROJECT_COLUMNS: Column<BreakdownRow>[] = [
   {
     key: 'project',
     header: '프로젝트',
-    render: (r) => <span title={r.key}>{shortenProjectKey(r.key)}</span>,
+    media: () => <Folder20Regular />,
+    render: (r) => <span title={r.key}>{projectName(r.key)}</span>,
+    description: (r) => <span title={r.key}>{shortenProjectKey(r.key)}</span>,
     sortValue: (r) => r.key,
   },
   { key: 'source', header: '소스', render: (r) => labelForKey(r.source ?? '-'), sortValue: (r) => r.source ?? '' },
-  costColumn('cost', '비용', (r) => r.cost_usd, { badge: true }),
+  costColumn('cost', '비용', (r) => r.cost_usd, { badge: true, ratio: (r) => r.cost_known_ratio }),
   tokenColumn('tokens', '토큰', tokensOf),
   countColumn('events', '이벤트', (r) => r.events),
   dateTimeColumn('last_seen', '최근 사용', (r) => r.last_seen),
@@ -32,7 +42,7 @@ export function Projects() {
 
   return (
     <div>
-      <div className="page-header">
+      <div className="mt-2 mb-5 flex flex-wrap items-center justify-between gap-3 [&>h1]:m-0">
         <h1>프로젝트</h1>
       </div>
       <StateContainer

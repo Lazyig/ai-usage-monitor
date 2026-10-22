@@ -1,4 +1,15 @@
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableCellActions,
+  TableCellLayout,
+  TableHeader,
+  TableHeaderCell,
+  TableRow,
+} from '@fluentui/react-components'
 import { useMemo, useState, type ReactNode } from 'react'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 
 export interface Column<T> {
   key: string
@@ -6,6 +17,12 @@ export interface Column<T> {
   render: (row: T) => ReactNode
   sortValue?: (row: T) => number | string
   align?: 'left' | 'right'
+  /** Fluent cell layout: a leading icon or swatch before the content. */
+  media?: (row: T) => ReactNode
+  /** Fluent cell layout: a secondary line under the content. */
+  description?: (row: T) => ReactNode
+  /** Row actions shown inside this cell when the row is hovered or focused. */
+  actions?: (row: T) => ReactNode
 }
 
 interface DataTableProps<T> {
@@ -14,11 +31,20 @@ interface DataTableProps<T> {
   rowKey: (row: T) => string
   initialSortKey?: string
   initialSortDir?: 'asc' | 'desc'
+  /** Fluent row density: medium (44px) for summary tables, small (34px) for long logs. */
+  size?: 'small' | 'medium'
 }
 
-export function DataTable<T>({ columns, rows, rowKey, initialSortKey, initialSortDir = 'desc' }: DataTableProps<T>) {
+/** Fluent slots take an element or nothing, not React's booleans: empty means no slot. */
+function slot(node: ReactNode) {
+  return node == null || typeof node === 'boolean' ? undefined : <>{node}</>
+}
+
+export function DataTable<T>({ columns, rows, rowKey, initialSortKey, initialSortDir = 'desc', size = 'medium' }: DataTableProps<T>) {
   const [sortKey, setSortKey] = useState<string | undefined>(initialSortKey)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(initialSortDir)
+  // Hover-revealed actions would be unreachable on touch screens, so show them there.
+  const noHover = useMediaQuery('(hover: none)')
 
   const sorted = useMemo(() => {
     const col = columns.find((c) => c.key === sortKey)
@@ -45,37 +71,53 @@ export function DataTable<T>({ columns, rows, rowKey, initialSortKey, initialSor
     }
   }
 
+  function renderCell(col: Column<T>, row: T) {
+    const content =
+      col.media || col.description ? (
+        <TableCellLayout media={slot(col.media?.(row))} description={slot(col.description?.(row))}>
+          {col.render(row)}
+        </TableCellLayout>
+      ) : (
+        col.render(row)
+      )
+    return (
+      <>
+        {content}
+        {col.actions && <TableCellActions visible={noHover || undefined}>{col.actions(row)}</TableCellActions>}
+      </>
+    )
+  }
+
   return (
     <div className="table-scroll">
-      <table className="data-table">
-        <thead>
-          <tr>
+      <Table size={size} sortable={columns.some((c) => c.sortValue)} className="data-table">
+        <TableHeader>
+          <TableRow>
             {columns.map((col) => (
-              <th
+              <TableHeaderCell
                 key={col.key}
                 className={col.align === 'right' ? 'ta-right' : undefined}
-                onClick={() => onHeaderClick(col)}
-                aria-sort={sortKey === col.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
+                onClick={col.sortValue ? () => onHeaderClick(col) : undefined}
+                sortDirection={sortKey === col.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
                 data-sortable={col.sortValue ? 'true' : undefined}
               >
                 {col.header}
-                {sortKey === col.key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
-              </th>
+              </TableHeaderCell>
             ))}
-          </tr>
-        </thead>
-        <tbody>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {sorted.map((row) => (
-            <tr key={rowKey(row)}>
+            <TableRow key={rowKey(row)}>
               {columns.map((col) => (
-                <td key={col.key} className={col.align === 'right' ? 'ta-right' : undefined}>
-                  {col.render(row)}
-                </td>
+                <TableCell key={col.key} className={col.align === 'right' ? 'ta-right' : col.actions ? 'has-actions' : undefined}>
+                  {renderCell(col, row)}
+                </TableCell>
               ))}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   )
 }

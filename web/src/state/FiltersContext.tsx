@@ -52,8 +52,19 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!autoRefresh) return
-    const id = setInterval(refresh, AUTO_REFRESH_MS)
-    return () => clearInterval(id)
+    // A hidden tab skips its refreshes; coming back to it refreshes at once.
+    const tick = () => {
+      if (document.visibilityState !== 'hidden') refresh()
+    }
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refresh()
+    }
+    const id = setInterval(tick, AUTO_REFRESH_MS)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [autoRefresh, refresh])
 
   const value = useMemo<FiltersContextValue>(

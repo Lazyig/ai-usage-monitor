@@ -1,7 +1,7 @@
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { TimeseriesSeries } from '../api/types'
 import { ChartTooltip } from './ChartTooltip'
-import { type Metric, formatBucketLabel, mergeSeries, metricFormat, metricOfPoint } from '../lib/chartData'
+import { type ChartWindow, type Metric, chartBuckets, formatBucketLabel, mergeSeries, metricFormat, metricOfPoint } from '../lib/chartData'
 import { labelForKey } from '../lib/colors'
 import { PHONE_QUERY, useMediaQuery } from '../hooks/useMediaQuery'
 
@@ -22,6 +22,9 @@ interface TrendChartProps {
    * segments from merging into one block. Off where a page's series are few
    * enough that the separators only add noise. */
   barStroke?: boolean
+  /** The range and bucket the series were fetched for. With it, idle days
+   * (or hours) are drawn as empty buckets instead of being skipped. */
+  span?: ChartWindow
 }
 
 /**
@@ -29,9 +32,9 @@ interface TrendChartProps {
  * 에이전트, 모델 and 기기 cards. One column (or band) per bucket, one segment
  * per series, with the shared themed tooltip and legend.
  */
-export function TrendChart({ series, mode, labelFor = labelForKey, colorFor, variant = 'bar', height = 288, barStroke = true }: TrendChartProps) {
+export function TrendChart({ series, mode, labelFor = labelForKey, colorFor, variant = 'bar', height = 288, barStroke = true, span }: TrendChartProps) {
   const isPhone = useMediaQuery(PHONE_QUERY)
-  const { data, keys } = mergeSeries(series, metricOfPoint(mode))
+  const { data, keys } = mergeSeries(series, metricOfPoint(mode), span && chartBuckets(series, span))
   if (data.length === 0) return null
   const format = metricFormat(mode)
   const effectiveHeight = isPhone ? Math.min(height, 220) : height

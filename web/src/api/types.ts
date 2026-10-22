@@ -35,6 +35,8 @@ export interface SummaryRowBase {
   cache_write: number
   reasoning?: number
   cost_usd: number | null
+  /** Share of the row's tokens that had a price (1 when there are none). */
+  cost_known_ratio?: number
   events: number
 }
 

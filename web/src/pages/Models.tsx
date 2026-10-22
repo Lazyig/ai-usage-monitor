@@ -15,7 +15,7 @@ import {
   TooltipShell,
 } from '../components/CompositionChart'
 import { type Column, DataTable } from '../components/DataTable'
-import { costColumn, countColumn, tokenColumn } from '../components/columns'
+import { costColumn, countColumn, Swatch, tokenColumn } from '../components/columns'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { StateContainer } from '../components/StateContainer'
@@ -114,11 +114,11 @@ export function Models() {
 
   return (
     <div>
-      <div className="page-header">
+      <div className="mt-2 mb-5 flex flex-wrap items-center justify-between gap-3 [&>h1]:m-0">
         <h1>모델</h1>
       </div>
 
-      <div className="filters-row">
+      <div className="mb-4 flex flex-wrap items-end gap-3 max-phone:flex-col max-phone:items-stretch">
         <div className="field">
           <label htmlFor="source-filter">소스</label>
           <select id="source-filter" value={source} onChange={(e) => setSource(e.target.value as Source | '')}>
@@ -133,7 +133,7 @@ export function Models() {
       </div>
 
       <Card
-        className="section"
+        className="mb-6"
         title="모델별 비용·토큰"
         controls={
           <>
@@ -146,7 +146,7 @@ export function Models() {
           </>
         }
       >
-        <div className={`grid${metric === 'both' ? ' grid-cols-2' : ''}`}>
+        <div className={`grid gap-4 *:min-w-0 ${metric === 'both' ? 'grid-cols-[repeat(2,minmax(0,1fr))] items-start max-narrow:grid-cols-[1fr]' : ''}`}>
           {(metric === 'cost' || metric === 'both') && (
             <div>
               <h3>모델별 비용{costTruncated ? ` (상위 ${TOP_N}개)` : ''}</h3>
@@ -181,7 +181,7 @@ export function Models() {
       </Card>
 
       <Card
-        className="section"
+        className="mb-6"
         title={`모델별 사용량 추이 (상위 ${TOP_TIMESERIES_MODELS}개)`}
         controls={<SegmentedControl ariaLabel="추이 차트 값 전환" value={tsMode} onChange={setTsMode} options={METRIC_OPTIONS} />}
       >
@@ -193,7 +193,14 @@ export function Models() {
             empty={timeseriesState.status === 'success' && timeseriesSeries.length === 0}
           >
             {timeseriesState.status === 'success' && timeseriesSeries.length > 0 && (
-              <TrendChart series={timeseriesSeries} mode={tsMode} colorFor={colorForKey} variant="area" height={280} />
+              <TrendChart
+                series={timeseriesSeries}
+                mode={tsMode}
+                colorFor={colorForKey}
+                variant="area"
+                height={280}
+                span={{ range, bucket: timeseriesState.data.bucket }}
+              />
             )}
           </StateContainer>
         </ErrorBoundary>
@@ -276,10 +283,10 @@ function ModelTokenBarChart({ rows, grandTotal }: { rows: BreakdownRow[]; grandT
 
 function TokenClassLegend() {
   return (
-    <div className="legend-row">
+    <div className="mt-2 flex flex-wrap gap-4 text-200 text-fg2">
       {TOKEN_SEGMENTS.map((seg) => (
         <span key={seg.key}>
-          <span className="legend-swatch" style={{ background: seg.color }} />
+          <span className="mr-1.5 inline-block size-2.5 rounded-sm align-[-1px]" style={{ background: seg.color }} />
           {seg.label}
         </span>
       ))}
@@ -316,6 +323,7 @@ const MODEL_COLUMNS: Column<BreakdownRow>[] = [
   {
     key: 'model',
     header: '모델',
+    media: (r) => <Swatch color={colorForKey(r.source ?? '', 0)} />,
     render: (r) => (
       <span>
         {r.key} {r.estimated && <Badge kind="estimated" />} {r.cost_usd === null && <Badge kind="unknown" />}
@@ -324,7 +332,7 @@ const MODEL_COLUMNS: Column<BreakdownRow>[] = [
     sortValue: (r) => r.key,
   },
   { key: 'source', header: '소스', render: (r) => labelForKey(r.source ?? '-'), sortValue: (r) => r.source ?? '' },
-  costColumn('cost', '비용', (r) => r.cost_usd),
+  costColumn('cost', '비용', (r) => r.cost_usd, { ratio: (r) => r.cost_known_ratio }),
   tokenColumn('input', '입력', (r) => r.input),
   tokenColumn('output', '출력', (r) => r.output),
   tokenColumn('reasoning', '사고', (r) => r.reasoning),
@@ -337,7 +345,7 @@ const MODEL_COLUMNS: Column<BreakdownRow>[] = [
 
 function ModelsTable({ rows }: { rows: BreakdownRow[] }) {
   return rows.length === 0 ? (
-    <p className="text-muted">해당 기간에 데이터가 없습니다.</p>
+    <p className="text-fg3">해당 기간에 데이터가 없습니다.</p>
   ) : (
     <DataTable columns={MODEL_COLUMNS} rows={rows} rowKey={(r) => `${r.source}:${r.key}`} initialSortKey="cost" />
   )

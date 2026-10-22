@@ -51,12 +51,12 @@ export function ThroughputCard({ title, loading, error, onRetry, data, labelFor,
   const empty = !!data && groups.length === 0
 
   return (
-    <Card className="section" title={title} subtitle="이벤트가 완료된 분만 활동 분으로 계산 · 유휴 시간 제외">
+    <Card className="mb-6" title={title} subtitle="이벤트가 완료된 분만 활동 분으로 계산 · 유휴 시간 제외">
       <ErrorBoundary label="처리량을 표시할 수 없습니다">
         <StateContainer loading={loading} error={error} onRetry={onRetry} empty={empty} emptyMessage="해당 기간에 사용 내역이 없습니다.">
           {data && total && groups.length > 0 && (
             <>
-              <div className="stat-tiles">
+              <div className="mb-6 grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-3 max-tablet:grid-cols-[repeat(2,1fr)] max-tiny:grid-cols-[1fr]">
                 <StatTile
                   label="활동 분"
                   value={formatFull(total.active_minutes)}
@@ -83,7 +83,7 @@ export function ThroughputCard({ title, loading, error, onRetry, data, labelFor,
                   {showAll ? `상위 ${limit}개만 보기` : `${hidden}개 더 보기`}
                 </button>
               )}
-              <p className="throughput-note">
+              <p className="mx-0 mt-3 mb-0 text-200 text-fg3">
                 토큰은 응답이 완료된 분에 귀속됩니다. 요청 시작 시각은 수집하지 않으므로 응답 생성 속도가 아니라 분당 완료량의 근사치입니다.
               </p>
             </>
@@ -106,7 +106,7 @@ function peakColumn(key: string, header: string, value: (g: ThroughputGroup) => 
       return (
         <span title={formatFull(p.tokens)}>
           {formatCompact(p.tokens)}
-          <span className="peak-time">{formatShortDateTime(p.t)}</span>
+          <span className="block text-100 whitespace-nowrap text-fg3">{formatShortDateTime(p.t)}</span>
         </span>
       )
     },

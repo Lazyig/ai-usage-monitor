@@ -5,6 +5,7 @@
 import { Badge } from './Badge'
 import type { Column } from './DataTable'
 import { formatCompact, formatDateTime, formatFull, formatUsd } from '../lib/format'
+import { pricedShareLabel } from '../lib/usage'
 
 /** Right-aligned compact token count ("1.2M"), exact value on hover. */
 export function tokenColumn<T>(key: string, header: string, value: (row: T) => number): Column<T> {
@@ -24,26 +25,33 @@ export function countColumn<T>(key: string, header: string, value: (row: T) => n
 
 /**
  * Right-aligned USD amount. `null` renders as "—"; pass `badge` to also mark
- * it as 단가 미상. Unknown sorts below zero so unpriced rows sink to the
- * bottom of a descending cost sort rather than mixing in with free ones.
+ * it as 단가 미상. Pass `ratio` (the row's cost_known_ratio) to flag a row only
+ * part of which had a price, so its amount is not read as the full cost.
+ * Unknown sorts below zero so unpriced rows sink to the bottom of a
+ * descending cost sort rather than mixing in with free ones.
  */
 export function costColumn<T>(
   key: string,
   header: string,
   value: (row: T) => number | null,
-  opts: { badge?: boolean; sortValue?: (row: T) => number } = {},
+  opts: { badge?: boolean; ratio?: (row: T) => number | undefined; sortValue?: (row: T) => number } = {},
 ): Column<T> {
   return {
     key,
     header,
     align: 'right',
-    render: opts.badge
-      ? (r) => (
-          <span>
-            {formatUsd(value(r))} {value(r) === null && <Badge kind="unknown" />}
-          </span>
-        )
-      : (r) => formatUsd(value(r)),
+    render: (r) => {
+      const v = value(r)
+      const ratio = opts.ratio?.(r)
+      const partial = v !== null && ratio !== undefined && ratio > 0 && ratio < 1
+      if (!(opts.badge && v === null) && !partial) return formatUsd(v)
+      return (
+        <span>
+          {formatUsd(v)}{' '}
+          {v === null ? <Badge kind="unknown" /> : <Badge kind="warning">{pricedShareLabel(ratio as number)}</Badge>}
+        </span>
+      )
+    },
     sortValue: opts.sortValue ?? ((r) => value(r) ?? -1),
   }
 }
@@ -61,6 +69,11 @@ export function dateTimeColumn<T>(
     render: (r) => (opts.fallback !== undefined && !value(r) ? opts.fallback : formatDateTime(value(r))),
     sortValue: (r) => value(r) ?? '',
   }
+}
+
+/** Leading color chip for a cell layout, matching the series color in the charts. */
+export function Swatch({ color }: { color: string }) {
+  return <span className="inline-block size-3 rounded-sm" style={{ background: color }} aria-hidden="true" />
 }
 
 /** Strips a factory column's sorter. For tables that are ordered by the server

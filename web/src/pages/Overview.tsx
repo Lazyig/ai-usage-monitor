@@ -4,7 +4,8 @@ import type { SummaryDeviceRow, SummaryModelRow, SummaryResponse, SummarySourceR
 import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
 import { type Column, DataTable } from '../components/DataTable'
-import { costColumn, countColumn, tokenColumn } from '../components/columns'
+import { Desktop20Regular } from '@fluentui/react-icons'
+import { costColumn, countColumn, Swatch, tokenColumn } from '../components/columns'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { StateContainer } from '../components/StateContainer'
@@ -37,14 +38,14 @@ export function Overview() {
 
   return (
     <div>
-      <div className="page-header">
+      <div className="mt-2 mb-5 flex flex-wrap items-center justify-between gap-3 [&>h1]:m-0">
         <h1>개요</h1>
       </div>
 
       <ErrorBoundary label="통계 타일을 표시할 수 없습니다">
         <StateContainer loading={summaryState.status === 'loading'} error={summaryError} onRetry={summaryState.reload}>
           {totals && (
-            <div className="stat-tiles">
+            <div className="mb-6 grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-3 max-tablet:grid-cols-[repeat(2,1fr)] max-tiny:grid-cols-[1fr]">
               <StatTile
                 label="총 비용"
                 value={formatUsd(totals.cost_usd)}
@@ -68,7 +69,7 @@ export function Overview() {
       </ErrorBoundary>
 
       <Card
-        className="section"
+        className="mb-6"
         title="소스별 사용량 추이"
         controls={<SegmentedControl ariaLabel="차트 값 전환" value={chartMode} onChange={setChartMode} options={METRIC_OPTIONS} />}
       >
@@ -86,13 +87,14 @@ export function Overview() {
                 colorFor={colorForKey}
                 height={280}
                 barStroke={false}
+                span={{ range, bucket: timeseriesState.data.bucket }}
               />
             )}
           </StateContainer>
         </ErrorBoundary>
       </Card>
 
-      <div className="grid grid-cols-3">
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.35fr)] gap-4 *:min-w-0 max-wide:grid-cols-[repeat(2,minmax(0,1fr))] max-wide:[&>:nth-child(3)]:col-[1/-1] max-narrow:grid-cols-[1fr]">
         <SummaryPanel title="소스별" label="소스별 표를 표시할 수 없습니다" state={summaryState}>
           {(data) => <SummaryTable columns={SOURCE_COLUMNS} rows={data.by_source} rowKey={(r) => r.key} />}
         </SummaryPanel>
@@ -123,8 +125,7 @@ function SummaryPanel({
   children: (data: SummaryResponse) => ReactNode
 }) {
   return (
-    <div>
-      <h2>{title}</h2>
+    <Card title={title}>
       <ErrorBoundary label={label}>
         <StateContainer
           loading={state.status === 'loading'}
@@ -134,28 +135,34 @@ function SummaryPanel({
           {state.status === 'success' && children(state.data)}
         </StateContainer>
       </ErrorBoundary>
-    </div>
+    </Card>
   )
 }
 
 function SummaryTable<T>({ columns, rows, rowKey }: { columns: Column<T>[]; rows: T[]; rowKey: (row: T) => string }) {
   return rows.length === 0 ? (
-    <p className="text-muted">데이터가 없습니다.</p>
+    <p className="text-fg3">데이터가 없습니다.</p>
   ) : (
     <DataTable columns={columns} rows={rows} rowKey={rowKey} initialSortKey="cost" />
   )
 }
 
 const SOURCE_COLUMNS: Column<SummarySourceRow>[] = [
-  { key: 'key', header: '소스', render: (r) => labelForKey(r.key), sortValue: (r) => labelForKey(r.key) },
-  costColumn('cost', '비용', (r) => r.cost_usd),
+  {
+    key: 'key',
+    header: '소스',
+    media: (r) => <Swatch color={colorForKey(r.key, 0)} />,
+    render: (r) => labelForKey(r.key),
+    sortValue: (r) => labelForKey(r.key),
+  },
+  costColumn('cost', '비용', (r) => r.cost_usd, { ratio: (r) => r.cost_known_ratio }),
   tokenColumn('tokens', '토큰', tokensOf),
   countColumn('events', '이벤트', (r) => r.events),
 ]
 
 const DEVICE_COLUMNS: Column<SummaryDeviceRow>[] = [
-  { key: 'name', header: '기기', render: (r) => r.name, sortValue: (r) => r.name },
-  costColumn('cost', '비용', (r) => r.cost_usd),
+  { key: 'name', header: '기기', media: () => <Desktop20Regular />, render: (r) => r.name, sortValue: (r) => r.name },
+  costColumn('cost', '비용', (r) => r.cost_usd, { ratio: (r) => r.cost_known_ratio }),
   tokenColumn('tokens', '토큰', tokensOf),
   countColumn('events', '이벤트', (r) => r.events),
 ]
@@ -164,6 +171,7 @@ const MODEL_COLUMNS: Column<SummaryModelRow>[] = [
   {
     key: 'model',
     header: '모델',
+    media: (r) => <Swatch color={colorForKey(r.source, 0)} />,
     render: (r) => (
       <span>
         {r.key} {r.estimated && <Badge kind="estimated" />} {r.cost_usd === null && <Badge kind="unknown" />}
@@ -172,6 +180,6 @@ const MODEL_COLUMNS: Column<SummaryModelRow>[] = [
     sortValue: (r) => r.key,
   },
   { key: 'source', header: '소스', render: (r) => labelForKey(r.source), sortValue: (r) => r.source },
-  costColumn('cost', '비용', (r) => r.cost_usd),
+  costColumn('cost', '비용', (r) => r.cost_usd, { ratio: (r) => r.cost_known_ratio }),
   countColumn('events', '이벤트', (r) => r.events),
 ]

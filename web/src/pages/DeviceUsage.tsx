@@ -6,7 +6,7 @@ import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
 import { CompositionChart, CompositionLegend, type CompositionSegment } from '../components/CompositionChart'
 import { type Column, DataTable } from '../components/DataTable'
-import { costColumn, countColumn, tokenColumn } from '../components/columns'
+import { costColumn, countColumn, Swatch, tokenColumn } from '../components/columns'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { StateContainer } from '../components/StateContainer'
@@ -125,11 +125,11 @@ export function DeviceUsage() {
 
   return (
     <div>
-      <div className="page-header">
+      <div className="mt-2 mb-5 flex flex-wrap items-center justify-between gap-3 [&>h1]:m-0">
         <h1>기기</h1>
       </div>
 
-      <div className="filters-row">
+      <div className="mb-4 flex flex-wrap items-end gap-3 max-phone:flex-col max-phone:items-stretch">
         <div className="field">
           <label htmlFor="device-source-filter">에이전트</label>
           <select id="device-source-filter" value={source} onChange={(e) => setSource(e.target.value as Source | '')}>
@@ -151,7 +151,7 @@ export function DeviceUsage() {
       <ErrorBoundary label="통계 타일을 표시할 수 없습니다">
         <StateContainer loading={usageState.status === 'loading'} error={usageError} onRetry={usageState.reload}>
           {usageState.status === 'success' && (
-            <div className="stat-tiles">
+            <div className="mb-6 grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-3 max-tablet:grid-cols-[repeat(2,1fr)] max-tiny:grid-cols-[1fr]">
               <StatTile
                 label="사용 중인 기기"
                 value={formatFull(totals.active)}
@@ -166,7 +166,7 @@ export function DeviceUsage() {
       </ErrorBoundary>
 
       <Card
-        className="section"
+        className="mb-6"
         title="기기별 에이전트 구성"
         subtitle="각 기기의 사용량을 에이전트별로 나눈 것"
         controls={<SegmentedControl ariaLabel="구성 지표 전환" value={mixMetric} onChange={setMixMetric} options={METRIC_OPTIONS} />}
@@ -198,7 +198,7 @@ export function DeviceUsage() {
       </Card>
 
       <Card
-        className="section"
+        className="mb-6"
         title="기기별 사용량 추이"
         subtitle={trendTruncated ? `상위 ${MAX_TREND_DEVICES}대만 표시` : undefined}
         controls={
@@ -217,7 +217,15 @@ export function DeviceUsage() {
             onRetry={trendState.reload}
             empty={trendState.status === 'success' && trendSeries.length === 0}
           >
-            {trendSeries.length > 0 && <TrendChart series={trendSeries} mode={trendMetric} labelFor={nameOf} colorFor={colorOf} />}
+            {trendSeries.length > 0 && trendState.status === 'success' && (
+              <TrendChart
+                series={trendSeries}
+                mode={trendMetric}
+                labelFor={nameOf}
+                colorFor={colorOf}
+                span={{ range, bucket: trendState.data.bucket }}
+              />
+            )}
           </StateContainer>
         </ErrorBoundary>
       </Card>
@@ -241,9 +249,9 @@ function deviceColumns(colorOf: (id: string) => string): Column<DeviceUsageRow>[
     {
       key: 'name',
       header: '기기',
+      media: (r) => <Swatch color={colorOf(r.id)} />,
       render: (r) => (
         <span>
-          <span className="legend-swatch" style={{ background: colorOf(r.id) }} />
           {r.name} {r.meta?.revoked_at && <Badge kind="revoked" />}{' '}
           {r.meta && !r.meta.revoked_at && isStale(r.meta.last_seen) && <Badge kind="stale" />}
           {!r.meta && <Badge kind="unknown">삭제된 기기</Badge>}
@@ -262,6 +270,7 @@ function deviceColumns(colorOf: (id: string) => string): Column<DeviceUsageRow>[
     // is known to have spent nothing, which is not the same as unknown price.
     costColumn('cost', '비용', (r) => (r.usage ? r.usage.cost_usd : 0), {
       badge: true,
+      ratio: (r) => r.usage?.cost_known_ratio,
       sortValue: (r) => r.usage?.cost_usd ?? -1,
     }),
     tokenColumn('input', '입력', (r) => r.usage?.input ?? 0),
@@ -287,7 +296,7 @@ function DeviceUsageTable({ rows, colorOf }: { rows: DeviceUsageRow[]; colorOf: 
   return (
     <>
       <DataTable columns={deviceColumns(colorOf)} rows={rows} rowKey={(r) => r.id} initialSortKey="cost" />
-      <p className="table-footnote">
+      <p className="mx-0 mt-1 mb-0 text-200 text-fg3">
         토큰 재발급·재동기화·삭제는 상단의 <Link to="/manage/devices">기기 관리</Link> 메뉴에서 합니다.
       </p>
     </>

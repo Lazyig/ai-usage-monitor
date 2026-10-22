@@ -1,7 +1,8 @@
+import { Badge as FluentBadge, type BadgeProps as FluentBadgeProps } from '@fluentui/react-components'
 import type { ReactNode } from 'react'
 
 /** Every small inline status marker in the app. Adding a kind means adding a
- * `.badge-<kind>` rule in index.css — nothing else picks its colours. */
+ * label and a Fluent badge color here — nothing else picks its colours. */
 type BadgeKind = 'estimated' | 'unknown' | 'warning' | 'stale' | 'revoked' | 'alias'
 
 const LABELS: Record<BadgeKind, string> = {
@@ -13,6 +14,15 @@ const LABELS: Record<BadgeKind, string> = {
   alias: '별칭',
 }
 
+const COLORS: Record<BadgeKind, FluentBadgeProps['color']> = {
+  estimated: 'brand',
+  unknown: 'subtle',
+  warning: 'warning',
+  stale: 'severe',
+  revoked: 'danger',
+  alias: 'informative',
+}
+
 interface BadgeProps {
   kind: BadgeKind
   children?: ReactNode
@@ -21,9 +31,9 @@ interface BadgeProps {
 
 export function Badge({ kind, children, title }: BadgeProps) {
   return (
-    <span className={`badge badge-${kind}`} title={title}>
+    <FluentBadge appearance="tint" color={COLORS[kind]} shape="rounded" title={title} className="whitespace-nowrap">
       {children ?? LABELS[kind]}
-    </span>
+    </FluentBadge>
   )
 }
 
@@ -34,7 +44,11 @@ export function osLabel(os: string): string {
   return OS_LABELS[os] ?? os
 }
 
-/** Neutral pill for an operating system name. */
+/** Neutral outline badge for an operating system name. */
 export function OsBadge({ os }: { os: string }) {
-  return <span className="tz-badge">{osLabel(os)}</span>
+  return (
+    <FluentBadge appearance="outline" color="informative" shape="rounded">
+      {osLabel(os)}
+    </FluentBadge>
+  )
 }

@@ -17,7 +17,11 @@ export function useApiData<T>(fetcher: () => Promise<T>, deps: unknown[]): ApiSt
 
   useEffect(() => {
     let cancelled = false
-    setState({ status: 'loading' })
+    // Only the first load (or a retry after an error) shows the spinner. A
+    // refetch keeps the current data on screen until the new data arrives:
+    // swapping it for a spinner — every minute with auto refresh on — would
+    // reset the scroll position, table sorting and any open menu.
+    setState((s) => (s.status === 'success' ? s : { status: 'loading' }))
     fetcher()
       .then((data) => {
         if (!cancelled) setState({ status: 'success', data })

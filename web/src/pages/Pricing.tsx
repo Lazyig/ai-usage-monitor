@@ -24,7 +24,7 @@ const PRICING_COLUMNS: Column<PricingRate>[] = [
     key: 'match',
     header: '매칭 패턴',
     render: (r) => (
-      <span className="mono">
+      <span className="font-mono">
         {r.match} {r.estimated && <Badge kind="estimated" />} {r.alias_of && <Badge kind="alias" title={`→ ${r.alias_of}`} />}
       </span>
     ),
@@ -44,10 +44,10 @@ const PRICING_COLUMNS: Column<PricingRate>[] = [
       r.effective_from || r.effective_to ? (
         <span title={r.note ?? undefined}>
           {r.effective_from ?? '…'} ~ {r.effective_to ?? ''}
-          {r.note && <span className="muted"> ({r.note})</span>}
+          {r.note && <span className="text-fg3"> ({r.note})</span>}
         </span>
       ) : (
-        <span className="muted">상시{r.note ? ` (${r.note})` : ''}</span>
+        <span className="text-fg3">상시{r.note ? ` (${r.note})` : ''}</span>
       ),
     sortValue: (r) => r.effective_from ?? '',
   },
@@ -73,14 +73,14 @@ export function Pricing() {
 
   return (
     <div>
-      <div className="page-header">
+      <div className="mt-2 mb-5 flex flex-wrap items-center justify-between gap-3 [&>h1]:m-0">
         <h1>가격표</h1>
         <button type="button" className="btn" onClick={onReload} disabled={reloading}>
           {reloading ? '재로드 중…' : 'pricing.yaml 다시 읽기'}
         </button>
       </div>
-      {reloadError && <p className="login-error">{reloadError}</p>}
-      <p className="text-muted">
+      {reloadError && <p className="text-200 text-danger">{reloadError}</p>}
+      <p className="text-fg3">
         입력/출력 단가가 <strong>—</strong>로 표시되는 모델은 단가를 알 수 없어 비용 합계에서 <Badge kind="unknown" /> (단가 미상)으로 집계됩니다.{' '}
         <Badge kind="estimated" />는 alias 단가로 추정 계산된 모델, <Badge kind="alias" />는 다른 모델의 단가를 그대로 사용하는 별칭입니다.
       </p>
@@ -92,7 +92,7 @@ export function Pricing() {
         empty={state.status === 'success' && state.data.rates.length === 0}
         emptyMessage="가격표 항목이 없습니다."
       >
-        {state.status === 'success' && <DataTable columns={PRICING_COLUMNS} rows={state.data.rates} rowKey={(r) => r.match} initialSortKey="match" initialSortDir="asc" />}
+        {state.status === 'success' && <DataTable columns={PRICING_COLUMNS} rows={state.data.rates} rowKey={(r) => r.match} initialSortKey="match" initialSortDir="asc" size="small" />}
       </StateContainer>
     </div>
   )

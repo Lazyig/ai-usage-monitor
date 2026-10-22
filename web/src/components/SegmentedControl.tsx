@@ -1,3 +1,5 @@
+import { Tab, TabList } from '@fluentui/react-components'
+
 export interface SegmentedOption<T extends string> {
   value: T
   label: string
@@ -14,27 +16,25 @@ interface SegmentedControlProps<T extends string> {
 }
 
 /**
- * Shared pill-style toggle group for metric switches (cost/tokens/…). One
- * definition of height, radius and active style so every metric switch
- * (Overview chart, Models charts, Models trend, …) looks identical instead
- * of each page rolling its own button group.
+ * Shared metric switch (cost/tokens/…) as a Fluent circular tab list, so every
+ * metric switch (Overview chart, Models charts, Models trend, …) looks
+ * identical instead of each page rolling its own button group.
  */
 export function SegmentedControl<T extends string>({ value, onChange, options, ariaLabel }: SegmentedControlProps<T>) {
   return (
-    <div className="chart-toggle" role="group" aria-label={ariaLabel}>
+    <TabList
+      className="flex-wrap"
+      size="small"
+      appearance="subtle-circular"
+      aria-label={ariaLabel}
+      selectedValue={value}
+      onTabSelect={(_, data) => onChange(data.value as T)}
+    >
       {options.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          className={`chip${value === opt.value ? ' chip-active' : ''}`}
-          aria-pressed={value === opt.value}
-          disabled={opt.disabled}
-          title={opt.title}
-          onClick={() => onChange(opt.value)}
-        >
+        <Tab key={opt.value} value={opt.value} disabled={opt.disabled} title={opt.title}>
           {opt.label}
-        </button>
+        </Tab>
       ))}
-    </div>
+    </TabList>
   )
 }

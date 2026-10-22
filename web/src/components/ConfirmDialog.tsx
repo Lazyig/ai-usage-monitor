@@ -1,3 +1,14 @@
+import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
+  Field,
+  Input,
+} from '@fluentui/react-components'
 import { useState } from 'react'
 
 interface ConfirmDialogProps {
@@ -16,43 +27,49 @@ interface ConfirmDialogProps {
   onCancel: () => void
 }
 
-/** Generic modal confirmation dialog for device actions (재발급 / 폐기 / 재동기화 /
+/** Fluent modal confirmation for device actions (재발급 / 폐기 / 재동기화 /
  * 완전 삭제). Replaces the browser's native confirm so it matches the app. */
 export function ConfirmDialog({ title, message, confirmLabel, cancelLabel = '취소', requireText, busy, danger = true, onConfirm, onCancel }: ConfirmDialogProps) {
   const [typed, setTyped] = useState('')
   const canConfirm = !busy && (!requireText || typed === requireText)
 
   return (
-    <div className="modal-overlay" role="presentation" onClick={() => !busy && onCancel()}>
-      <div className="modal-card" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title" onClick={(e) => e.stopPropagation()}>
-        <h3 id="confirm-dialog-title">{title}</h3>
-        <p>{message}</p>
-        {requireText && (
-          <div className="field">
-            <label htmlFor="confirm-dialog-typed">
-              계속하려면 기기 이름 <strong>{requireText}</strong> 을(를) 입력하세요
-            </label>
-            <input
-              id="confirm-dialog-typed"
-              value={typed}
-              onChange={(e) => setTyped(e.target.value)}
-              autoFocus
-              autoComplete="off"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && canConfirm) onConfirm()
-              }}
-            />
-          </div>
-        )}
-        <div className="modal-actions">
-          <button type="button" className="btn" onClick={onCancel} disabled={busy}>
-            {cancelLabel}
-          </button>
-          <button type="button" className={danger ? 'btn btn-danger' : 'btn btn-primary'} onClick={onConfirm} disabled={!canConfirm}>
-            {busy ? '처리 중…' : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
+    <Dialog open modalType={busy ? 'alert' : 'modal'} onOpenChange={(_, data) => !data.open && !busy && onCancel()}>
+      <DialogSurface>
+        <DialogBody>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogContent className="flex flex-col gap-3 [&_p]:m-0 [&_p]:text-fg1">
+            <p>{message}</p>
+            {requireText && (
+              <Field
+                label={
+                  <>
+                    계속하려면 기기 이름 <strong>{requireText}</strong> 을(를) 입력하세요
+                  </>
+                }
+              >
+                <Input
+                  value={typed}
+                  onChange={(_, d) => setTyped(d.value)}
+                  autoFocus
+                  autoComplete="off"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && canConfirm) onConfirm()
+                  }}
+                />
+              </Field>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={onCancel} disabled={busy}>
+              {cancelLabel}
+            </Button>
+            <Button appearance="primary" className={danger ? 'button-danger' : undefined} onClick={onConfirm} disabled={!canConfirm}>
+              {busy ? '처리 중…' : confirmLabel}
+            </Button>
+          </DialogActions>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
   )
 }

@@ -5,7 +5,7 @@ import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
 import { CompositionChart, CompositionLegend, type CompositionSegment } from '../components/CompositionChart'
 import { type Column, DataTable } from '../components/DataTable'
-import { costColumn, countColumn, dateTimeColumn, tokenColumn } from '../components/columns'
+import { costColumn, countColumn, dateTimeColumn, Swatch, tokenColumn } from '../components/columns'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { StateContainer } from '../components/StateContainer'
@@ -87,11 +87,11 @@ export function Agents() {
 
   return (
     <div>
-      <div className="page-header">
+      <div className="mt-2 mb-5 flex flex-wrap items-center justify-between gap-3 [&>h1]:m-0">
         <h1>에이전트</h1>
       </div>
 
-      <div className="filters-row">
+      <div className="mb-4 flex flex-wrap items-end gap-3 max-phone:flex-col max-phone:items-stretch">
         <div className="field">
           <label htmlFor="agent-device-filter">기기</label>
           <select id="agent-device-filter" value={device} onChange={(e) => setDevice(e.target.value)}>
@@ -111,14 +111,14 @@ export function Agents() {
       </div>
 
       <Card
-        className="section"
+        className="mb-6"
         title="에이전트 요약"
         subtitle={device ? `${deviceNames.get(device) ?? device} 기기의 사용량만 표시 중` : undefined}
         controls={<SegmentedControl ariaLabel="요약 지표 전환" value={summaryMetric} onChange={setSummaryMetric} options={METRIC_OPTIONS} />}
       >
         <ErrorBoundary label="요약을 표시할 수 없습니다">
           <StateContainer loading={summaryState.status === 'loading'} error={summaryError} onRetry={summaryState.reload}>
-            <div className="agent-cards">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
               {SOURCE_ORDER.map((source) => (
                 <AgentSummaryCard
                   key={source}
@@ -134,7 +134,7 @@ export function Agents() {
       </Card>
 
       <Card
-        className="section"
+        className="mb-6"
         title="에이전트별 사용량 추이"
         controls={
           <>
@@ -157,6 +157,7 @@ export function Agents() {
                 series={trendState.data.series}
                 mode={trendMetric}
                 colorFor={(key) => SOURCE_COLOR_VARS[key as Source] ?? colorForSlot(0)}
+                span={{ range, bucket: trendState.data.bucket }}
               />
             )}
           </StateContainer>
@@ -175,7 +176,7 @@ export function Agents() {
 
       {!device && (
         <Card
-          className="section"
+          className="mb-6"
           title="에이전트 × 기기"
           subtitle="각 에이전트의 사용량이 어느 기기에서 나왔는지"
           controls={<SegmentedControl ariaLabel="구성 지표 전환" value={mixMetric} onChange={setMixMetric} options={METRIC_OPTIONS} />}
@@ -232,19 +233,21 @@ function AgentSummaryCard({ source, row, metric, total }: { source: Source; row:
   const share = total > 0 ? measured / total : 0
 
   return (
-    <div className={`agent-card${hasData ? '' : ' agent-card-empty'}`}>
-      <div className="agent-card-head">
-        <span className="legend-swatch" style={{ background: color }} />
-        <span className="agent-card-name">{labelForKey(source)}</span>
-        {hasData && <span className="agent-card-share">{formatPercent(share, share > 0 && share < 0.01 ? 1 : 0)}</span>}
+    // An agent with no events in the range still gets a card (fixed color slot,
+    // fixed order) — dashed and muted, so "no data" never reads as "zero cost".
+    <div className={`rounded-lg border border-stroke2 px-4 py-3.5 ${hasData ? 'bg-bg2' : 'border-dashed bg-transparent'}`}>
+      <div className="flex items-center gap-0.5 text-200">
+        <span className="mr-1.5 inline-block size-2.5 rounded-sm align-[-1px]" style={{ background: color }} />
+        <span className="font-semibold text-fg1">{labelForKey(source)}</span>
+        {hasData && <span className="ml-auto text-fg3 tabular-nums">{formatPercent(share, share > 0 && share < 0.01 ? 1 : 0)}</span>}
       </div>
-      <div className="agent-card-value" title={metric === 'cost' ? undefined : formatFull(tokens)}>
+      <div className={`mx-0 mt-1 mb-2.5 text-600 leading-600 font-semibold tabular-nums ${hasData ? '' : 'text-fg3'}`} title={metric === 'cost' ? undefined : formatFull(tokens)}>
         {hasData ? (metric === 'cost' ? formatUsd(value as number | null) : formatCompact(tokens)) : '—'}
       </div>
-      <div className="share-track" aria-hidden="true">
-        <div className="share-fill" style={{ width: `${Math.min(100, share * 100)}%`, background: color }} />
+      <div className="h-1 overflow-hidden rounded-md bg-bg6" aria-hidden="true">
+        <div className="h-full rounded-md" style={{ width: `${Math.min(100, share * 100)}%`, background: color }} />
       </div>
-      <div className="agent-card-meta">
+      <div className="mt-2 text-200 text-fg3">
         {hasData ? (
           <>
             {metric === 'cost' ? (
@@ -273,15 +276,11 @@ const AGENT_COLUMNS: Column<BreakdownRow>[] = [
   {
     key: 'agent',
     header: '에이전트',
-    render: (r) => (
-      <span>
-        <span className="legend-swatch" style={{ background: SOURCE_COLOR_VARS[r.key as Source] ?? 'var(--text-muted)' }} />
-        {labelForKey(r.key)}
-      </span>
-    ),
+    media: (r) => <Swatch color={SOURCE_COLOR_VARS[r.key as Source] ?? 'var(--text-muted)'} />,
+    render: (r) => labelForKey(r.key),
     sortValue: (r) => labelForKey(r.key),
   },
-  costColumn('cost', '비용', (r) => r.cost_usd, { badge: true }),
+  costColumn('cost', '비용', (r) => r.cost_usd, { badge: true, ratio: (r) => r.cost_known_ratio }),
   tokenColumn('input', '입력', (r) => r.input),
   tokenColumn('output', '출력', (r) => r.output),
   tokenColumn('reasoning', '사고', (r) => r.reasoning),

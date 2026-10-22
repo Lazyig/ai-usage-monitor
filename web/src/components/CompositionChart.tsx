@@ -160,10 +160,10 @@ function CompositionTooltip({
 /** Swatch + label legend matching a composition chart's segment order. */
 export function CompositionLegend({ segments }: { segments: CompositionSegment[] }) {
   return (
-    <div className="legend-row">
+    <div className="mt-2 flex flex-wrap gap-4 text-200 text-fg2">
       {segments.map((seg) => (
         <span key={seg.key}>
-          <span className="legend-swatch" style={{ background: seg.color }} />
+          <span className="mr-1.5 inline-block size-2.5 rounded-sm align-[-1px]" style={{ background: seg.color }} />
           {seg.label}
         </span>
       ))}
@@ -179,12 +179,12 @@ export function TooltipShell({ label, minWidth = 190, children }: { label?: Reac
   return (
     <div
       style={{
-        background: 'var(--surface-raised)',
-        border: '1px solid var(--border)',
-        borderRadius: 6,
-        padding: '8px 10px',
-        fontSize: 12.5,
-        boxShadow: 'var(--shadow)',
+        background: 'var(--colorNeutralBackground1)',
+        border: '1px solid var(--colorTransparentStroke)',
+        borderRadius: 'var(--borderRadiusLarge)',
+        padding: '8px 12px',
+        fontSize: 12,
+        boxShadow: 'var(--shadow16)',
         ...(minWidth > 0 ? { minWidth } : {}),
       }}
     >

@@ -15,6 +15,12 @@ export function tokensOf(r: TokenCounts): number {
   return r.input + r.output + r.cache_read + r.cache_write
 }
 
+/** "가격 반영 99.8%" for a partly priced row. Rounded down, so a row missing
+ * any price never reads as 100%. */
+export function pricedShareLabel(ratio: number): string {
+  return `가격 반영 ${(Math.floor(ratio * 1000) / 10).toFixed(1)}%`
+}
+
 /** Share of prompt tokens served from cache — cache_read / (input + cache_read).
  * Zero when nothing was read at all, so an idle row reads as 0% not NaN. */
 export function cacheHitRatio(r: TokenCounts): number {

@@ -3,6 +3,7 @@
 // labels and toggle options lives here so 개요 / 에이전트 / 모델 / 기기 cannot
 // drift apart.
 import type { TimeseriesBucket, TimeseriesPoint, TimeseriesSeries } from '../api/types'
+import { type DateRange, TIMEZONE, addDays } from './dateRange'
 import { formatCompact, formatUsd } from './format'
 import { tokensOf } from './usage'
 
@@ -38,9 +39,76 @@ export interface MergedPoint {
   [seriesKey: string]: number | string
 }
 
-/** Merges parallel per-series point lists into one row-per-bucket array for a stacked chart. */
-export function mergeSeries(series: TimeseriesSeries[], valueFn: (p: TimeseriesPoint) => number): { data: MergedPoint[]; keys: string[] } {
-  const tSet = new Set<string>()
+/** Seoul has no daylight saving time, so every bucket label carries this offset. */
+const KST_OFFSET = '+09:00'
+
+/**
+ * Every bucket in [from, to) as the server labels them for tz=Asia/Seoul:
+ * "2026-10-21" per day, "2026-10-21T14:00:00+09:00" per hour. Nothing at or
+ * after `now` (a KST date or hour label) is included. The server leaves empty
+ * buckets out, so these are what put idle days back on the axis.
+ */
+export function bucketsBetween(from: string, to: string, bucket: TimeseriesBucket, now: string): string[] {
+  const out: string[] = []
+  for (let d = from; d < to; d = addDays(d, 1)) {
+    if (bucket === 'day') {
+      if (d > now.slice(0, 10)) break
+      out.push(d)
+      continue
+    }
+    for (let h = 0; h < 24; h++) {
+      const t = `${d}T${String(h).padStart(2, '0')}:00:00${KST_OFFSET}`
+      if (t > now) return out
+      out.push(t)
+    }
+  }
+  return out
+}
+
+/** The current KST hour as an hour-bucket label. */
+export function kstHourNow(date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date)
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00'
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:00:00${KST_OFFSET}`
+}
+
+/** The window a trend chart spans, so idle buckets show up as gaps. */
+export interface ChartWindow {
+  range: DateRange
+  bucket: TimeseriesBucket
+}
+
+/**
+ * The buckets to draw for `window`. "전체" starts at the first bucket with data
+ * instead of the preset's far-off start. Returns undefined — draw only the
+ * points — when a data point does not fit the expected labels (an older
+ * server without tz, or data still from a previous range during a refetch).
+ */
+export function chartBuckets(series: TimeseriesSeries[], window: ChartWindow, now = kstHourNow()): string[] | undefined {
+  const ts = series.flatMap((s) => s.points.map((p) => p.t)).sort()
+  if (ts.length === 0) return undefined
+  const from = window.range.preset === 'all' ? ts[0].slice(0, 10) : window.range.from
+  const buckets = bucketsBetween(from, window.range.to, window.bucket, now)
+  const known = new Set(buckets)
+  return ts.every((t) => known.has(t)) ? buckets : undefined
+}
+
+/** Merges parallel per-series point lists into one row-per-bucket array for a
+ * stacked chart. With `buckets`, every one of them gets a row (zero when no
+ * series has a point there), so idle days stay visible as gaps. */
+export function mergeSeries(
+  series: TimeseriesSeries[],
+  valueFn: (p: TimeseriesPoint) => number,
+  buckets?: string[],
+): { data: MergedPoint[]; keys: string[] } {
+  const tSet = new Set<string>(buckets)
   for (const s of series) for (const p of s.points) tSet.add(p.t)
   const ts = [...tSet].sort()
   const indexByT = new Map(ts.map((t, i) => [t, i]))
