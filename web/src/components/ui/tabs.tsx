@@ -25,6 +25,8 @@ function Tab({ className, children, ...props }: ComponentProps<typeof TabsPrimit
   return (
     <TabsPrimitive.Trigger
       data-slot="tab"
+      // There are no tab panels, so do not point at one that does not exist.
+      aria-controls={undefined}
       className={cn(
         'relative grid shrink-0 cursor-pointer grid-flow-col items-center justify-center overflow-hidden rounded-full border border-transparent bg-transparent px-1.5 py-px text-300 leading-300 text-fg2 outline-none',
         'enabled:hover:border-(--colorNeutralStroke1Hover) enabled:hover:bg-(--colorSubtleBackgroundHover) enabled:hover:text-(--colorNeutralForeground2Hover) enabled:active:border-(--colorNeutralStroke1Pressed) enabled:active:bg-(--colorSubtleBackgroundPressed) enabled:active:text-(--colorNeutralForeground2Pressed)',
