@@ -4,11 +4,29 @@
 
 ## [Unreleased]
 
-- HTTP 408/429와 잘못된 수신 확인에 대해 에이전트가 데이터를 보존하도록 수정했습니다. 부분 전송 실패 때 재동기화 요청을 놓치던 경로도 보완했습니다.
-- 이벤트 페이지의 중복 요청/중복 행과 필터 변경 중 요청 경합, 가격표 적용 기간별 행 키 충돌을 고쳤습니다.
-- 설치 해시 검증을 필수화하고 서버 fallback이 배포용 Unix 설치 스크립트를 공유하도록 통합했습니다.
-- 실제 브라우저·설치 경로의 회귀 테스트와 기여/리뷰 문서를 추가했습니다.
-- 대시보드 UI 라이브러리를 Fluent UI React에서 shadcn/ui(Radix + Tailwind)로 바꿔 스타일을 Tailwind 하나로 통일했습니다. Fluent 2 디자인 토큰과 아이콘(CSS-in-JS 없는 headless 버전)은 그대로 써서 화면은 같습니다. JS 번들은 1.11MB에서 0.79MB로 줄었습니다.
+## [0.2.1] - 2026-10-23
+
+### 수정
+
+- 서버가 HTTP 408/429를 돌려주거나 잘못된 수신 확인을 보내도 에이전트가 보낼 데이터를 버리지 않고 보존합니다. 일부만 전송에 실패했을 때 재동기화 요청을 놓치던 경로도 보완했습니다.
+- 이벤트 페이지에서 같은 요청이 두 번 나가 행이 중복되던 문제, 필터를 바꾸는 도중 요청이 엉키던 문제, 가격표의 적용 기간별 행 키가 겹치던 문제를 고쳤습니다.
+
+### 보안
+
+- 에이전트 설치 스크립트의 해시 검증을 필수로 바꿨습니다. 서버가 직접 제공하는 설치 스크립트도 배포용 Unix 설치 스크립트와 같은 것을 쓰도록 통합했습니다.
+
+### 단가
+
+- Claude Haiku 5.5 단가를 추가했습니다. 프롬프트가 10만 토큰을 넘는 요청에는 장문 요금(요청 전체에 높은 단가)을 적용합니다.
+
+### 대시보드
+
+- UI 라이브러리를 Fluent UI React에서 shadcn/ui(Radix + Tailwind)로 바꿔 스타일을 Tailwind 하나로 통일했습니다. Fluent 2 디자인 토큰과 아이콘(CSS-in-JS 없는 headless 버전)은 그대로 써서 화면은 같습니다. JS 번들은 1.11MB에서 0.79MB로 줄었습니다.
+- 탭 목록이 존재하지 않는 패널을 가리키던 접근성 속성(`aria-controls`)을 고쳤습니다.
+
+### 기타
+
+- 실제 브라우저와 설치 경로를 쓰는 회귀 테스트, 기여·리뷰 안내 문서를 추가했습니다.
 
 ## [0.2.0] - 2026-10-22
 
@@ -56,5 +74,7 @@
 
 첫 공개 릴리스입니다. Claude Code · Codex CLI · Antigravity CLI 사용량을 모으는 에이전트, SQLite · JSON API 서버, 내장 웹 대시보드를 포함합니다.
 
+[Unreleased]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Lazyig/ai-usage-monitor/releases/tag/v0.1.0
