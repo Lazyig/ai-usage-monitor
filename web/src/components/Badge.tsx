@@ -1,8 +1,9 @@
-import { Badge as FluentBadge, type BadgeProps as FluentBadgeProps } from '@fluentui/react-components'
+import type { VariantProps } from 'class-variance-authority'
 import type { ReactNode } from 'react'
+import { Badge as BadgeSurface, type badgeVariants } from './ui/badge'
 
 /** Every small inline status marker in the app. Adding a kind means adding a
- * label and a Fluent badge color here — nothing else picks its colours. */
+ * label and a badge color here — nothing else picks its colours. */
 type BadgeKind = 'estimated' | 'unknown' | 'warning' | 'stale' | 'revoked' | 'alias'
 
 const LABELS: Record<BadgeKind, string> = {
@@ -14,7 +15,7 @@ const LABELS: Record<BadgeKind, string> = {
   alias: '별칭',
 }
 
-const COLORS: Record<BadgeKind, FluentBadgeProps['color']> = {
+const COLORS: Record<BadgeKind, VariantProps<typeof badgeVariants>['color']> = {
   estimated: 'brand',
   unknown: 'subtle',
   warning: 'warning',
@@ -31,9 +32,9 @@ interface BadgeProps {
 
 export function Badge({ kind, children, title }: BadgeProps) {
   return (
-    <FluentBadge appearance="tint" color={COLORS[kind]} shape="rounded" title={title} className="whitespace-nowrap">
+    <BadgeSurface color={COLORS[kind]} title={title} className="whitespace-nowrap">
       {children ?? LABELS[kind]}
-    </FluentBadge>
+    </BadgeSurface>
   )
 }
 
@@ -47,8 +48,6 @@ export function osLabel(os: string): string {
 /** Neutral outline badge for an operating system name. */
 export function OsBadge({ os }: { os: string }) {
   return (
-    <FluentBadge appearance="outline" color="informative" shape="rounded">
-      {osLabel(os)}
-    </FluentBadge>
+    <BadgeSurface appearance="outline">{osLabel(os)}</BadgeSurface>
   )
 }

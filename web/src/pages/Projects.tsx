@@ -1,4 +1,4 @@
-import { Folder20Regular } from '@fluentui/react-icons'
+import { Folder20Regular } from '@fluentui/react-icons/headless/svg/folder'
 import { getBreakdown } from '../api/client'
 import type { BreakdownRow } from '../api/types'
 import { type Column, DataTable } from '../components/DataTable'

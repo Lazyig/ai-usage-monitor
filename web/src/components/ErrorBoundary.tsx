@@ -1,5 +1,6 @@
-import { Button, MessageBar, MessageBarActions, MessageBarBody } from '@fluentui/react-components'
 import { Component, type ReactNode } from 'react'
+import { Alert } from './ui/alert'
+import { Button } from './ui/button'
 
 interface ErrorBoundaryProps {
   children: ReactNode
@@ -40,16 +41,16 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   render() {
     if (this.state.error) {
       return (
-        <MessageBar intent="error" className="mx-0 my-1">
-          <MessageBarBody>
-            {this.props.label ?? '문제가 발생했습니다'}: {this.state.error.message || String(this.state.error)}
-          </MessageBarBody>
-          <MessageBarActions>
+        <Alert
+          className="mx-0 my-1"
+          actions={
             <Button size="small" onClick={this.retry}>
               다시 시도
             </Button>
-          </MessageBarActions>
-        </MessageBar>
+          }
+        >
+          {this.props.label ?? '문제가 발생했습니다'}: {this.state.error.message || String(this.state.error)}
+        </Alert>
       )
     }
     return <div key={this.state.retryCount}>{this.props.children}</div>

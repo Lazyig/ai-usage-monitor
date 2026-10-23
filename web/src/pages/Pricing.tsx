@@ -4,6 +4,7 @@ import type { PricingRate } from '../api/types'
 import { Badge } from '../components/Badge'
 import { type Column, DataTable } from '../components/DataTable'
 import { StateContainer } from '../components/StateContainer'
+import { Button } from '../components/ui/button'
 import { useApiData } from '../hooks/useApiData'
 import { describeError } from '../lib/errors'
 
@@ -75,9 +76,9 @@ export function Pricing() {
     <div>
       <div className="mt-2 mb-5 flex flex-wrap items-center justify-between gap-3 [&>h1]:m-0">
         <h1>가격표</h1>
-        <button type="button" className="btn" onClick={onReload} disabled={reloading}>
+        <Button touch onClick={onReload} disabled={reloading}>
           {reloading ? '재로드 중…' : 'pricing.yaml 다시 읽기'}
-        </button>
+        </Button>
       </div>
       {reloadError && <p className="text-200 text-danger">{reloadError}</p>}
       <p className="text-fg3">

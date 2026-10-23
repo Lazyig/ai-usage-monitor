@@ -4,9 +4,10 @@ import { formatCompact, formatFull, formatShortDateTime } from '../lib/format'
 import { Card } from './Card'
 import { type Column, DataTable } from './DataTable'
 import { ErrorBoundary } from './ErrorBoundary'
-import { StateContainer } from './StateContainer'
 import { StatTile } from './StatTile'
+import { StateContainer } from './StateContainer'
 import { countColumn, tokenColumn } from './columns'
+import { Button } from './ui/button'
 
 interface ThroughputCardProps {
   title: string
@@ -79,9 +80,9 @@ export function ThroughputCard({ title, loading, error, onRetry, data, labelFor,
               </div>
               <DataTable columns={columns} rows={visible} rowKey={(g) => g.key} initialSortKey="pm_total" />
               {(hidden > 0 || showAll) && limit && groups.length > limit && (
-                <button type="button" className="btn btn-sm btn-ghost" style={{ marginTop: 8 }} onClick={() => setShowAll((v) => !v)}>
+                <Button touch size="small" appearance="subtle" style={{ marginTop: 8 }} onClick={() => setShowAll((v) => !v)}>
                   {showAll ? `상위 ${limit}개만 보기` : `${hidden}개 더 보기`}
-                </button>
+                </Button>
               )}
               <p className="mx-0 mt-3 mb-0 text-200 text-fg3">
                 토큰은 응답이 완료된 분에 귀속됩니다. 요청 시작 시각은 수집하지 않으므로 응답 생성 속도가 아니라 분당 완료량의 근사치입니다.

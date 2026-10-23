@@ -1,24 +1,27 @@
-import { Button, Menu, MenuDivider, MenuItem, MenuList, MenuPopover, MenuTrigger, Spinner } from '@fluentui/react-components'
-import {
-  ArrowReset20Regular,
-  ArrowSync20Regular,
-  Delete20Regular,
-  Desktop20Regular,
-  Edit20Regular,
-  KeyReset20Regular,
-  MoreHorizontal20Regular,
-  Prohibited20Regular,
-} from '@fluentui/react-icons'
+import { ArrowReset20Regular } from '@fluentui/react-icons/headless/svg/arrow-reset'
+import { ArrowSync20Regular } from '@fluentui/react-icons/headless/svg/arrow-sync'
+import { Delete20Regular } from '@fluentui/react-icons/headless/svg/delete'
+import { Desktop20Regular } from '@fluentui/react-icons/headless/svg/desktop'
+import { Edit20Regular } from '@fluentui/react-icons/headless/svg/edit'
+import { KeyReset20Regular } from '@fluentui/react-icons/headless/svg/key-reset'
+import { MoreHorizontal20Regular } from '@fluentui/react-icons/headless/svg/more-horizontal'
+import { Prohibited20Regular } from '@fluentui/react-icons/headless/svg/prohibited'
 import { useMemo, useState, type FormEvent } from 'react'
 import { createDevice, renameDevice, deleteDevice, getDevices, purgeDevice, purgeDeviceEvents, requestResync, rotateDevice } from '../api/client'
 import type { Device } from '../api/types'
 import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
 import { ConfirmDialog } from '../components/ConfirmDialog'
-import { PromptDialog } from '../components/PromptDialog'
 import { type Column, DataTable } from '../components/DataTable'
-import { countColumn, dateTimeColumn } from '../components/columns'
+import { PromptDialog } from '../components/PromptDialog'
+import { RowField } from '../components/RowField'
 import { StateContainer } from '../components/StateContainer'
+import { countColumn, dateTimeColumn } from '../components/columns'
+import { Button } from '../components/ui/button'
+import { Checkbox } from '../components/ui/checkbox'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../components/ui/dropdown-menu'
+import { Input } from '../components/ui/input'
+import { Spinner } from '../components/ui/spinner'
 import { useApiData } from '../hooks/useApiData'
 import { describeError } from '../lib/errors'
 import { formatDateTime, formatFull, formatRelative, isStale } from '../lib/format'
@@ -154,7 +157,7 @@ export function Devices() {
           {d.name} {!d.revoked_at && isStale(d.last_seen) && <Badge kind="stale" />}{' '}
           {d.revoked_at && <Badge kind="revoked" title={`폐기 시각: ${formatDateTime(d.revoked_at)}`} />}{' '}
           {(rotating === d.id || revoking === d.id) && (
-            <Spinner size="extra-tiny" label={rotating === d.id ? '재발급 중…' : '폐기 중…'} labelPosition="after" className="inline-flex align-middle" />
+            <Spinner size="extra-tiny" label={rotating === d.id ? '재발급 중…' : '폐기 중…'} className="inline-flex align-middle" />
           )}
         </span>
       ),
@@ -162,7 +165,7 @@ export function Devices() {
       description: (d) =>
         d.hostname && d.hostname !== d.name ? <span title="에이전트가 보고한 호스트명">{d.hostname}</span> : undefined,
       sortValue: (d) => d.name,
-      // Fluent row actions, revealed on hover/focus: rename, then the overflow
+      // Row actions, revealed on hover/focus: rename, then the overflow
       // menu with destructive items last and in red.
       actions: (d) => {
         const busy = rotating === d.id || revoking === d.id
@@ -175,8 +178,8 @@ export function Devices() {
               title="이름 변경"
               onClick={() => setConfirmState({ kind: 'rename', device: d })}
             />
-            <Menu positioning="below-end">
-              <MenuTrigger disableButtonEnhancement>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button
                   appearance="subtle"
                   icon={busy ? <Spinner size="tiny" /> : <MoreHorizontal20Regular />}
@@ -184,44 +187,37 @@ export function Devices() {
                   aria-label={`"${d.name}" 작업`}
                   title={busy ? (rotating === d.id ? '재발급 중…' : '폐기 중…') : '작업'}
                 />
-              </MenuTrigger>
-              <MenuPopover>
-                <MenuList>
-                  <MenuItem icon={<KeyReset20Regular />} onClick={() => setConfirmState({ kind: 'rotate', device: d })}>
-                    토큰 재발급
-                  </MenuItem>
-                  <MenuItem
-                    icon={<ArrowSync20Regular />}
-                    disabled={!!d.revoked_at}
-                    title={d.revoked_at ? '폐기된 기기는 재동기화할 수 없습니다. 먼저 토큰을 재발급하세요.' : '삭제 없이 로그를 처음부터 다시 보내게 합니다'}
-                    onClick={() => setConfirmState({ kind: 'resync', device: d })}
-                  >
-                    재동기화
-                  </MenuItem>
-                  <MenuDivider />
-                  <MenuItem
-                    className="menu-danger"
-                    icon={<ArrowReset20Regular />}
-                    disabled={!!d.revoked_at}
-                    title={d.revoked_at ? '폐기된 기기는 초기화할 수 없습니다. 먼저 토큰을 재발급하세요.' : '이 기기의 이벤트를 모두 지운 뒤 다시 받습니다'}
-                    onClick={() => setConfirmState({ kind: 'reset', device: d })}
-                  >
-                    초기화
-                  </MenuItem>
-                  <MenuItem
-                    className="menu-danger"
-                    icon={<Prohibited20Regular />}
-                    disabled={!!d.revoked_at}
-                    onClick={() => setConfirmState({ kind: 'revoke', device: d })}
-                  >
-                    {d.revoked_at ? '폐기됨' : '토큰 폐기'}
-                  </MenuItem>
-                  <MenuItem className="menu-danger" icon={<Delete20Regular />} onClick={() => setConfirmState({ kind: 'purge', device: d })}>
-                    완전 삭제
-                  </MenuItem>
-                </MenuList>
-              </MenuPopover>
-            </Menu>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="bottom" align="end">
+                <DropdownMenuItem icon={<KeyReset20Regular />} onSelect={() => setConfirmState({ kind: 'rotate', device: d })}>
+                  토큰 재발급
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  icon={<ArrowSync20Regular />}
+                  disabled={!!d.revoked_at}
+                  title={d.revoked_at ? '폐기된 기기는 재동기화할 수 없습니다. 먼저 토큰을 재발급하세요.' : '삭제 없이 로그를 처음부터 다시 보내게 합니다'}
+                  onSelect={() => setConfirmState({ kind: 'resync', device: d })}
+                >
+                  재동기화
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  danger
+                  icon={<ArrowReset20Regular />}
+                  disabled={!!d.revoked_at}
+                  title={d.revoked_at ? '폐기된 기기는 초기화할 수 없습니다. 먼저 토큰을 재발급하세요.' : '이 기기의 이벤트를 모두 지운 뒤 다시 받습니다'}
+                  onSelect={() => setConfirmState({ kind: 'reset', device: d })}
+                >
+                  초기화
+                </DropdownMenuItem>
+                <DropdownMenuItem danger icon={<Prohibited20Regular />} disabled={!!d.revoked_at} onSelect={() => setConfirmState({ kind: 'revoke', device: d })}>
+                  {d.revoked_at ? '폐기됨' : '토큰 폐기'}
+                </DropdownMenuItem>
+                <DropdownMenuItem danger icon={<Delete20Regular />} onSelect={() => setConfirmState({ kind: 'purge', device: d })}>
+                  완전 삭제
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </>
         )
       },
@@ -267,13 +263,12 @@ export function Devices() {
 
       <Card className="mb-6" title="기기 추가">
         <form className="mb-3 flex flex-wrap items-end gap-2 max-phone:flex-col max-phone:items-stretch" onSubmit={onCreate}>
-          <div className="field">
-            <label htmlFor="device-name">이름</label>
-            <input id="device-name" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="예: macbook-pro" />
-          </div>
-          <button type="submit" className="btn btn-primary" disabled={creating || !newName.trim()}>
+          <RowField label="이름">
+            <Input id="device-name" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="예: macbook-pro" />
+          </RowField>
+          <Button touch appearance="primary" type="submit" disabled={creating || !newName.trim()}>
             {creating ? '등록 중…' : '추가'}
-          </button>
+          </Button>
         </form>
         {createError && <p className="text-200 text-danger">{createError}</p>}
       </Card>
@@ -284,29 +279,29 @@ export function Devices() {
           return (
             <div className="mx-0 my-3 rounded-md border border-warning-stroke bg-warning-bg p-3 [&_code]:min-w-0 [&_code]:flex-1 [&_code]:overflow-x-auto [&_code]:rounded-md [&_code]:border [&_code]:border-stroke2 [&_code]:bg-bg1 [&_code]:px-2.5 [&_code]:py-2 [&_code]:font-mono [&_code]:text-200 [&_code]:whitespace-pre">
               <strong>{newToken.name}</strong>의 토큰이 발급되었습니다. 이 토큰은 다시 표시되지 않으니 지금 복사하세요.
-              <div className="mt-1.5 flex items-center gap-2 [&_.btn]:shrink-0">
+              <div className="mt-1.5 flex items-center gap-2 [&_[data-slot=button]]:shrink-0">
                 <code>{newToken.token}</code>
-                <button type="button" className="btn btn-sm" onClick={() => navigator.clipboard?.writeText(newToken.token)}>
+                <Button touch size="small" onClick={() => navigator.clipboard?.writeText(newToken.token)}>
                   복사
-                </button>
+                </Button>
               </div>
               <p style={{ marginTop: 10, marginBottom: 2 }}>Linux / macOS 설치 명령</p>
-              <div className="mt-1.5 flex items-center gap-2 [&_.btn]:shrink-0">
+              <div className="mt-1.5 flex items-center gap-2 [&_[data-slot=button]]:shrink-0">
                 <code>{cmds.unix}</code>
-                <button type="button" className="btn btn-sm" onClick={() => navigator.clipboard?.writeText(cmds.unix)}>
+                <Button touch size="small" onClick={() => navigator.clipboard?.writeText(cmds.unix)}>
                   복사
-                </button>
+                </Button>
               </div>
               <p style={{ marginTop: 10, marginBottom: 2 }}>Windows (PowerShell) 설치 명령</p>
               <p className="mx-0 mt-1.5 mb-2 rounded-md border border-warning-stroke bg-warning-bg px-3 py-2 text-200 leading-200 [&_strong]:text-warning-fg" role="note">
                 <strong>관리자 권한 필수</strong> — PowerShell 을 &quot;관리자 권한으로 실행&quot; 한 창에서 실행하세요. 일반 권한에서는 Windows 서비스 등록이 실패해
                 에이전트가 자동 시작되지 않습니다.
               </p>
-              <div className="mt-1.5 flex items-center gap-2 [&_.btn]:shrink-0">
+              <div className="mt-1.5 flex items-center gap-2 [&_[data-slot=button]]:shrink-0">
                 <code>{cmds.windows}</code>
-                <button type="button" className="btn btn-sm" onClick={() => navigator.clipboard?.writeText(cmds.windows)}>
+                <Button touch size="small" onClick={() => navigator.clipboard?.writeText(cmds.windows)}>
                   복사
-                </button>
+                </Button>
               </div>
             </div>
           )
@@ -319,10 +314,12 @@ export function Devices() {
         </p>
       )}
 
-      <label className="toggle-row">
-        <input type="checkbox" checked={showRevoked} onChange={(e) => setShowRevoked(e.target.checked)} />
-        폐기된 기기 표시{revokedCount > 0 ? ` (${revokedCount})` : ''}
-      </label>
+      <Checkbox
+        className="mb-3"
+        checked={showRevoked}
+        onChange={(e) => setShowRevoked(e.target.checked)}
+        label={`폐기된 기기 표시${revokedCount > 0 ? ` (${revokedCount})` : ''}`}
+      />
 
       <StateContainer
         loading={state.status === 'loading'}

@@ -1,4 +1,4 @@
-import { Tab, TabList } from '@fluentui/react-components'
+import { Tab, TabList } from './ui/tabs'
 
 export interface SegmentedOption<T extends string> {
   value: T
@@ -16,20 +16,13 @@ interface SegmentedControlProps<T extends string> {
 }
 
 /**
- * Shared metric switch (cost/tokens/…) as a Fluent circular tab list, so every
+ * Shared metric switch (cost/tokens/…) as a circular tab list, so every
  * metric switch (Overview chart, Models charts, Models trend, …) looks
  * identical instead of each page rolling its own button group.
  */
 export function SegmentedControl<T extends string>({ value, onChange, options, ariaLabel }: SegmentedControlProps<T>) {
   return (
-    <TabList
-      className="flex-wrap"
-      size="small"
-      appearance="subtle-circular"
-      aria-label={ariaLabel}
-      selectedValue={value}
-      onTabSelect={(_, data) => onChange(data.value as T)}
-    >
+    <TabList className="flex-wrap" aria-label={ariaLabel} value={value} onValueChange={(v) => onChange(v as T)}>
       {options.map((opt) => (
         <Tab key={opt.value} value={opt.value} disabled={opt.disabled} title={opt.title}>
           {opt.label}

@@ -4,7 +4,7 @@ import type { SummaryDeviceRow, SummaryModelRow, SummaryResponse, SummarySourceR
 import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
 import { type Column, DataTable } from '../components/DataTable'
-import { Desktop20Regular } from '@fluentui/react-icons'
+import { Desktop20Regular } from '@fluentui/react-icons/headless/svg/desktop'
 import { costColumn, countColumn, Swatch, tokenColumn } from '../components/columns'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { SegmentedControl } from '../components/SegmentedControl'

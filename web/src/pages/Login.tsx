@@ -1,8 +1,11 @@
-import { Body1, Button, Card, Field, Input, Text } from '@fluentui/react-components'
-import { DataUsage24Filled } from '@fluentui/react-icons'
+import { DataUsage24Filled } from '@fluentui/react-icons/headless/svg/data-usage'
 import { useState, type FormEvent } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { ApiError } from '../api/client'
+import { Button } from '../components/ui/button'
+import { Card } from '../components/ui/card'
+import { Field } from '../components/ui/field'
+import { Input } from '../components/ui/input'
 import { useAuth } from '../state/AuthContext'
 
 export function Login() {
@@ -37,16 +40,14 @@ export function Login() {
 
   return (
     <div className="flex min-h-svh items-center justify-center p-4 pt-[max(16px,env(safe-area-inset-top))] pb-[max(16px,env(safe-area-inset-bottom))]">
-      <Card size="large" className="login-card">
+      <Card className="w-full max-w-[400px] p-8 shadow-16">
         <form className="flex flex-col gap-4" onSubmit={onSubmit}>
           <div className="flex items-center gap-2.5 [&_h1]:m-0">
             <DataUsage24Filled className="text-brand" />
-            <Text as="h1" size={600} weight="semibold">
-              AI Usage Monitor
-            </Text>
+            <h1 className="text-600 leading-600 font-semibold">AI Usage Monitor</h1>
           </div>
-          <Body1 className="-mt-2 text-fg2">관리자 토큰으로 로그인하세요.</Body1>
-          <Field label="관리자 토큰" validationState={error ? 'error' : 'none'} validationMessage={error ?? undefined}>
+          <span className="-mt-2 text-300 leading-300 text-fg2">관리자 토큰으로 로그인하세요.</span>
+          <Field label="관리자 토큰" validationMessage={error ?? undefined}>
             <Input
               id="admin-token"
               type="password"
@@ -54,7 +55,7 @@ export function Login() {
               autoFocus
               placeholder="ADMIN_TOKEN"
               value={token}
-              onChange={(_, d) => setToken(d.value)}
+              onChange={(e) => setToken(e.target.value)}
             />
           </Field>
           <Button type="submit" appearance="primary" disabled={submitting || !token.trim()}>

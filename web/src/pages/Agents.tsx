@@ -5,12 +5,15 @@ import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
 import { CompositionChart, CompositionLegend, type CompositionSegment } from '../components/CompositionChart'
 import { type Column, DataTable } from '../components/DataTable'
-import { costColumn, countColumn, dateTimeColumn, Swatch, tokenColumn } from '../components/columns'
 import { ErrorBoundary } from '../components/ErrorBoundary'
+import { RowField } from '../components/RowField'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { StateContainer } from '../components/StateContainer'
 import { ThroughputCard } from '../components/ThroughputCard'
 import { TrendChart } from '../components/TrendChart'
+import { costColumn, countColumn, dateTimeColumn, Swatch, tokenColumn } from '../components/columns'
+import { Button } from '../components/ui/button'
+import { NativeSelect } from '../components/ui/native-select'
 import { useApiData } from '../hooks/useApiData'
 import { type Metric, METRIC_OPTIONS, BUCKET_OPTIONS, metricFormat } from '../lib/chartData'
 import { SOURCE_COLOR_VARS, SOURCE_ORDER, colorForSlot, labelForKey } from '../lib/colors'
@@ -92,21 +95,20 @@ export function Agents() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-end gap-3 max-phone:flex-col max-phone:items-stretch">
-        <div className="field">
-          <label htmlFor="agent-device-filter">기기</label>
-          <select id="agent-device-filter" value={device} onChange={(e) => setDevice(e.target.value)}>
+        <RowField label="기기">
+          <NativeSelect id="agent-device-filter" value={device} onChange={(e) => setDevice(e.target.value)}>
             <option value="">전체 기기</option>
             {deviceOptions.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name}
               </option>
             ))}
-          </select>
-        </div>
+          </NativeSelect>
+        </RowField>
         {device && (
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => setDevice('')}>
+          <Button touch size="small" appearance="subtle" onClick={() => setDevice('')}>
             필터 해제
-          </button>
+          </Button>
         )}
       </div>
 

@@ -2,10 +2,14 @@ import { useEffect, useState } from 'react'
 import { getDevices } from '../api/client'
 import type { Device, Source, UsageEventDTO } from '../api/types'
 import { type Column, DataTable } from '../components/DataTable'
-import { costColumn, Swatch, tokenColumn, unsorted } from '../components/columns'
+import { RowField } from '../components/RowField'
 import { StateContainer } from '../components/StateContainer'
-import { SOURCE_ORDER, colorForKey, labelForKey } from '../lib/colors'
+import { costColumn, Swatch, tokenColumn, unsorted } from '../components/columns'
+import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
+import { NativeSelect } from '../components/ui/native-select'
 import { useEventFeed } from '../hooks/useEventFeed'
+import { SOURCE_ORDER, colorForKey, labelForKey } from '../lib/colors'
 import { formatDateTime } from '../lib/format'
 import { useFilters } from '../state/FiltersContext'
 
@@ -49,32 +53,29 @@ export function Events() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-end gap-3 max-phone:flex-col max-phone:items-stretch">
-        <div className="field">
-          <label htmlFor="ev-source">소스</label>
-          <select id="ev-source" value={source} onChange={(e) => setSource(e.target.value as Source | '')}>
+        <RowField label="소스">
+          <NativeSelect id="ev-source" value={source} onChange={(e) => setSource(e.target.value as Source | '')}>
             <option value="">전체</option>
             {SOURCE_ORDER.map((s) => (
               <option key={s} value={s}>
                 {labelForKey(s)}
               </option>
             ))}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="ev-device">기기</label>
-          <select id="ev-device" value={device} onChange={(e) => setDevice(e.target.value)}>
+          </NativeSelect>
+        </RowField>
+        <RowField label="기기">
+          <NativeSelect id="ev-device" value={device} onChange={(e) => setDevice(e.target.value)}>
             <option value="">전체</option>
             {devices.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name}
               </option>
             ))}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="ev-model">모델</label>
-          <input id="ev-model" value={model} onChange={(e) => setModel(e.target.value)} placeholder="모델명 필터" />
-        </div>
+          </NativeSelect>
+        </RowField>
+        <RowField label="모델">
+          <Input id="ev-model" value={model} onChange={(e) => setModel(e.target.value)} placeholder="모델명 필터" />
+        </RowField>
       </div>
 
       <StateContainer loading={status === 'loading'} error={status === 'error' ? error : null} empty={status === 'success' && events.length === 0}>
@@ -86,9 +87,9 @@ export function Events() {
         )}
         {nextCursor && (
           <div style={{ textAlign: 'center', marginTop: 12 }}>
-            <button type="button" className="btn" onClick={loadMore} disabled={loadingMore}>
+            <Button touch onClick={loadMore} disabled={loadingMore}>
               {loadingMore ? '불러오는 중…' : '더 보기'}
-            </button>
+            </Button>
           </div>
         )}
       </StateContainer>

@@ -21,6 +21,9 @@ import { SegmentedControl } from '../components/SegmentedControl'
 import { StateContainer } from '../components/StateContainer'
 import { ThroughputCard } from '../components/ThroughputCard'
 import { TrendChart } from '../components/TrendChart'
+import { Button } from '../components/ui/button'
+import { NativeSelect } from '../components/ui/native-select'
+import { RowField } from '../components/RowField'
 import { type Metric, METRIC_OPTIONS } from '../lib/chartData'
 import {
   SOURCE_ORDER,
@@ -119,17 +122,16 @@ export function Models() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-end gap-3 max-phone:flex-col max-phone:items-stretch">
-        <div className="field">
-          <label htmlFor="source-filter">소스</label>
-          <select id="source-filter" value={source} onChange={(e) => setSource(e.target.value as Source | '')}>
+        <RowField label="소스">
+          <NativeSelect id="source-filter" value={source} onChange={(e) => setSource(e.target.value as Source | '')}>
             <option value="">전체</option>
             {SOURCE_ORDER.map((s) => (
               <option key={s} value={s}>
                 {labelForKey(s)}
               </option>
             ))}
-          </select>
-        </div>
+          </NativeSelect>
+        </RowField>
       </div>
 
       <Card
@@ -139,9 +141,9 @@ export function Models() {
           <>
             <SegmentedControl ariaLabel="지표 전환" value={metric} onChange={setMetric} options={METRIC_MODE_OPTIONS} />
             {canExpand && (
-              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setShowAll((v) => !v)}>
+              <Button touch size="small" appearance="subtle" onClick={() => setShowAll((v) => !v)}>
                 {showAll ? `상위 ${TOP_N}개만 보기` : `전체 보기 (${allRows.length}개)`}
-              </button>
+              </Button>
             )}
           </>
         }

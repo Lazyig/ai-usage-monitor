@@ -1,22 +1,28 @@
-/* Tailwind on top of Fluent 2 (Windows 11).
+/* Tailwind and shadcn/ui on Fluent 2 (Windows 11) design tokens.
 
-   Fluent components style themselves (Griffel, unlayered). Everything the app
-   draws itself is styled with Tailwind utilities in the JSX; the theme below
+   One styling system: every component, the shadcn primitives in
+   components/ui included, is styled with Tailwind utilities. The theme below
    maps Tailwind's names onto Fluent's design tokens, so `text-fg3`,
-   `rounded-xl` or `shadow-2` are Fluent values, not Tailwind defaults.
+   `rounded-xl` or `shadow-2` are Fluent values, not Tailwind defaults. The
+   tokens themselves live on :root in styles/fluent-tokens.css; components
+   that need a state colour the theme does not name use it directly, e.g.
+   `hover:bg-(--colorNeutralBackground1Hover)`.
 
-   Layers: Tailwind's utilities live in a cascade layer, and layered rules lose
-   to unlayered ones. That is why base element styles sit in `@layer base`
-   (utilities must beat them) and why the few rules that reach into Fluent
-   component internals stay unlayered at the bottom (they must beat Griffel).
-   Preflight is left out: its reset would fight Fluent's own control styles. */
+   Layers: base element styles sit in `@layer base`, after Preflight, so any
+   utility beats them. */
 
 @layer theme, base, components, utilities;
 @import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
 @import 'tailwindcss/utilities.css' layer(utilities);
+@import 'tw-animate-css';
+/* Headless Fluent icons: plain CSS instead of a CSS-in-JS runtime. In the
+   components layer so it outranks Preflight's `svg { display: block }`. */
+@import '@fluentui/react-icons/headless/styles.css' layer(components);
+@import './styles/fluent-tokens.css';
 
-/* `inline`: utilities reference the Fluent variables directly, because those
-   only exist on the FluentProvider element, not on :root. */
+/* `inline`: utilities reference the token variables directly, so they follow
+   the light/dark switch in fluent-tokens.css. */
 @theme inline {
   /* max-* breakpoints matching the old max-width queries (inclusive). */
   --breakpoint-*: initial;
@@ -50,6 +56,27 @@
   --color-code-stroke: var(--code-border);
   --color-series-4: var(--series-4);
 
+  /* shadcn/ui's semantic names, so components added with the shadcn CLI pick
+     up the Fluent palette (values in the base layer below). */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
   --radius-*: initial;
   --radius-sm: var(--borderRadiusSmall);
   --radius-md: var(--borderRadiusMedium);
@@ -58,7 +85,9 @@
 
   --shadow-*: initial;
   --shadow-2: var(--shadow2);
+  --shadow-4: var(--shadow4);
   --shadow-16: var(--shadow16);
+  --shadow-64: var(--shadow64);
 
   /* Font sizes only; line heights are separate (`leading-*`) so a size change
      never silently changes the inherited line height. */
@@ -67,6 +96,7 @@
   --text-200: var(--fontSizeBase200);
   --text-300: var(--fontSizeBase300);
   --text-400: var(--fontSizeBase400);
+  --text-500: var(--fontSizeBase500);
   --text-600: var(--fontSizeBase600);
   --text-hero700: var(--fontSizeHero700);
 
@@ -74,6 +104,7 @@
   --leading-200: var(--lineHeightBase200);
   --leading-300: var(--lineHeightBase300);
   --leading-400: var(--lineHeightBase400);
+  --leading-500: var(--lineHeightBase500);
   --leading-600: var(--lineHeightBase600);
   --leading-hero700: var(--lineHeightHero700);
 
@@ -82,15 +113,14 @@
   --font-weight-semibold: var(--fontWeightSemibold);
 
   --font-*: initial;
+  --font-sans: var(--fontFamilyBase);
   --font-mono: var(--fontFamilyMonospace);
 }
 
 /* ---- tokens and base elements ---- */
 
 @layer base {
-  /* App aliases and the chart palette, declared where Fluent's tokens live
-     (the provider element and portal mount nodes). */
-  .fui-FluentProvider {
+  :root {
     /* Aliases the chart code passes to recharts as inline colors. */
     --surface: var(--colorNeutralBackground1);
     --text-primary: var(--colorNeutralForeground1);
@@ -98,6 +128,26 @@
     --text-muted: var(--colorNeutralForeground3);
     --border: var(--colorNeutralStroke2);
     --border-strong: var(--colorNeutralStroke1);
+
+    /* shadcn/ui semantic tokens on the Fluent palette. */
+    --background: var(--app-bg);
+    --foreground: var(--colorNeutralForeground1);
+    --card: var(--colorNeutralBackground1);
+    --card-foreground: var(--colorNeutralForeground1);
+    --popover: var(--colorNeutralBackground1);
+    --popover-foreground: var(--colorNeutralForeground1);
+    --primary: var(--colorBrandBackground);
+    --primary-foreground: var(--colorNeutralForegroundOnBrand);
+    --secondary: var(--colorNeutralBackground1);
+    --secondary-foreground: var(--colorNeutralForeground1);
+    --muted: var(--colorNeutralBackground2);
+    --muted-foreground: var(--colorNeutralForeground3);
+    --accent: var(--colorSubtleBackgroundHover);
+    --accent-foreground: var(--colorNeutralForeground1);
+    --destructive: var(--colorStatusDangerBackground3);
+    --input: var(--colorNeutralStroke1);
+    --ring: var(--colorStrokeFocus2);
+    --radius: var(--borderRadiusMedium);
 
     /* Fluent data-viz qualitative palette (@fluentui/react-charts DataVizPalette),
        one fixed slot per series. */
@@ -115,16 +165,17 @@
     --code-bg: #1b1b1b;
     --code-fg: #e6e6e6;
     --code-border: #333333;
-  }
 
-  /* Windows 11 window background: a neutral layer the cards sit on. */
-  .theme-light {
+    /* Windows 11 window background: a neutral layer the cards sit on. */
     --app-bg: var(--colorNeutralBackground3);
     color-scheme: light;
   }
-  .theme-dark {
-    --app-bg: var(--colorNeutralBackground2);
-    color-scheme: dark;
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --app-bg: var(--colorNeutralBackground2);
+      color-scheme: dark;
+    }
   }
 
   * {
@@ -133,14 +184,7 @@
 
   html {
     -webkit-text-size-adjust: 100%;
-    background: #f5f5f5;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    html {
-      background: #1f1f1f;
-      color-scheme: dark;
-    }
+    background: var(--app-bg);
   }
 
   html,
@@ -150,6 +194,12 @@
   }
 
   body {
+    font-family: var(--fontFamilyBase);
+    font-size: var(--fontSizeBase300);
+    line-height: var(--lineHeightBase300);
+    font-weight: var(--fontWeightRegular);
+    color: var(--colorNeutralForeground1);
+    text-align: left;
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
@@ -217,301 +267,121 @@
   }
 }
 
-/* ---- shared native controls (Fluent look for the few non-Fluent elements) ---- */
+/* ---- Fluent focus indicators and the spinner ---- */
+
+/* Fluent's keyboard focus on framed controls: the border turns into a 2px
+   inner ring instead of an outline. */
+@utility fluent-focus-inset {
+  &:focus-visible {
+    border-color: var(--colorStrokeFocus2);
+    box-shadow: 0 0 0 1px var(--colorStrokeFocus2) inset;
+    outline: 2px solid transparent;
+    z-index: 1;
+  }
+}
+
+/* The same ring on a brand fill keeps a white inner edge. */
+@utility fluent-focus-on-brand {
+  &:focus-visible {
+    border-color: var(--colorStrokeFocus2);
+    box-shadow:
+      var(--shadow2),
+      0 0 0 1px var(--colorStrokeFocus2) inset,
+      0 0 0 2px var(--colorNeutralForegroundOnBrand) inset;
+  }
+  &:focus-visible:hover {
+    box-shadow:
+      var(--shadow2),
+      0 0 0 1px var(--colorStrokeFocus2) inset;
+  }
+}
 
 @layer components {
-  .btn {
-    @apply inline-flex min-h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-stroke1 bg-bg1 px-3 py-[5px] text-300 leading-300 font-semibold whitespace-nowrap text-fg1;
-    transition: background-color var(--durationFaster) var(--curveEasyEase);
+  /* Icons sit on the text baseline as in Fluent; Preflight would centre them. */
+  :where(svg[data-fui-icon]) {
+    vertical-align: baseline;
+  }
 
-    &:hover {
-      background: var(--colorNeutralBackground1Hover);
-      border-color: var(--colorNeutralStroke1Hover);
+  /* Fluent spinner: a brand arc whose ends chase each other round a faint track. */
+  .fluent-spinner {
+    position: relative;
+    flex-shrink: 0;
+    --spinner-stroke: var(--strokeWidthThick);
+    mask-image: radial-gradient(
+      closest-side,
+      transparent calc(100% - var(--spinner-stroke) - 1px),
+      white calc(100% - var(--spinner-stroke)) calc(100% - 1px),
+      transparent 100%
+    );
+    background-color: var(--colorBrandStroke2Contrast);
+    color: var(--colorBrandStroke1);
+    animation: fluent-spin 1.5s linear infinite;
+  }
+
+  .fluent-spinner-tail {
+    position: absolute;
+    display: block;
+    width: 100%;
+    height: 100%;
+    mask-image: conic-gradient(transparent 105deg, white 105deg);
+    animation: fluent-spinner-tail 1.5s var(--curveEasyEase) infinite;
+
+    &::before,
+    &::after {
+      content: '';
+      position: absolute;
+      display: block;
+      width: 100%;
+      height: 100%;
+      animation: inherit;
+      background-image: conic-gradient(currentcolor 135deg, transparent 135deg);
     }
-    &:active {
-      background: var(--colorNeutralBackground1Pressed);
-      border-color: var(--colorNeutralStroke1Pressed);
+    &::before {
+      animation-name: fluent-spinner-tail-start;
     }
-    &:focus-visible {
-      outline: 2px solid var(--colorStrokeFocus2);
-      outline-offset: 1px;
-    }
-    @variant max-phone {
-      @apply min-h-10;
+    &::after {
+      animation-name: fluent-spinner-tail-end;
     }
   }
 
-  .btn-sm {
-    @apply min-h-6 px-2 py-0.5 text-200 leading-200 font-regular;
-    @variant max-phone {
-      @apply min-h-9 px-3 py-1.5;
+  @media screen and (prefers-reduced-motion: reduce) {
+    .fluent-spinner {
+      animation-duration: 1.8s;
     }
-  }
-
-  .btn-primary {
-    @apply border-transparent;
-    background: var(--colorBrandBackground);
-    color: var(--colorNeutralForegroundOnBrand);
-
-    &:hover {
-      background: var(--colorBrandBackgroundHover);
-      border-color: transparent;
-    }
-    &:active {
-      background: var(--colorBrandBackgroundPressed);
-    }
-  }
-
-  .btn-ghost {
-    @apply border-transparent bg-transparent text-fg2;
-
-    &:hover {
-      @apply border-transparent text-fg1;
-      background: var(--colorSubtleBackgroundHover);
-    }
-  }
-
-  .btn-danger {
-    @apply bg-bg1 text-danger;
-    border-color: var(--colorStatusDangerBorder2);
-
-    &:hover {
-      background: var(--colorStatusDangerBackground1);
-      border-color: var(--colorStatusDangerBorder2);
-    }
-  }
-
-  .btn-secondary {
-    @apply border-stroke1 bg-bg1 text-fg1;
-  }
-
-  .btn:disabled,
-  .btn:disabled:hover {
-    background: var(--colorNeutralBackgroundDisabled);
-    border-color: var(--colorNeutralStrokeDisabled);
-    color: var(--colorNeutralForegroundDisabled);
-    cursor: not-allowed;
-  }
-
-  a.btn {
-    text-decoration: none;
-  }
-
-  /* A labelled native input/select drawn as a Fluent field. */
-  .field {
-    @apply flex flex-col gap-1;
-    @variant max-phone {
-      @apply w-full;
-    }
-
-    & label {
-      @apply text-300 leading-300 text-fg1;
-    }
-
-    & input,
-    & select {
-      @apply h-8 min-w-[180px] rounded-md border border-stroke1 bg-bg1 px-2.5 py-0 text-300 text-fg1;
-      border-bottom-color: var(--colorNeutralStrokeAccessible);
-
-      &:hover {
-        border-color: var(--colorNeutralStroke1Hover);
-        border-bottom-color: var(--colorNeutralStrokeAccessibleHover);
-      }
-      &:focus-visible {
-        outline: 2px solid var(--colorStrokeFocus2);
-        outline-offset: 1px;
-      }
-      /* Fluent's focused input: the brand underline instead of an outline
-         (after focus-visible on purpose, so the underline is what shows). */
-      &:focus {
-        outline: none;
-        border-bottom-color: var(--colorCompoundBrandStroke);
-        box-shadow: inset 0 -1px 0 var(--colorCompoundBrandStroke);
-      }
-      @variant max-phone {
-        @apply h-10 w-full min-w-0;
+    .fluent-spinner-tail {
+      animation-iteration-count: 0;
+      background-image: conic-gradient(transparent 120deg, currentcolor 360deg);
+      &::before,
+      &::after {
+        content: none;
       }
     }
-
-    & input::placeholder {
-      @apply text-fg4;
-    }
-
-    & select {
-      @apply cursor-pointer appearance-none bg-no-repeat pr-[30px];
-      background-position: right 10px center;
-      background-size: 12px;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.2 4.2a.75.75 0 0 1 1.06 0L6 6.94l2.74-2.74a.75.75 0 1 1 1.06 1.06L6.53 8.53a.75.75 0 0 1-1.06 0L2.2 5.26a.75.75 0 0 1 0-1.06Z' fill='%23616161'/%3E%3C/svg%3E");
-    }
-  }
-
-  .theme-dark .field select {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.2 4.2a.75.75 0 0 1 1.06 0L6 6.94l2.74-2.74a.75.75 0 1 1 1.06 1.06L6.53 8.53a.75.75 0 0 1-1.06 0L2.2 5.26a.75.75 0 0 1 0-1.06Z' fill='%23adadad'/%3E%3C/svg%3E");
-  }
-
-  /* A label wrapping a native checkbox. */
-  .toggle-row {
-    @apply mb-3 flex cursor-pointer items-center gap-2 text-300 text-fg1;
-
-    & input[type='checkbox'] {
-      @apply m-0 size-4;
-      accent-color: var(--colorCompoundBrandBackground);
-    }
-    & input:focus-visible {
-      outline: 2px solid var(--colorStrokeFocus2);
-      outline-offset: 1px;
-    }
   }
 }
 
-/* ---- Fluent component overrides (unlayered: they must outrank Griffel) ---- */
-
-/* Docked nav pane: sits on the window background like Windows Settings. */
-.app-nav-docked.fui-NavDrawer {
-  position: sticky;
-  top: 0;
-  height: 100svh;
-  flex: none;
-  background: transparent;
-  border-right: none;
-}
-
-.app-nav-header {
-  padding-top: 8px;
-}
-
-/* Nav items only fill on hover or selection (Fluent's indicator bar marks the page). */
-.app-nav .fui-NavItem,
-.app-nav .fui-AppItemStatic {
-  background-color: transparent;
-}
-.app-nav .fui-NavItem:hover {
-  background-color: var(--colorSubtleBackgroundHover);
-}
-.app-nav .fui-NavItem[aria-current='page'] {
-  background-color: var(--colorSubtleBackgroundSelected);
-}
-
-@media (max-width: 640px) {
-  /* The preset tabs scroll sideways as one strip instead of wrapping. */
-  .range-presets .fui-TabList {
-    flex-wrap: nowrap;
-  }
-  .custom-range .fui-Input {
-    flex: 1;
-    min-width: 0;
+@keyframes fluent-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
-
-/* Fluent has no danger button; the destructive dialog action uses the status danger fill. */
-.button-danger.fui-Button:not(:disabled) {
-  background: var(--colorStatusDangerBackground3);
-  color: var(--colorNeutralForegroundOnBrand);
-}
-.button-danger.fui-Button:not(:disabled):hover {
-  background: var(--colorStatusDangerBackground3Hover);
-}
-.button-danger.fui-Button:not(:disabled):active {
-  background: var(--colorStatusDangerBackground3Pressed);
-}
-
-/* Cards: Windows 11 radius and a lighter shadow than Fluent's default. */
-.card.fui-Card,
-.stat-tile.fui-Card {
-  border-radius: var(--borderRadiusXLarge);
-  box-shadow: var(--shadow2);
-}
-
-.stat-tile.fui-Card {
-  gap: 2px;
-}
-
-.stat-tile-warn.fui-Card {
-  outline: 1px solid var(--colorStatusWarningBorder2);
-  outline-offset: -1px;
-}
-
-.login-card.fui-Card {
-  width: 100%;
-  max-width: 400px;
-  padding: 32px;
-  border-radius: var(--borderRadiusXLarge);
-  box-shadow: var(--shadow16);
-}
-
-/* Tables (Fluent Table). A table standing on the page gets a card surface;
-   inside a card it is flat. */
-.table-scroll {
-  overflow-x: auto;
-  max-width: 100%;
-  padding: 4px 8px;
-  background: var(--colorNeutralBackground1);
-  border-radius: var(--borderRadiusXLarge);
-  box-shadow: var(--shadow2);
-}
-
-.card .table-scroll {
-  padding: 0;
-  background: none;
-  border-radius: 0;
-  box-shadow: none;
-}
-
-.data-table.fui-Table {
-  table-layout: auto;
-  width: 100%;
-}
-
-.data-table th,
-.data-table td {
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-.data-table th {
-  color: var(--colorNeutralForeground2);
-  font-weight: var(--fontWeightSemibold);
-}
-
-.data-table th.ta-right .fui-TableHeaderCell__button {
-  justify-content: flex-end;
-}
-
-.ta-right {
-  text-align: right;
-}
-
-/* Fluent cell layout: icon or color chip before the content, a quieter second line. */
-.data-table .fui-TableCellLayout__media {
-  color: var(--colorNeutralForeground2);
-}
-
-.data-table .fui-TableCellLayout__description {
-  color: var(--colorNeutralForeground3);
-}
-
-/* A cell hosting hover actions keeps room for them so they never cover the name. */
-.data-table td.has-actions {
-  min-width: 200px;
-  padding-right: 80px;
-}
-
-@media (max-width: 900px) {
-  /* Tables at tablet/phone widths regularly need to scroll horizontally to
-     show every column — keep the identifying first column pinned. */
-  .data-table th:first-child,
-  .data-table td:first-child {
-    position: sticky;
-    left: 0;
-    z-index: 1;
-    background: var(--colorNeutralBackground1);
-    box-shadow: 1px 0 0 var(--colorNeutralStroke2);
+@keyframes fluent-spinner-tail {
+  0% {
+    transform: rotate(-135deg);
+  }
+  50% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(225deg);
   }
 }
-
-/* Destructive entries in a row's action menu (기기 관리). */
-.menu-danger.fui-MenuItem:not([aria-disabled='true']),
-.menu-danger.fui-MenuItem:not([aria-disabled='true']):hover,
-.menu-danger.fui-MenuItem:not([aria-disabled='true']) .fui-MenuItem__icon {
-  color: var(--colorStatusDangerForeground1);
+@keyframes fluent-spinner-tail-start {
+  50% {
+    transform: rotate(105deg);
+  }
+}
+@keyframes fluent-spinner-tail-end {
+  50% {
+    transform: rotate(225deg);
+  }
 }

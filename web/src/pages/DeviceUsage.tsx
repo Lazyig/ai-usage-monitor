@@ -6,12 +6,15 @@ import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
 import { CompositionChart, CompositionLegend, type CompositionSegment } from '../components/CompositionChart'
 import { type Column, DataTable } from '../components/DataTable'
-import { costColumn, countColumn, Swatch, tokenColumn } from '../components/columns'
 import { ErrorBoundary } from '../components/ErrorBoundary'
+import { RowField } from '../components/RowField'
 import { SegmentedControl } from '../components/SegmentedControl'
-import { StateContainer } from '../components/StateContainer'
 import { StatTile } from '../components/StatTile'
+import { StateContainer } from '../components/StateContainer'
 import { TrendChart } from '../components/TrendChart'
+import { costColumn, countColumn, Swatch, tokenColumn } from '../components/columns'
+import { Button } from '../components/ui/button'
+import { NativeSelect } from '../components/ui/native-select'
 import { useApiData } from '../hooks/useApiData'
 import { type Metric, METRIC_OPTIONS, BUCKET_OPTIONS, metricFormat, seriesTokens, topBy } from '../lib/chartData'
 import { SOURCE_COLOR_VARS, SOURCE_ORDER, colorForSlot, labelForKey } from '../lib/colors'
@@ -130,21 +133,20 @@ export function DeviceUsage() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-end gap-3 max-phone:flex-col max-phone:items-stretch">
-        <div className="field">
-          <label htmlFor="device-source-filter">에이전트</label>
-          <select id="device-source-filter" value={source} onChange={(e) => setSource(e.target.value as Source | '')}>
+        <RowField label="에이전트">
+          <NativeSelect id="device-source-filter" value={source} onChange={(e) => setSource(e.target.value as Source | '')}>
             <option value="">전체 에이전트</option>
             {SOURCE_ORDER.map((s) => (
               <option key={s} value={s}>
                 {labelForKey(s)}
               </option>
             ))}
-          </select>
-        </div>
+          </NativeSelect>
+        </RowField>
         {source && (
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => setSource('')}>
+          <Button touch size="small" appearance="subtle" onClick={() => setSource('')}>
             필터 해제
-          </button>
+          </Button>
         )}
       </div>
 

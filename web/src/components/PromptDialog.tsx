@@ -1,15 +1,8 @@
-import {
-  Button,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  Field,
-  Input,
-} from '@fluentui/react-components'
 import { useState } from 'react'
+import { Button } from './ui/button'
+import { Dialog, DialogActions, DialogBody, DialogContent, DialogTitle } from './ui/dialog'
+import { Field } from './ui/field'
+import { Input } from './ui/input'
 
 interface PromptDialogProps {
   title: string
@@ -24,7 +17,7 @@ interface PromptDialogProps {
   onCancel: () => void
 }
 
-/** Fluent modal text prompt (replaces window.prompt): one labelled input, Enter
+/** Modal text prompt (replaces window.prompt): one labelled input, Enter
  * submits, confirm disabled while the value is empty or unchanged. */
 export function PromptDialog({ title, message, label, initialValue, confirmLabel, cancelLabel = '취소', maxLength = 100, busy, onConfirm, onCancel }: PromptDialogProps) {
   const [value, setValue] = useState(initialValue)
@@ -32,36 +25,35 @@ export function PromptDialog({ title, message, label, initialValue, confirmLabel
   const canConfirm = !busy && trimmed !== '' && trimmed !== initialValue
 
   return (
-    <Dialog open modalType={busy ? 'alert' : 'modal'} onOpenChange={(_, data) => !data.open && !busy && onCancel()}>
-      <DialogSurface>
-        <DialogBody>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogContent className="flex flex-col gap-3 [&_p]:m-0 [&_p]:text-fg1">
-            {message && <p>{message}</p>}
-            <Field label={label}>
-              <Input
-                value={value}
-                maxLength={maxLength}
-                onChange={(_, d) => setValue(d.value)}
-                autoFocus
-                autoComplete="off"
-                onFocus={(e) => e.target.select()}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && canConfirm) onConfirm(trimmed)
-                }}
-              />
-            </Field>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={onCancel} disabled={busy}>
-              {cancelLabel}
-            </Button>
-            <Button appearance="primary" onClick={() => onConfirm(trimmed)} disabled={!canConfirm}>
-              {busy ? '처리 중…' : confirmLabel}
-            </Button>
-          </DialogActions>
+    // While busy the dialog ignores Escape and outside clicks, like an alert dialog.
+    <Dialog open onOpenChange={(open) => !open && !busy && onCancel()}>
+      <DialogContent>
+        <DialogTitle>{title}</DialogTitle>
+        <DialogBody className="flex flex-col gap-3 [&_p]:m-0 [&_p]:text-fg1">
+          {message && <p>{message}</p>}
+          <Field label={label}>
+            <Input
+              value={value}
+              maxLength={maxLength}
+              onChange={(e) => setValue(e.target.value)}
+              autoFocus
+              autoComplete="off"
+              onFocus={(e) => e.target.select()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && canConfirm) onConfirm(trimmed)
+              }}
+            />
+          </Field>
         </DialogBody>
-      </DialogSurface>
+        <DialogActions>
+          <Button onClick={onCancel} disabled={busy}>
+            {cancelLabel}
+          </Button>
+          <Button appearance="primary" onClick={() => onConfirm(trimmed)} disabled={!canConfirm}>
+            {busy ? '처리 중…' : confirmLabel}
+          </Button>
+        </DialogActions>
+      </DialogContent>
     </Dialog>
   )
 }
