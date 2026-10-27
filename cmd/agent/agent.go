@@ -139,10 +139,7 @@ func (a *agent) pass(ctx context.Context, resyncOK bool) error {
 			a.log.Printf("tick: no new events")
 		}
 		a.saveCursors(next) // file rotations can move a cursor without any events
-		if resync && resyncOK {
-			return errors.Join(errors.Join(scanErr...), a.resync(ctx))
-		}
-		return errors.Join(scanErr...)
+		return errors.Join(errors.Join(scanErr...), a.handleResync(ctx, resync, resyncOK))
 	}
 
 	st, err := a.client.PushStats(ctx, events)
@@ -172,10 +169,20 @@ func (a *agent) pass(ctx context.Context, resyncOK bool) error {
 	a.log.Printf("tick: scanned %s (%d events) | accepted=%d duplicates=%d updated=%d rejected=%d | %s",
 		strings.Join(counts, " "), len(events), st.Accepted, st.Duplicates, st.Updated, st.Rejected, a.queueSummary())
 	out := errors.Join(append(scanErr, ignoreHandled(err))...)
-	if resync && resyncOK {
-		return errors.Join(out, a.resync(ctx))
+	return errors.Join(out, a.handleResync(ctx, resync, resyncOK))
+}
+
+// A resync response consumes the server's flag. If another pass is disallowed,
+// persist the request by resetting cursors so the next run reads from zero.
+func (a *agent) handleResync(ctx context.Context, requested, resyncOK bool) error {
+	if !requested {
+		return nil
 	}
-	return out
+	if resyncOK {
+		return a.resync(ctx)
+	}
+	a.log.Printf("server requested a full resync: resetting cursors for the next run")
+	return a.cursors.Reset()
 }
 
 // resync answers a server that threw this device's stored events away. Its
@@ -243,8 +250,16 @@ func (a *agent) queueSummary() string {
 	return fmt.Sprintf("queue %d batch(es), %s bytes", n, num(bytes))
 }
 
+// finalPassTimeout bounds the pass a stopping agent makes on its way out. It
+// stays under the stop deadlines it has to live with: the Windows SCM's 20s and
+// the 30s a Kubernetes pod gets between SIGTERM and SIGKILL by default.
+const finalPassTimeout = 15 * time.Second
+
 // loop runs ticks until ctx is cancelled. The first pass happens immediately so
-// a freshly started service does not stay silent for a whole interval.
+// a freshly started service does not stay silent for a whole interval. On the
+// way out it makes one more pass, so whatever was written since the last tick
+// reaches the server before a short lived host (a pod, a CI runner) and its
+// logs disappear.
 func (a *agent) loop(ctx context.Context) error {
 	d := time.Duration(a.cfg.Interval()) * time.Second
 	a.log.Printf("ai-usage-agent %s starting: device=%s server=%s interval=%s sources=%s",
@@ -258,10 +273,24 @@ func (a *agent) loop(ctx context.Context) error {
 		}
 		select {
 		case <-ctx.Done():
-			a.log.Printf("stopping")
+			a.log.Printf("stopping: final pass")
+			a.finalPass()
 			return nil
 		case <-t.C:
 		}
+	}
+}
+
+// finalPass runs one tick on a fresh context, since the loop's own is already
+// cancelled. A tick the signal interrupted left its cursors where they were, so
+// this pass picks those events up again and the server dedupes any overlap. It
+// never follows a resync: a full rescan does not belong in a shutdown deadline,
+// and resetting cursors preserves the request for the next start.
+func (a *agent) finalPass() {
+	ctx, cancel := context.WithTimeout(context.Background(), finalPassTimeout)
+	defer cancel()
+	if err := a.pass(ctx, false); err != nil {
+		a.noteErr("final pass", err)
 	}
 }
 

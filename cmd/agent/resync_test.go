@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"ai-usage-monitor/internal/agentcfg"
 	"ai-usage-monitor/internal/event"
@@ -301,5 +303,105 @@ func TestRescanRejectsPositionalArguments(t *testing.T) {
 	setupState(t)
 	if _, code := runCLI(t, "rescan", "everything"); code != 2 {
 		t.Errorf("exit code %d for a stray argument, want 2", code)
+	}
+}
+
+// A stopping loop sends what was written since its last tick: on a short lived
+// host the logs vanish with it, so waiting for the next interval loses them.
+func TestLoopSendsAFinalPassWhenStopped(t *testing.T) {
+	dir := setupState(t)
+	srv := newIngestServer(t)
+
+	// Start with empty roots so the first tick finds nothing, then fill them in
+	// while the loop sleeps through an interval that would never come round.
+	cfg, _, err := agentcfg.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := testdataRoots(t)
+	empty := map[event.Source]string{}
+	for src := range roots {
+		empty[src] = filepath.Join(t.TempDir(), "root")
+		cfg.Source(src).Root = empty[src]
+	}
+	if err := agentcfg.Save(dir, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	ag, err := bootstrap(dir, nil, runOverrides{server: srv.URL, token: "tok", interval: 3600})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- ag.loop(ctx) }()
+
+	// The first tick is a heartbeat: no events yet, but the server hears from it.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if req, _, _ := srv.counts(); req > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the first tick never reached the server")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, events, _ := srv.counts(); events != 0 {
+		t.Fatalf("the first tick sent %d events from empty roots", events)
+	}
+
+	for src, root := range roots {
+		if err := os.CopyFS(empty[src], os.DirFS(root)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("loop returned %v", err)
+		}
+	case <-time.After(finalPassTimeout + 5*time.Second):
+		t.Fatal("the loop did not stop")
+	}
+	if _, events, _ := srv.counts(); events == 0 {
+		t.Fatal("nothing written after the last tick reached the server on stop")
+	}
+}
+
+func TestFinalPassDefersResyncUntilNextRun(t *testing.T) {
+	dir := setupState(t)
+	srv := newIngestServer(t)
+	ag, err := bootstrap(dir, nil, runOverrides{server: srv.URL, token: "tok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ag.tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	_, first, _ := srv.counts()
+	if first == 0 {
+		t.Fatal("the first pass sent nothing")
+	}
+	srv.armResync()
+	ag.lastContact = time.Time{} // Make the final pass send a heartbeat.
+	ag.finalPass()
+	_, after, asked := srv.counts()
+	if asked != 1 || after != first {
+		t.Fatalf("final pass: events=%d resync requests=%d, want %d and 1", after, asked, first)
+	}
+	// Bootstrap again to verify the reset survived on disk.
+	ag, err = bootstrap(dir, nil, runOverrides{server: srv.URL, token: "tok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ag.tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	_, total, _ := srv.counts()
+	if total != 2*first {
+		t.Fatalf("next run sent %d events, want %d", total-first, first)
 	}
 }

@@ -39,6 +39,7 @@ Claude Code · Codex CLI · Antigravity CLI 를 여러 기기에서 쓸 때, 각
 
   - **처음 실행하면 위 위치에 남아 있는 과거 이력 전체를 보내고**, 이후에는 읽은 위치(커서)부터 새로 생긴 기록만 보냅니다. 같은 호출은 서버에서 한 번만 저장되므로 다시 보내도 중복되지 않습니다.
   - 특정 도구를 빼거나 경로를 바꾸려면 에이전트 상태 디렉터리의 `config.json` 에서 `sources.<도구>.enabled` / `root` 를 고친 뒤 서비스를 재시작하세요. `extra_roots` 는 `root` 와 같은 구조로 함께 읽을 추가 폴더 목록입니다(현재 Antigravity 만 사용, 기본값은 데스크톱 앱 폴더, 빈 목록 `[]` 이면 끔).
+  - 서비스를 멈추거나 SIGTERM/SIGINT 를 받으면 마지막으로 한 번 수집해 보낸 뒤 종료합니다(최대 15초). 마지막 주기 이후에 생긴 기록도 빠지지 않습니다.
   - 서버에 닿지 못하면 보낼 데이터를 로컬 큐에 쌓았다가 다시 보냅니다. 큐는 최대 500 MB 이고 넘치면 **오래된 것부터 버립니다**. 원본 로그가 남아 있다면 `ai-usage-agent rescan` 으로 다시 수집할 수 있습니다.
 
 - **서버** (`cmd/server`)는 cgo 없는 단일 Go 바이너리입니다. SQLite 에 이벤트를 저장하고, JSON API 와 대시보드(React SPA, 바이너리에 내장)를 제공하며, 에이전트 바이너리와 설치 스크립트를 `/downloads/` 로 배포합니다.
@@ -124,6 +125,22 @@ curl -fsSLo ai-usage-agent https://<서버>/downloads/ai-usage-agent_linux_amd64
 ./ai-usage-agent scan                        # 최근 7일
 ./ai-usage-agent scan --since all --days 0   # 전체 이력
 ```
+
+### 일시적인 환경에서 쓰기 (파드, CI 러너 등)
+
+작업이 끝나면 사라지는 환경에서는 서비스로 설치하지 않고, 환경변수로 서버와 토큰을 넘겨 직접 실행합니다. 같은 기기 토큰을 쓰는 실행은 모두 대시보드에서 한 기기로 모입니다.
+
+```sh
+export AI_USAGE_SERVER=https://<서버>
+export AI_USAGE_TOKEN=aum_...        # 비밀 저장소에서 주입
+export AI_USAGE_STATE_DIR=/tmp/aua
+
+claude -p "..."                       # AI 작업
+ai-usage-agent run --once             # 작업이 끝난 뒤 한 번 수집해 전송
+```
+
+- `run`(루프)을 사이드카로 띄워도 됩니다. 종료 신호를 받으면 마지막으로 한 번 보내고 끝나므로, AI 작업 컨테이너와 로그 폴더(`~/.claude` 등)를 공유하고 작업 컨테이너보다 늦게 종료되게 두세요(예: Kubernetes 네이티브 사이드카).
+- 서버에 닿지 못하면 `--once` 도 데이터를 로컬 큐에 넣고 종료 코드 0 으로 끝나는데, 큐는 환경과 함께 사라집니다. `ai-usage-agent status` 로 큐가 비었는지 확인하세요.
 
 ## 토큰과 보안
 
