@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -166,5 +167,50 @@ func TestMigrationDropsOversizedEvents(t *testing.T) {
 	}
 	if n != 1 {
 		t.Errorf("%d events left, want only the sane one", n)
+	}
+}
+
+// Lord Howe springs forward by 30 minutes (02:00 +10:30 -> 02:30 +11:00). An
+// event right after the shift belongs to the hour that starts at the shift,
+// not to a whole hour before it that the event did not happen in.
+func TestTimeseriesHalfHourShift(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	lh, err := time.LoadLocation("Australia/Lord_Howe")
+	if err != nil {
+		t.Skipf("tzdata unavailable: %v", err)
+	}
+	d, _, err := s.CreateDevice(ctx, "lh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := ev(t, "lh1", d.ID, event.SourceCodex, "2026-10-03T15:40:00Z", "gpt-5.6-terra", 5, 0, 0, 0) // 02:40 +11:00
+	if _, _, _, err := s.InsertEvents(ctx, []event.UsageEvent{e}); err != nil {
+		t.Fatal(err)
+	}
+	f := Filter{From: time.Date(2026, 10, 4, 0, 0, 0, 0, lh), To: time.Date(2026, 10, 5, 0, 0, 0, 0, lh)}
+	ts, err := s.Timeseries(ctx, f, "hour", "source", lh, testTable(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pts := ts.Series[0].Points
+	if len(pts) != 1 {
+		t.Fatalf("points %+v", pts)
+	}
+	at, err := time.Parse(time.RFC3339, pts[0].T)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if at.After(e.Timestamp) || e.Timestamp.Sub(at) >= time.Hour || at.Before(mustTime(t, "2026-10-03T15:30:00Z")) {
+		t.Errorf("event at %s labelled %s", e.Timestamp.In(lh).Format(time.RFC3339), pts[0].T)
+	}
+}
+
+// A range with more buckets than one series holds is refused, not cut short.
+func TestTimeseriesRefusesTooManyBuckets(t *testing.T) {
+	s := openTest(t)
+	f := Filter{From: mustTime(t, "1900-01-01T00:00:00Z"), To: mustTime(t, "2026-01-01T00:00:00Z")}
+	if _, err := s.Timeseries(context.Background(), f, "hour", "source", time.UTC, testTable(t)); !errors.Is(err, ErrTooManyBuckets) {
+		t.Fatalf("got %v, want ErrTooManyBuckets", err)
 	}
 }

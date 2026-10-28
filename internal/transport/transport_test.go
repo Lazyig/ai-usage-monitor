@@ -976,3 +976,34 @@ func TestFlushMovesPastAForeignRejection(t *testing.T) {
 		t.Errorf("refused batch sent %d times in one flush, want 1", attempts)
 	}
 }
+
+// When everything is refused (a changed path prefix), a flush stops after the
+// second refusal instead of sending the whole backlog every tick.
+func TestFlushStopsWhenEverythingIsRefused(t *testing.T) {
+	var requests int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, "<html>404</html>")
+	}))
+	defer srv.Close()
+	c := newClient(t, srv)
+	for range 10 {
+		payload, err := c.encode(makeEvents(1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := c.Queue.Enqueue(payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := c.Flush(context.Background()); err == nil {
+		t.Fatal("Flush succeeded against a server that refuses everything")
+	}
+	if requests != 2 {
+		t.Errorf("%d requests for a fully refused backlog, want 2", requests)
+	}
+	if n, _, _ := c.Queue.Stats(); n != 10 {
+		t.Errorf("%d batches left, want all 10", n)
+	}
+}

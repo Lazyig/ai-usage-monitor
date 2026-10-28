@@ -289,7 +289,10 @@ func (c *Client) queueRemaining(events []event.UsageEvent) (int, error) {
 
 // Flush replays queued batches, oldest first, deleting each one the server
 // accepts. It stops at the first failure so ordering is preserved and a server
-// that is still down is not hammered with the whole backlog.
+// that is still down is not hammered with the whole backlog. The one exception
+// is a batch refused before reaching the server (ForeignRejectionError): the
+// next one is tried, so a single batch a proxy keeps refusing cannot hold the
+// rest back, but two refusals in a row mean everything is refused and it stops.
 func (c *Client) Flush(ctx context.Context) (Stats, error) {
 	var total Stats
 	if c.Queue == nil {
@@ -299,7 +302,10 @@ func (c *Client) Flush(ctx context.Context) (Stats, error) {
 	if err != nil {
 		return total, err
 	}
-	var kept error
+	var (
+		kept        error
+		lastForeign bool
+	)
 	for _, it := range items {
 		if err := ctx.Err(); err != nil {
 			return total, err
@@ -327,6 +333,10 @@ func (c *Client) Flush(ctx context.Context) (Stats, error) {
 			var foreign *ForeignRejectionError
 			if errors.As(err, &foreign) {
 				c.logf("queue: keeping %s, refused before reaching the server: %v", it.Name, err)
+				if lastForeign {
+					return total, err
+				}
+				lastForeign = true
 				if kept == nil {
 					kept = err
 				}
@@ -334,6 +344,7 @@ func (c *Client) Flush(ctx context.Context) (Stats, error) {
 			}
 			return total, err
 		}
+		lastForeign = false
 		if err := c.Queue.Remove(it); err != nil {
 			return total, err
 		}
