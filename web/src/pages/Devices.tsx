@@ -22,6 +22,7 @@ import { Checkbox } from '../components/ui/checkbox'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../components/ui/dropdown-menu'
 import { Input } from '../components/ui/input'
 import { Spinner } from '../components/ui/spinner'
+import { Tooltip } from '../components/ui/tooltip'
 import { useApiData } from '../hooks/useApiData'
 import { describeError } from '../lib/errors'
 import { formatDateTime, formatFull, formatRelative, isStale } from '../lib/format'
@@ -171,23 +172,25 @@ export function Devices() {
         const busy = rotating === d.id || revoking === d.id
         return (
           <>
-            <Button
-              appearance="subtle"
-              icon={<Edit20Regular />}
-              aria-label={`"${d.name}" 이름 변경`}
-              title="이름 변경"
-              onClick={() => setConfirmState({ kind: 'rename', device: d })}
-            />
+            <Tooltip content="이름 변경">
+              <Button
+                appearance="subtle"
+                icon={<Edit20Regular />}
+                aria-label={`"${d.name}" 이름 변경`}
+                onClick={() => setConfirmState({ kind: 'rename', device: d })}
+              />
+            </Tooltip>
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  appearance="subtle"
-                  icon={busy ? <Spinner size="tiny" /> : <MoreHorizontal20Regular />}
-                  disabled={busy}
-                  aria-label={`"${d.name}" 작업`}
-                  title={busy ? (rotating === d.id ? '재발급 중…' : '폐기 중…') : '작업'}
-                />
-              </DropdownMenuTrigger>
+              <Tooltip content={busy ? (rotating === d.id ? '재발급 중…' : '폐기 중…') : '작업'}>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    appearance="subtle"
+                    icon={busy ? <Spinner size="tiny" /> : <MoreHorizontal20Regular />}
+                    disabled={busy}
+                    aria-label={`"${d.name}" 작업`}
+                  />
+                </DropdownMenuTrigger>
+              </Tooltip>
               <DropdownMenuContent side="bottom" align="end">
                 <DropdownMenuItem icon={<KeyReset20Regular />} onSelect={() => setConfirmState({ kind: 'rotate', device: d })}>
                   토큰 재발급
@@ -317,7 +320,7 @@ export function Devices() {
       <Checkbox
         className="mb-3"
         checked={showRevoked}
-        onChange={(e) => setShowRevoked(e.target.checked)}
+        onCheckedChange={(checked) => setShowRevoked(checked === true)}
         label={`폐기된 기기 표시${revokedCount > 0 ? ` (${revokedCount})` : ''}`}
       />
 

@@ -1,8 +1,10 @@
-import type { ComponentProps } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 interface InputProps extends Omit<ComponentProps<'input'>, 'size'> {
   size?: 'small' | 'medium'
+  /** Inside the frame after the text, like Fluent's contentAfter slot (a button, say). */
+  contentAfter?: ReactNode
 }
 
 /**
@@ -10,7 +12,7 @@ interface InputProps extends Omit<ComponentProps<'input'>, 'size'> {
  * stroke, with the brand underline sweeping in on focus. `className` styles
  * the frame; everything else goes to the <input>.
  */
-function Input({ className, size = 'medium', ...props }: InputProps) {
+function Input({ className, size = 'medium', contentAfter, ...props }: InputProps) {
   return (
     <span
       data-slot="input"
@@ -34,6 +36,7 @@ function Input({ className, size = 'medium', ...props }: InputProps) {
         )}
         {...props}
       />
+      {contentAfter}
     </span>
   )
 }

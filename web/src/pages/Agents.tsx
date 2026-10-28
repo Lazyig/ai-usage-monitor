@@ -13,7 +13,7 @@ import { ThroughputCard } from '../components/ThroughputCard'
 import { TrendChart } from '../components/TrendChart'
 import { costColumn, countColumn, dateTimeColumn, Swatch, tokenColumn } from '../components/columns'
 import { Button } from '../components/ui/button'
-import { NativeSelect } from '../components/ui/native-select'
+import { Select } from '../components/ui/select'
 import { useApiData } from '../hooks/useApiData'
 import { type Metric, METRIC_OPTIONS, BUCKET_OPTIONS, metricFormat } from '../lib/chartData'
 import { SOURCE_COLOR_VARS, SOURCE_ORDER, colorForSlot, labelForKey } from '../lib/colors'
@@ -96,14 +96,12 @@ export function Agents() {
 
       <div className="mb-4 flex flex-wrap items-end gap-3 max-phone:flex-col max-phone:items-stretch">
         <RowField label="기기">
-          <NativeSelect id="agent-device-filter" value={device} onChange={(e) => setDevice(e.target.value)}>
-            <option value="">전체 기기</option>
-            {deviceOptions.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </NativeSelect>
+          <Select
+            id="agent-device-filter"
+            value={device}
+            onValueChange={(v) => setDevice(v)}
+            options={[{ value: '', label: '전체 기기' }, ...deviceOptions.map((d) => ({ value: d.id, label: d.name }))]}
+          />
         </RowField>
         {device && (
           <Button touch size="small" appearance="subtle" onClick={() => setDevice('')}>

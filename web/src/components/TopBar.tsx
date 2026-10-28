@@ -5,7 +5,7 @@ import { PRESET_LABELS, TIMEZONE, addDays, type RangePreset } from '../lib/dateR
 import { useFilters } from '../state/FiltersContext'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
-import { Input } from './ui/input'
+import { DatePicker } from './ui/date-picker'
 import { Switch } from './ui/switch'
 import { Tab, TabList } from './ui/tabs'
 import { Tooltip } from './ui/tooltip'
@@ -44,7 +44,9 @@ export function TopBar({ onOpenNav }: TopBarProps) {
           />
           <span className="text-400 font-semibold">AI Usage Monitor</span>
           <div className="flex-1" />
-          <Button appearance="subtle" icon={<ArrowClockwise20Regular />} onClick={refresh} aria-label="새로고침" title="새로고침" />
+          <Tooltip content="새로고침">
+            <Button appearance="subtle" icon={<ArrowClockwise20Regular />} onClick={refresh} aria-label="새로고침" />
+          </Tooltip>
         </div>
       )}
       <div className="flex flex-wrap items-center gap-3 max-tablet:gap-2">
@@ -59,9 +61,9 @@ export function TopBar({ onOpenNav }: TopBarProps) {
         </div>
         {range.preset === 'custom' && (
           <div className="flex items-center gap-1.5 max-phone:w-full max-phone:flex-wrap">
-            <Input size="small" type="date" value={customFrom} max={customTo} onChange={(e) => setCustomFrom(e.target.value)} aria-label="시작일" className="max-phone:min-w-0 max-phone:flex-1" />
+            <DatePicker size="small" value={customFrom} max={customTo} onChange={setCustomFrom} aria-label="시작일" className="max-phone:min-w-0 max-phone:flex-1" />
             <span>~</span>
-            <Input size="small" type="date" value={customTo} min={customFrom} onChange={(e) => setCustomTo(e.target.value)} aria-label="종료일" className="max-phone:min-w-0 max-phone:flex-1" />
+            <DatePicker size="small" value={customTo} min={customFrom} onChange={setCustomTo} aria-label="종료일" className="max-phone:min-w-0 max-phone:flex-1" />
             <Button size="small" appearance="primary" onClick={() => setCustomRange(customFrom, customTo)}>
               적용
             </Button>

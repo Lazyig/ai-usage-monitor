@@ -7,7 +7,7 @@ import { StateContainer } from '../components/StateContainer'
 import { costColumn, Swatch, tokenColumn, unsorted } from '../components/columns'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
-import { NativeSelect } from '../components/ui/native-select'
+import { Select } from '../components/ui/select'
 import { useEventFeed } from '../hooks/useEventFeed'
 import { SOURCE_ORDER, colorForKey, labelForKey } from '../lib/colors'
 import { formatDateTime } from '../lib/format'
@@ -54,24 +54,20 @@ export function Events() {
 
       <div className="mb-4 flex flex-wrap items-end gap-3 max-phone:flex-col max-phone:items-stretch">
         <RowField label="소스">
-          <NativeSelect id="ev-source" value={source} onChange={(e) => setSource(e.target.value as Source | '')}>
-            <option value="">전체</option>
-            {SOURCE_ORDER.map((s) => (
-              <option key={s} value={s}>
-                {labelForKey(s)}
-              </option>
-            ))}
-          </NativeSelect>
+          <Select
+            id="ev-source"
+            value={source}
+            onValueChange={(v) => setSource(v as Source | '')}
+            options={[{ value: '', label: '전체' }, ...SOURCE_ORDER.map((s) => ({ value: s, label: labelForKey(s) }))]}
+          />
         </RowField>
         <RowField label="기기">
-          <NativeSelect id="ev-device" value={device} onChange={(e) => setDevice(e.target.value)}>
-            <option value="">전체</option>
-            {devices.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </NativeSelect>
+          <Select
+            id="ev-device"
+            value={device}
+            onValueChange={(v) => setDevice(v)}
+            options={[{ value: '', label: '전체' }, ...devices.map((d) => ({ value: d.id, label: d.name }))]}
+          />
         </RowField>
         <RowField label="모델">
           <Input id="ev-model" value={model} onChange={(e) => setModel(e.target.value)} placeholder="모델명 필터" />
