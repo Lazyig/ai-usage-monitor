@@ -934,3 +934,45 @@ func TestAcknowledgementNeedsADeviceID(t *testing.T) {
 		t.Fatalf("a portal's 200 counted as delivery: %v", err)
 	}
 }
+
+// One batch a proxy keeps refusing must not hold back the ones queued after it.
+func TestFlushMovesPastAForeignRejection(t *testing.T) {
+	var attempts int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req, ok := decodeIngest(t, w, r)
+		if !ok {
+			return
+		}
+		if len(req.Events) == 1 {
+			attempts++
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			fmt.Fprint(w, "<html>413</html>")
+			return
+		}
+		writeAccepted(w, len(req.Events), 0)
+	}))
+	defer srv.Close()
+	c := newClient(t, srv)
+	for _, n := range []int{1, 2} {
+		payload, err := c.encode(makeEvents(n))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := c.Queue.Enqueue(payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st, err := c.Flush(context.Background())
+	if err == nil {
+		t.Fatal("Flush hid the refused batch")
+	}
+	if st.Accepted != 2 {
+		t.Errorf("the batch behind the refused one was not delivered: %+v", st)
+	}
+	if n, _, _ := c.Queue.Stats(); n != 1 {
+		t.Errorf("%d batches left, want the refused one only", n)
+	}
+	if attempts != 1 {
+		t.Errorf("refused batch sent %d times in one flush, want 1", attempts)
+	}
+}

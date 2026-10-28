@@ -97,3 +97,74 @@ func TestTimeseriesFallBackDayIsOnePoint(t *testing.T) {
 		t.Fatalf("points %v inputs %v, want 2026-11-01=30 and 2026-11-02=40", got, inputs)
 	}
 }
+
+// Hourly buckets across the New York fall-back night: local 01:00 happens
+// twice and both hours must come back, as must every hour after them.
+func TestTimeseriesHourlyFallBack(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skipf("tzdata unavailable: %v", err)
+	}
+	d, _, err := s.CreateDevice(ctx, "ny")
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs := []event.UsageEvent{
+		ev(t, "h1", d.ID, event.SourceCodex, "2026-11-01T05:30:00Z", "gpt-5.6-terra", 1, 0, 0, 0), // 01:30 EDT
+		ev(t, "h2", d.ID, event.SourceCodex, "2026-11-01T06:30:00Z", "gpt-5.6-terra", 2, 0, 0, 0), // 01:30 EST
+		ev(t, "h3", d.ID, event.SourceCodex, "2026-11-02T15:00:00Z", "gpt-5.6-terra", 4, 0, 0, 0), // next day
+	}
+	if _, _, _, err := s.InsertEvents(ctx, evs); err != nil {
+		t.Fatal(err)
+	}
+	f := Filter{From: time.Date(2026, 10, 31, 0, 0, 0, 0, ny), To: time.Date(2026, 11, 3, 0, 0, 0, 0, ny)}
+	ts, err := s.Timeseries(ctx, f, "hour", "source", ny, testTable(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int64{}
+	for _, p := range ts.Series[0].Points {
+		got[p.T] = p.Input
+	}
+	want := map[string]int64{"2026-11-01T01:00:00-04:00": 1, "2026-11-01T01:00:00-05:00": 2, "2026-11-02T10:00:00-05:00": 4}
+	if len(got) != len(want) {
+		t.Fatalf("points %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Fatalf("points %v, want %v", got, want)
+		}
+	}
+}
+
+// An event stored before the token cap would overflow every SUM over it; the
+// migration removes it.
+func TestMigrationDropsOversizedEvents(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	d, _, err := s.CreateDevice(ctx, "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := s.InsertEvents(ctx, []event.UsageEvent{
+		ev(t, "ok", d.ID, event.SourceCodex, "2026-10-01T01:00:00Z", "gpt-5.6-terra", 10, 0, 0, 0),
+		ev(t, "huge", d.ID, event.SourceCodex, "2026-10-01T02:00:00Z", "gpt-5.6-terra", 9_000_000_000_000_000_000, 0, 0, 0),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version = '0004_drop_oversized_events.sql'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM usage_events`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("%d events left, want only the sane one", n)
+	}
+}

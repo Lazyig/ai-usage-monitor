@@ -95,6 +95,19 @@ func (e *PermanentError) Error() string {
 	return fmt.Sprintf("server rejected the batch (HTTP %d): %s", e.StatusCode, e.Body)
 }
 
+// ForeignRejectionError is a 4xx that did not come from the server (a proxy's
+// error page, a WAF, a body limit in front of it): the batch was never judged.
+// It is kept, but not retried in a loop, and a queue flush moves on past it so
+// one batch a proxy keeps refusing cannot hold back the ones behind it.
+type ForeignRejectionError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *ForeignRejectionError) Error() string {
+	return fmt.Sprintf("transport: ingest: HTTP %d not from the server: %s", e.StatusCode, e.Body)
+}
+
 // QueuedError means delivery failed but every undelivered event was written to
 // the offline queue. The caller may advance its cursor: the events are safe on
 // disk and will be retried on the next tick.
@@ -286,6 +299,7 @@ func (c *Client) Flush(ctx context.Context) (Stats, error) {
 	if err != nil {
 		return total, err
 	}
+	var kept error
 	for _, it := range items {
 		if err := ctx.Err(); err != nil {
 			return total, err
@@ -310,13 +324,21 @@ func (c *Client) Flush(ctx context.Context) (Stats, error) {
 				}
 				continue
 			}
+			var foreign *ForeignRejectionError
+			if errors.As(err, &foreign) {
+				c.logf("queue: keeping %s, refused before reaching the server: %v", it.Name, err)
+				if kept == nil {
+					kept = err
+				}
+				continue
+			}
 			return total, err
 		}
 		if err := c.Queue.Remove(it); err != nil {
 			return total, err
 		}
 	}
-	return total, nil
+	return total, kept
 }
 
 // rewriteDevice replaces the device block of a stored payload with the current
@@ -473,7 +495,7 @@ func (c *Client) sendOnce(ctx context.Context, payload []byte, count int) (Stats
 		// Not the server's own answer: a proxy's 404/413 page, a changed path
 		// prefix. The batch was never judged, so keep it (queued data would
 		// otherwise be deleted with its cursors already past it).
-		return Stats{}, fmt.Errorf("transport: ingest: HTTP %d not from the server: %s", resp.StatusCode, snippet(body)), true
+		return Stats{}, &ForeignRejectionError{StatusCode: resp.StatusCode, Body: snippet(body)}, false
 	case resp.StatusCode/100 != 2:
 		return Stats{}, fmt.Errorf("transport: ingest: HTTP %d: %s", resp.StatusCode, snippet(body)), true
 	}

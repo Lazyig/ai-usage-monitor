@@ -16,7 +16,7 @@ export function useApiData<T>(fetcher: () => Promise<T>, deps: unknown[]): ApiSt
   const [state, setState] = useState<ApiState<T>>({ status: 'loading' })
   const [tick, setTick] = useState(0)
   const refreshKey = useRefreshKey()
-  const last = useRef({ refreshKey, tick })
+  const last = useRef({ refreshKey, tick, deps })
 
   useEffect(() => {
     let cancelled = false
@@ -26,8 +26,14 @@ export function useApiData<T>(fetcher: () => Promise<T>, deps: unknown[]): ApiSt
     // table sorting and any open menu. Any other change (range, source, …)
     // asks a different question, so its old answer must not stay up as if it
     // were the new one.
-    const isRefresh = refreshKey !== last.current.refreshKey || tick !== last.current.tick
-    last.current = { refreshKey, tick }
+    // Only the refresh counter (or tick) moved: every other dependency is the
+    // same. Auto refresh at midnight moves the range of a "today" preset in
+    // the same render, and that is a new question.
+    const prev = last.current
+    const isRefresh =
+      deps.length === prev.deps.length &&
+      deps.every((d, i) => Object.is(d, prev.deps[i]) || (d === refreshKey && prev.deps[i] === prev.refreshKey))
+    last.current = { refreshKey, tick, deps }
     setState((s) => (s.status === 'success' && isRefresh ? s : { status: 'loading' }))
     fetcher()
       .then((data) => {

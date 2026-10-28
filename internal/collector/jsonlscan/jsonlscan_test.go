@@ -409,3 +409,20 @@ func mustJSON(t *testing.T, v any) string {
 	}
 	return string(b)
 }
+
+// A root that is a symlink to a missing target (an unmounted disk) is "no
+// root", so the collector keeps its cursor rather than storing an empty one.
+func TestDanglingSymlinkRootIsNoRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on windows")
+	}
+	base := t.TempDir()
+	link := filepath.Join(base, "projects")
+	if err := os.Symlink(filepath.Join(base, "unmounted", "projects"), link); err != nil {
+		t.Fatal(err)
+	}
+	sc := Scanner[FileState, *FileState]{Root: link, Name: "test", Line: func(*FileState, int64, []byte) error { return nil }}
+	if _, err := sc.Scan(context.Background(), Cursor[FileState]{}); !errors.Is(err, ErrNoRoot) {
+		t.Fatalf("dangling root gave %v, want ErrNoRoot", err)
+	}
+}

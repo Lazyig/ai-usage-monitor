@@ -130,6 +130,9 @@ func isCompressed(path string) bool {
 // skipped; only when no file at all could be read does Scan fail, so a broken
 // install is visible instead of silently reporting zero usage.
 func (s Scanner[T, PT]) Scan(ctx context.Context, prev Cursor[T]) (Cursor[T], error) {
+	if s.danglingRoot() {
+		return Cursor[T]{}, ErrNoRoot
+	}
 	root := s.walkRoot()
 	files, err := s.Files()
 	if err != nil {
@@ -232,6 +235,18 @@ func (s Scanner[T, PT]) walkRoot() string {
 		return real
 	}
 	return s.Root
+}
+
+// danglingRoot reports a root that is a symlink to something missing (the
+// disk it points at is unmounted): that is "no root", not an empty one, so
+// the collector keeps its cursor instead of forgetting every file.
+func (s Scanner[T, PT]) danglingRoot() bool {
+	fi, err := os.Lstat(s.Root)
+	if err != nil || fi.Mode()&fs.ModeSymlink == 0 {
+		return false
+	}
+	_, err = filepath.EvalSymlinks(s.Root)
+	return errors.Is(err, fs.ErrNotExist)
 }
 
 // Files lists every *.jsonl below Root (plus *.jsonl.zst when Compressed), in

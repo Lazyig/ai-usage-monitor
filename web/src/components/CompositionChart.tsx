@@ -12,6 +12,10 @@ export interface CompositionRow {
    * they exist so a custom `tooltip` can show quantities that are not
    * segments (a subset count, a share of some wider total, …). */
   extra?: Record<string, number>
+  /** On phones the label is shortened to fit; a row whose label is a name
+   * plus a qualifier (a model and its tool) gives the two parts here, so the
+   * qualifier is kept as a short tag instead of being cut away. */
+  axis?: { name: string; tag: string }
 }
 
 export interface CompositionSegment {
@@ -71,6 +75,12 @@ export function CompositionChart({
   // phone-width chart, leaving no room for the bars themselves.
   const effectiveLabelWidth = isPhone ? Math.min(labelWidth, 88) : labelWidth
 
+  const axisByLabel = new Map(rows.filter((r) => r.axis).map((r) => [r.label, r.axis!]))
+  const phoneTick = (v: string) => {
+    const a = axisByLabel.get(String(v))
+    return a ? `${shortenMiddle(a.name, Math.max(6, 14 - a.tag.length - 1))} ${a.tag}` : shortenMiddle(String(v), 14)
+  }
+
   const data: Datum[] = rows.map((row) => {
     const datum: Datum = { name: row.label, total: 0, ...row.extra }
     for (const seg of segments) {
@@ -97,7 +107,7 @@ export function CompositionChart({
           type="category"
           dataKey="name"
           tick={{ fill: 'var(--text-secondary)', fontSize: isPhone ? 11 : 12 }}
-          tickFormatter={isPhone ? (v: string) => shortenMiddle(String(v), 14) : undefined}
+          tickFormatter={isPhone ? phoneTick : undefined}
           axisLine={false}
           tickLine={false}
           width={effectiveLabelWidth}

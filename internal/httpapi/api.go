@@ -55,9 +55,12 @@ type api struct {
 
 	mu       sync.Mutex
 	devCache map[string]cachedDevice // token hash -> device
-	// devGen counts forgetDevice calls. A lookup that raced one (read the
-	// device before a revoke committed) must not cache what it read.
-	devGen uint64
+	// devGen counts forgetDevice calls and forgotAt records the count at which
+	// each device was last forgotten. A lookup that raced a forget of its own
+	// device (read it before a revoke committed) must not cache what it read.
+	// Every ingest forgets its device, so the check is per device.
+	devGen   uint64
+	forgotAt map[string]uint64
 }
 
 type cachedDevice struct {
@@ -70,7 +73,7 @@ func New(st *store.Store, pr *Pricing, opt Options) http.Handler {
 	if opt.Logger == nil {
 		opt.Logger = slog.Default()
 	}
-	a := &api{store: st, pricing: pr, opt: opt, log: opt.Logger, devCache: map[string]cachedDevice{}}
+	a := &api{store: st, pricing: pr, opt: opt, log: opt.Logger, devCache: map[string]cachedDevice{}, forgotAt: map[string]uint64{}}
 
 	mux := http.NewServeMux()
 
@@ -255,7 +258,7 @@ func (a *api) lookupDevice(ctx context.Context, hash string) (store.Device, erro
 		return store.Device{}, err
 	}
 	a.mu.Lock()
-	if a.devGen == gen {
+	if a.forgotAt[dev.ID] <= gen {
 		a.devCache[hash] = cachedDevice{dev: dev, at: time.Now()}
 	}
 	a.mu.Unlock()
@@ -267,6 +270,7 @@ func (a *api) forgetDevice(id string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.devGen++
+	a.forgotAt[id] = a.devGen
 	for hash, c := range a.devCache {
 		if c.dev.ID == id {
 			delete(a.devCache, hash)

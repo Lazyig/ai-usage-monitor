@@ -90,7 +90,8 @@ if [ "$NO_SERVICE" = 0 ] && { [ -n "$TOKEN" ] || [ "$UPDATE" = 1 ]; }; then
   "$PREFIX/ai-usage-agent" "$@"
 else
   if [ "$WAS_RUNNING" = 1 ]; then
-    "$PREFIX/ai-usage-agent" start && echo "restarted the ai-usage-agent service with the new binary"
+    "$PREFIX/ai-usage-agent" start || { echo "could not restart the ai-usage-agent service: run $PREFIX/ai-usage-agent start" >&2; exit 1; }
+    echo "restarted the ai-usage-agent service with the new binary"
   elif [ "$UPDATE" = 1 ]; then
     echo "updated; restart the agent you run yourself to use the new version"
   fi

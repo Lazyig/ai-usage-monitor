@@ -87,7 +87,10 @@ func bucketStart(t time.Time, bucket string) time.Time {
 
 func nextBucket(t time.Time, bucket string) time.Time {
 	if bucket == "hour" {
-		return bucketStart(t.Add(time.Hour), "hour")
+		// Elapsed time, not the calendar: on a fall-back day local 01:00
+		// happens twice, and rebuilding it from the clock fields would land
+		// on the first one again and never get past it.
+		return t.Add(time.Hour)
 	}
 	y, m, d := t.Date()
 	// Noon on the next calendar day, then back to that day's start: immune to
@@ -133,10 +136,15 @@ func (s *Store) Timeseries(ctx context.Context, f Filter, bucket, groupBy string
 			return Timeseries{}, err
 		}
 		for _, r := range rows {
-			// The segment's offset is the one at its buckets' start. On a
-			// fall-back day the last local hour still maps one bucket on, so
-			// the key is taken from the local calendar, not the arithmetic.
-			startMs := bucketStart(fromMillis(r.bucket*bucketMs-seg.offsetSec*1000).In(loc), bucket).UnixMilli()
+			startMs := r.bucket*bucketMs - seg.offsetSec*1000
+			if bucket == "day" {
+				// The segment's offset is the one at its days' start. On a
+				// fall-back day its last local hour still maps one day on, so
+				// the day is taken from the local calendar. (Hours never
+				// straddle an offset change, and both 01:00s of a fall-back
+				// night must stay apart, so they keep the arithmetic.)
+				startMs = bucketStart(fromMillis(startMs).In(loc), bucket).UnixMilli()
+			}
 			usd, known, est := priceRow(p, r)
 			m, ok := series[r.key]
 			if !ok {
