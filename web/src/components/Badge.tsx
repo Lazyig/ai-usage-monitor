@@ -4,7 +4,7 @@ import { Badge as BadgeSurface, type badgeVariants } from './ui/badge'
 
 /** Every small inline status marker in the app. Adding a kind means adding a
  * label and a badge color here — nothing else picks its colours. */
-type BadgeKind = 'estimated' | 'unknown' | 'warning' | 'stale' | 'revoked' | 'alias'
+type BadgeKind = 'estimated' | 'unknown' | 'warning' | 'stale' | 'revoked' | 'alias' | 'outdated'
 
 const LABELS: Record<BadgeKind, string> = {
   estimated: '추정',
@@ -13,6 +13,7 @@ const LABELS: Record<BadgeKind, string> = {
   stale: '응답 없음',
   revoked: '폐기됨',
   alias: '별칭',
+  outdated: '버전 불일치',
 }
 
 const COLORS: Record<BadgeKind, VariantProps<typeof badgeVariants>['color']> = {
@@ -22,6 +23,7 @@ const COLORS: Record<BadgeKind, VariantProps<typeof badgeVariants>['color']> = {
   stale: 'severe',
   revoked: 'danger',
   alias: 'informative',
+  outdated: 'warning',
 }
 
 interface BadgeProps {

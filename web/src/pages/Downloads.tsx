@@ -9,7 +9,7 @@ import { Button } from '../components/ui/button'
 import { Tooltip } from '../components/ui/tooltip'
 import { describeError } from '../lib/errors'
 import { formatBytes, formatDateTime } from '../lib/format'
-import { installCommands, uninstallCommands } from '../lib/installCommands'
+import { installCommands, uninstallCommands, updateCommands } from '../lib/installCommands'
 import { useFilters } from '../state/FiltersContext'
 
 const TOKEN_PLACEHOLDER = '<기기 관리에서 발급받은 토큰>'
@@ -78,6 +78,7 @@ export function Downloads() {
       )}
 
       {state.status === 'success' && <InstallGuideCard />}
+      {state.status === 'success' && <UpdateGuideCard version={state.data.version} />}
       {state.status === 'success' && <UninstallGuideCard />}
     </div>
   )
@@ -189,6 +190,32 @@ function InstallGuideCard() {
         <span className="font-mono font-semibold text-series-4">{TOKEN_PLACEHOLDER}</span> 자리에는 실제 토큰이 들어갑니다 — 기기 관리에서 기기를 추가하면
         토큰이 포함된 실제 명령이 표시됩니다.
       </p>
+    </Card>
+  )
+}
+
+/** Update one-liners: no token, the installed config.json is kept. */
+function UpdateGuideCard({ version }: { version: string }) {
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const cmds = updateCommands(origin)
+  return (
+    <Card
+      className="mb-6"
+      title="에이전트 업데이트"
+      subtitle={`설치된 에이전트를 이 서버의 버전(${version})으로 바꿉니다. 서버 주소·토큰·수집 폴더 설정은 그대로 유지되므로 토큰이 필요 없습니다. 버전이 다른 기기는 기기 관리에 표시됩니다.`}
+    >
+      <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-5 *:min-w-0 max-narrow:grid-cols-[1fr]">
+        <div>
+          <h3>Linux / macOS</h3>
+          <CommandBox command={cmds.unix} />
+          <p className="mt-1 text-200 text-fg2">처음 설치한 계정으로 실행하세요. root 로 설치했다면 <code>sh</code> 대신 <code>sudo sh</code>.</p>
+        </div>
+        <div>
+          <h3>Windows (PowerShell)</h3>
+          <CommandBox command={cmds.windows} />
+          <p className="mt-1 text-200 text-fg2">설치할 때와 같이 관리자 권한 PowerShell 에서 실행하세요.</p>
+        </div>
+      </div>
     </Card>
   )
 }

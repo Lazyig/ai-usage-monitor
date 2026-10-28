@@ -3,10 +3,13 @@
 #   curl -fsSL https://SERVER/downloads/install.sh | sh -s -- --server https://SERVER --token aum_xxx
 # Extra Claude Code config directories: --claude-dir DIR, once per directory
 # (default: $CLAUDE_CONFIG_DIR, read by the agent itself).
+# Update an installed agent, keeping its config.json (server, token, folders):
+#   curl -fsSL https://SERVER/downloads/install.sh | sh -s -- --server https://SERVER --update
+# Run it as the account that installed the agent (sudo if that was root).
 # Downloads the binary matching this machine from SERVER/downloads/, verifies its
 # sha256 against manifest.json, installs it and registers the OS service.
 set -eu
-SERVER=""; TOKEN=""; PREFIX=""; NO_SERVICE=0
+SERVER=""; TOKEN=""; PREFIX=""; NO_SERVICE=0; UPDATE=0
 # Newline separated: POSIX sh has no arrays, and a path never holds a newline.
 CLAUDE_DIRS=""
 nl='
@@ -21,7 +24,8 @@ while [ $# -gt 0 ]; do
     --claude-dir) CLAUDE_DIRS="$CLAUDE_DIRS$nl$2"; shift 2;;
     --claude-dir=*) CLAUDE_DIRS="$CLAUDE_DIRS$nl${1#*=}"; shift;;
     --no-service) NO_SERVICE=1; shift;;
-    -h|--help) echo "usage: install.sh --server <url> [--token <token>] [--claude-dir <directory>]... [--prefix <directory>] [--no-service]"; exit 0;;
+    --update) UPDATE=1; shift;;
+    -h|--help) echo "usage: install.sh --server <url> [--token <token> | --update] [--claude-dir <directory>]... [--prefix <directory>] [--no-service]"; exit 0;;
     *) echo "unknown arg $1" >&2; exit 2;;
   esac
 done
@@ -36,6 +40,13 @@ name="ai-usage-agent_${os}_${arch}"
 
 if [ -z "$PREFIX" ]; then
   if [ "$(id -u)" = "0" ]; then PREFIX=/usr/local/bin; else PREFIX="$HOME/.local/bin"; fi
+fi
+# An update replaces an existing agent in place. Finding none here means the
+# wrong account or prefix (a root install lives in /usr/local/bin): stop before
+# touching anything rather than install a second, unconfigured copy.
+if [ "$UPDATE" = 1 ] && [ -z "$TOKEN" ] && [ ! -x "$PREFIX/ai-usage-agent" ]; then
+  echo "--update: no agent at $PREFIX/ai-usage-agent. Run as the account that installed it (sudo if root), pass --prefix, or install with --token." >&2
+  exit 2
 fi
 mkdir -p "$PREFIX"
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
@@ -62,14 +73,18 @@ install -m 0755 "$tmp/$name" "$PREFIX/ai-usage-agent"
 echo "installed $PREFIX/ai-usage-agent ($("$PREFIX/ai-usage-agent" version 2>/dev/null || echo unknown))"
 
 # One --claude-dir per directory. Globbing is off while splitting, so a quoted
-# pattern such as '~/.claude-*' reaches the agent as typed.
-set -- install --server "$SERVER" --token "$TOKEN"
+# pattern such as '~/.claude-*' reaches the agent as typed. An update passes no
+# token: `install` keeps the one in config.json and re-registers the service.
+set -- install --server "$SERVER"
+[ -n "$TOKEN" ] && set -- "$@" --token "$TOKEN"
 hint=""
 set -f; old_ifs=$IFS; IFS=$nl
 for d in $CLAUDE_DIRS; do set -- "$@" --claude-dir "$d"; hint="$hint --claude-dir '$d'"; done
 IFS=$old_ifs; set +f
-if [ "$NO_SERVICE" = 0 ] && [ -n "$TOKEN" ]; then
+if [ "$NO_SERVICE" = 0 ] && { [ -n "$TOKEN" ] || [ "$UPDATE" = 1 ]; }; then
   "$PREFIX/ai-usage-agent" "$@"
+elif [ "$UPDATE" = 1 ]; then
+  echo "updated; restart the agent you run yourself to use the new version"
 else
   echo "next: $PREFIX/ai-usage-agent install --server $SERVER --token <device token>$hint"
 fi
