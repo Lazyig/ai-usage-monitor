@@ -9,7 +9,7 @@ import { Field } from './ui/field'
 export function RowField(props: Omit<ComponentProps<typeof Field>, 'className'>) {
   return (
     <Field
-      className="max-phone:w-full [&>label]:mb-1 [&>label]:py-0 [&_input]:px-2.5 [&>[data-slot=input]]:min-w-[180px] [&>[data-slot=native-select]]:min-w-[180px] max-phone:[&>[data-slot=input]]:min-h-10 max-phone:[&>[data-slot=native-select]]:h-10"
+      className="max-phone:w-full [&>label]:mb-1 [&>label]:py-0 [&_input]:px-2.5 [&>[data-slot=input]]:min-w-[180px] [&>[data-slot=select]]:min-w-[180px] max-phone:[&>[data-slot=input]]:min-h-10 max-phone:[&>[data-slot=select]]:h-10"
       {...props}
     />
   )

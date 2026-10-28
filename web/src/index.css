@@ -257,6 +257,19 @@
     outline-offset: 1px;
   }
 
+  /* Thin Windows 11 scrollbars in the theme's stroke colour; the default
+     grey bar and its white track stay light in dark mode. */
+  html,
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--colorNeutralStroke1) transparent;
+  }
+
+  /* DatePicker draws its own calendar button inside the frame. */
+  input[data-date-picker]::-webkit-calendar-picker-indicator {
+    display: none;
+  }
+
   /* iOS Safari zooms the page in on focus for any text input under 16px. */
   @variant max-phone {
     input,

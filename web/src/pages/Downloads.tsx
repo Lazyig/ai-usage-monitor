@@ -6,6 +6,7 @@ import { Card } from '../components/Card'
 import { type Column, DataTable } from '../components/DataTable'
 import { StateContainer } from '../components/StateContainer'
 import { Button } from '../components/ui/button'
+import { Tooltip } from '../components/ui/tooltip'
 import { describeError } from '../lib/errors'
 import { formatBytes, formatDateTime } from '../lib/format'
 import { installCommands, uninstallCommands } from '../lib/installCommands'
@@ -101,12 +102,11 @@ function DownloadsTable({ files }: { files: DownloadFile[] }) {
           <span className="font-mono" title={f.sha256}>
             {f.sha256.slice(0, 10)}…
           </span>
-          <Button touch size="small" appearance="subtle"
-            onClick={() => navigator.clipboard?.writeText(f.sha256)}
-            title="SHA256 전체 복사"
-          >
-            복사
-          </Button>
+          <Tooltip content="SHA256 전체 복사">
+            <Button touch size="small" appearance="subtle" onClick={() => navigator.clipboard?.writeText(f.sha256)}>
+              복사
+            </Button>
+          </Tooltip>
         </span>
       ),
     },

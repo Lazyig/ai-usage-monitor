@@ -22,7 +22,7 @@ import { StateContainer } from '../components/StateContainer'
 import { ThroughputCard } from '../components/ThroughputCard'
 import { TrendChart } from '../components/TrendChart'
 import { Button } from '../components/ui/button'
-import { NativeSelect } from '../components/ui/native-select'
+import { Select } from '../components/ui/select'
 import { RowField } from '../components/RowField'
 import { type Metric, METRIC_OPTIONS } from '../lib/chartData'
 import {
@@ -123,14 +123,12 @@ export function Models() {
 
       <div className="mb-4 flex flex-wrap items-end gap-3 max-phone:flex-col max-phone:items-stretch">
         <RowField label="소스">
-          <NativeSelect id="source-filter" value={source} onChange={(e) => setSource(e.target.value as Source | '')}>
-            <option value="">전체</option>
-            {SOURCE_ORDER.map((s) => (
-              <option key={s} value={s}>
-                {labelForKey(s)}
-              </option>
-            ))}
-          </NativeSelect>
+          <Select
+            id="source-filter"
+            value={source}
+            onValueChange={(v) => setSource(v as Source | '')}
+            options={[{ value: '', label: '전체' }, ...SOURCE_ORDER.map((s) => ({ value: s, label: labelForKey(s) }))]}
+          />
         </RowField>
       </div>
 
