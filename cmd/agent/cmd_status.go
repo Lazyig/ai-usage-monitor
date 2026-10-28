@@ -62,6 +62,7 @@ func cmdStatus(args []string) error {
 	}
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprint(tw, "SOURCE\tENABLED\tROOT\tPRESENT\tCURSOR\n")
+	more := false
 	for _, s := range agentcfg.Sources {
 		sc := cfg.Source(s)
 		enabled := "no"
@@ -80,9 +81,20 @@ func cmdStatus(args []string) error {
 		if n := cur.Size(s); n > 0 {
 			state = fmt.Sprintf("%s bytes of state", num(int64(n)))
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", s, enabled, strings.Join(roots, ", "), present, state)
+		shown := roots[0]
+		if len(roots) > 1 {
+			shown += fmt.Sprintf(" (+%d more)", len(roots)-1)
+			more = true
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", s, enabled, shown, present, state)
 	}
 	tw.Flush()
+	if hint := unconfiguredClaudeDirs(cfg); len(hint) > 0 {
+		printClaudeEnvHint(out, hint)
+	}
+	if more {
+		fmt.Fprintf(out, "every folder: %s roots list\n", exeName())
+	}
 	fmt.Fprintln(out)
 
 	// Offline queue.

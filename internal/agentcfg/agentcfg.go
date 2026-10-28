@@ -28,6 +28,16 @@ const AppName = "ai-usage-agent"
 // DefaultIntervalSeconds is the scan/push period used when none is configured.
 const DefaultIntervalSeconds = 60
 
+// ConfigVersion is the layout version of config.json, stored as
+// config_version. A file from an older layout is migrated on load (see
+// fillDefaults):
+//
+//	0  before the field existed
+//	1  Claude Code reads extra config directories: an empty claude_code
+//	   extra_roots, which was the only value older agents ever wrote, gets the
+//	   defaults (DefaultExtraRoots)
+const ConfigVersion = 1
+
 // Environment overrides. Command line flags take precedence over these.
 const (
 	EnvServer   = "AI_USAGE_SERVER"
@@ -48,9 +58,11 @@ var Sources = []event.Source{
 // tool is not installed on this device.
 //
 // ExtraRoots are further directories with Root's layout that the same
-// collector also reads (only Antigravity has one today: its desktop app keeps
-// conversations beside the CLI's). nil means "the defaults" and is filled in
-// on load; an explicit empty list turns them off.
+// collector also reads: Claude Code's other config directories
+// (CLAUDE_CONFIG_DIR), the Antigravity desktop app's conversations beside the
+// CLI's. Codex reads Root only. nil means "the defaults" and is filled in on
+// load; an explicit empty list turns them off. Root and ExtraRoots may be glob
+// patterns, expanded on every pass, so a folder created later is picked up.
 type SourceConfig struct {
 	Enabled    bool     `json:"enabled"`
 	Root       string   `json:"root"`
@@ -70,6 +82,9 @@ type Config struct {
 	DeviceName      string                         `json:"device_name"`
 	IntervalSeconds int                            `json:"interval_seconds"`
 	Sources         map[event.Source]*SourceConfig `json:"sources"`
+
+	// Version is the ConfigVersion this file was migrated to.
+	Version int `json:"config_version"`
 
 	// IDScheme is the event.IDScheme the stored cursors were collected under.
 	// It is deliberately NOT filled in by fillDefaults: a config written before
@@ -149,15 +164,36 @@ func DefaultRoot(s event.Source) string {
 	return ""
 }
 
-// DefaultExtraRoots are the directories read in addition to DefaultRoot. The
-// Antigravity desktop app writes the same conversation databases as the CLI,
-// under ~/.gemini/antigravity. Never nil, so a filled-in config is told apart
-// from one written before the field existed.
+// DefaultExtraRoots are the directories read in addition to DefaultRoot:
+//
+//   - Claude Code: $XDG_CONFIG_HOME/claude/projects (~/.config/claude/projects),
+//     where some Claude Code versions keep their config, and the pattern
+//     ~/.claude-*/projects, the usual names for extra CLAUDE_CONFIG_DIRs.
+//   - Antigravity: the desktop app writes the same conversation databases as
+//     the CLI, under ~/.gemini/antigravity.
+//
+// Never nil, so a filled-in config is told apart from one written before the
+// field existed.
 func DefaultExtraRoots(s event.Source) []string {
-	if s == event.SourceAntigravity {
+	switch s {
+	case event.SourceClaudeCode:
+		return claudeExtraRoots(homeDir(), os.Getenv("XDG_CONFIG_HOME"))
+	case event.SourceAntigravity:
 		return []string{filepath.Join(homeDir(), ".gemini", "antigravity")}
 	}
 	return []string{}
+}
+
+// claudeExtraRoots are Claude Code's default extra roots below home.
+func claudeExtraRoots(home, xdgConfig string) []string {
+	cfgHome := filepath.Join(home, ".config")
+	if strings.TrimSpace(xdgConfig) != "" {
+		cfgHome = xdgConfig
+	}
+	return []string{
+		filepath.Join(cfgHome, "claude", "projects"),
+		filepath.Join(home, ".claude-*", "projects"),
+	}
 }
 
 // StateDir is where config.json, cursors.json and queue/ live:
@@ -206,6 +242,7 @@ func Defaults() Config {
 		DeviceName:      name,
 		IntervalSeconds: DefaultIntervalSeconds,
 		Sources:         map[event.Source]*SourceConfig{},
+		Version:         ConfigVersion,
 		IDScheme:        event.IDScheme,
 	}
 	for _, s := range Sources {
@@ -229,10 +266,10 @@ func NewDeviceID() string {
 	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
 }
 
-// loadFile returns the config exactly as stored on disk, completed with
+// LoadFile returns the config exactly as stored on disk, completed with
 // defaults, plus whether the file existed. No environment overrides are applied
 // so the result is safe to write back.
-func loadFile(dir string) (Config, bool, error) {
+func LoadFile(dir string) (Config, bool, error) {
 	raw, err := os.ReadFile(ConfigPath(dir))
 	if errors.Is(err, os.ErrNotExist) {
 		return Defaults(), false, nil
@@ -253,7 +290,7 @@ func loadFile(dir string) (Config, bool, error) {
 // actually present, so callers can tell a fresh device from a configured one.
 // A missing file is not an error: `scan` must work before anything is installed.
 func Load(dir string) (Config, bool, error) {
-	cfg, existed, err := loadFile(dir)
+	cfg, existed, err := LoadFile(dir)
 	if err != nil {
 		return cfg, existed, err
 	}
@@ -265,7 +302,7 @@ func Load(dir string) (Config, bool, error) {
 // the device id on first run, or a source added by a newer agent version.
 // Values coming from the environment are never written back to disk.
 func LoadOrCreate(dir string) (Config, error) {
-	stored, existed, err := loadFile(dir)
+	stored, existed, err := LoadFile(dir)
 	if err != nil {
 		return stored, err
 	}
@@ -320,6 +357,33 @@ func (c *Config) fillDefaults() {
 			sc.ExtraRoots = DefaultExtraRoots(s)
 		}
 	}
+	if c.Version < 1 {
+		// Older agents always wrote [] here, so it says nothing about what the
+		// user wants. The defaults are taken relative to the configured root:
+		// a system service reads a config written by the installing user, and
+		// its own home is not where that user's Claude Code lives.
+		if sc := c.Sources[event.SourceClaudeCode]; len(sc.ExtraRoots) == 0 {
+			if home, ok := claudeHome(sc.Root); ok && home != homeDir() {
+				sc.ExtraRoots = claudeExtraRoots(home, "")
+			} else {
+				sc.ExtraRoots = DefaultExtraRoots(event.SourceClaudeCode)
+			}
+		}
+	}
+	if c.Version < ConfigVersion {
+		c.Version = ConfigVersion
+	}
+}
+
+// claudeHome is the home directory a default Claude Code root (<home>/.claude/projects)
+// sits in.
+func claudeHome(root string) (string, bool) {
+	root = filepath.Clean(root)
+	parent := filepath.Dir(root)
+	if filepath.Base(root) != "projects" || filepath.Base(parent) != ".claude" {
+		return "", false
+	}
+	return filepath.Dir(parent), true
 }
 
 // applyEnv layers AI_USAGE_SERVER / AI_USAGE_TOKEN over the file. Flags are

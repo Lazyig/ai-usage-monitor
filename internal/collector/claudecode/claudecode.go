@@ -1,5 +1,6 @@
-// Package claudecode reads Claude Code's JSONL transcripts (~/.claude/projects)
-// and turns every assistant message into a normalized usage event.
+// Package claudecode reads Claude Code's JSONL transcripts (~/.claude/projects,
+// or <CLAUDE_CONFIG_DIR>/projects for every extra config directory) and turns
+// every assistant message into a normalized usage event.
 package claudecode
 
 import (
@@ -7,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -19,15 +21,17 @@ import (
 // cancelled turns). They carry no real usage and must not be billed.
 const syntheticModel = "<synthetic>"
 
-// Collector reads one Claude Code projects directory.
+// Collector reads one or more Claude Code projects directories.
 type Collector struct {
-	root string
+	roots []string
 }
 
-// New returns a collector for root, the Claude Code projects directory
-// (normally ~/.claude/projects). A missing root yields empty scans, not errors,
-// because most devices only have a subset of the tools installed.
-func New(root string) collector.Collector { return &Collector{root: root} }
+// New returns a collector for roots, Claude Code projects directories (normally
+// ~/.claude/projects, plus one per extra CLAUDE_CONFIG_DIR). Roots may be glob
+// patterns; they are expanded on every scan (see collector.ExpandRoots). A
+// missing root yields empty scans, not errors, because most devices only have a
+// subset of the tools installed.
+func New(roots ...string) collector.Collector { return &Collector{roots: roots} }
 
 // Name implements collector.Collector.
 func (c *Collector) Name() event.Source { return event.SourceClaudeCode }
@@ -42,7 +46,36 @@ type (
 	cursorState = jsonlscan.Cursor[fileState]
 )
 
-func decodeCursor(raw []byte) cursorState { return jsonlscan.DecodeCursor[fileState](raw) }
+// multiCursor is the stored cursor: one jsonlscan cursor per root directory,
+// keyed by the root's cleaned path. Keying by path (not position) keeps the
+// progress when roots are reordered or moved between root and extra_roots.
+type multiCursor struct {
+	Roots map[string]cursorState `json:"roots"`
+}
+
+// decodeCursor parses a stored cursor. A cursor written before multiple roots
+// existed is one bare jsonlscan cursor ({"files": ...}); it belonged to the
+// configured root, which is first, so it is handed to that root and nothing is
+// re-read after an upgrade. Anything unreadable yields an empty state.
+func decodeCursor(raw []byte, first string) map[string]cursorState {
+	out := map[string]cursorState{}
+	if len(raw) == 0 {
+		return out
+	}
+	var mc multiCursor
+	if err := json.Unmarshal(raw, &mc); err == nil && mc.Roots != nil {
+		for k, v := range mc.Roots {
+			if v.Files != nil {
+				out[k] = v
+			}
+		}
+		return out
+	}
+	if legacy := jsonlscan.DecodeCursor[fileState](raw); len(legacy.Files) > 0 && first != "" {
+		out[filepath.Clean(first)] = legacy
+	}
+	return out
+}
 
 // skipDir prunes memory/ subtrees: they only ever hold markdown notes.
 func skipDir(name string) bool { return name == "memory" }
@@ -101,36 +134,67 @@ func (c *Collector) Scan(ctx context.Context, deviceID string, cur collector.Cur
 		events []event.UsageEvent
 		byKey  = map[string]int{} // native key -> index in events (last write wins)
 	)
-	sc := scanner{
-		Root:    c.root,
-		Name:    "claudecode",
-		SkipDir: skipDir,
-		Line: func(_ *fileState, _ int64, raw []byte) error {
-			ev, nativeKey, ok := decodeLine(raw, deviceID)
-			if !ok {
-				return nil
-			}
-			if idx, dup := byKey[nativeKey]; dup {
-				events[idx] = ev
-				return nil
-			}
-			byKey[nativeKey] = len(events)
-			events = append(events, ev)
+	line := func(_ *fileState, _ int64, raw []byte) error {
+		ev, nativeKey, ok := decodeLine(raw, deviceID)
+		if !ok {
 			return nil
-		},
+		}
+		// The key is shared by every root: the same transcript copied into
+		// two config directories still yields one event per scan.
+		if idx, dup := byKey[nativeKey]; dup {
+			events[idx] = ev
+			return nil
+		}
+		byKey[nativeKey] = len(events)
+		events = append(events, ev)
+		return nil
 	}
 
-	next, err := sc.Scan(ctx, decodeCursor(cur))
-	switch {
-	case errors.Is(err, jsonlscan.ErrNoRoot):
+	var first string
+	if len(c.roots) > 0 && !collector.IsGlob(c.roots[0]) {
+		first = c.roots[0]
+	}
+	prev := decodeCursor(cur, first)
+	next := map[string]cursorState{}
+	var (
+		errs  []error
+		found bool
+	)
+	for _, root := range collector.ExpandRoots(c.roots) {
+		sc := scanner{Root: root, Name: "claudecode", SkipDir: skipDir, Line: line}
+		st, err := sc.Scan(ctx, prev[root])
+		switch {
+		case errors.Is(err, jsonlscan.ErrNoRoot):
+			// Not there (yet, or an unmounted disk): keep what we knew, so a
+			// folder that comes back is not re-read from the start.
+			if old, ok := prev[root]; ok {
+				next[root] = old
+			}
+			continue
+		case ctx.Err() != nil:
+			return events, cur, ctx.Err()
+		case err != nil:
+			errs = append(errs, err)
+			if old, ok := prev[root]; ok {
+				next[root] = old // retried from the same place next pass
+			}
+			continue
+		}
+		found = true
+		next[root] = st
+	}
+	if !found && len(errs) == 0 && len(next) == 0 {
 		return nil, cur, nil // tool not installed on this device
-	case err != nil:
-		return events, cur, err
 	}
 
-	encoded, err := json.Marshal(next)
+	encoded, err := json.Marshal(multiCursor{Roots: next})
 	if err != nil {
 		return events, cur, fmt.Errorf("claudecode: encode cursor: %w", err)
+	}
+	if len(errs) > 0 {
+		// Only a root that could not be read at all keeps its old cursor; the
+		// others advance, so their events are not sent again next pass.
+		return events, encoded, errors.Join(errs...)
 	}
 	return events, encoded, nil
 }

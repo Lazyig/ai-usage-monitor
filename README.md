@@ -32,13 +32,13 @@ Claude Code · Codex CLI · Antigravity CLI 를 여러 기기에서 쓸 때, 각
 
   | 도구 | 읽는 위치 |
   |---|---|
-  | Claude Code | `~/.claude/projects` |
+  | Claude Code | `~/.claude/projects`, `~/.config/claude/projects`, `~/.claude-*/projects` (설정 폴더를 여러 개 쓰는 경우, 아래 참고) |
   | Codex CLI | `~/.codex/sessions` (끝난 세션을 압축한 `.jsonl.zst` 포함) |
   | Antigravity CLI | `~/.gemini/antigravity-cli` |
   | Antigravity 데스크톱 앱 | `~/.gemini/antigravity` |
 
   - **처음 실행하면 위 위치에 남아 있는 과거 이력 전체를 보내고**, 이후에는 읽은 위치(커서)부터 새로 생긴 기록만 보냅니다. 같은 호출은 서버에서 한 번만 저장되므로 다시 보내도 중복되지 않습니다.
-  - 특정 도구를 빼거나 경로를 바꾸려면 에이전트 상태 디렉터리의 `config.json` 에서 `sources.<도구>.enabled` / `root` 를 고친 뒤 서비스를 재시작하세요. `extra_roots` 는 `root` 와 같은 구조로 함께 읽을 추가 폴더 목록입니다(현재 Antigravity 만 사용, 기본값은 데스크톱 앱 폴더, 빈 목록 `[]` 이면 끔).
+  - 특정 도구를 빼거나 경로를 바꾸려면 에이전트 상태 디렉터리의 `config.json` 에서 `sources.<도구>.enabled` / `root` 를 고친 뒤 서비스를 재시작하세요. `extra_roots` 는 `root` 와 같은 구조로 함께 읽을 추가 폴더 목록입니다(Claude Code 와 Antigravity 가 사용, Codex 는 `root` 만 읽음, 빈 목록 `[]` 이면 끔). 두 항목 모두 `*` 같은 glob 패턴을 쓸 수 있고, 패턴은 수집할 때마다 다시 펼쳐지므로 나중에 생긴 폴더도 재시작 없이 읽습니다.
   - 서비스를 멈추거나 SIGTERM/SIGINT 를 받으면 마지막으로 한 번 수집해 보낸 뒤 종료합니다(최대 15초). 마지막 주기 이후에 생긴 기록도 빠지지 않습니다.
   - 서버에 닿지 못하면 보낼 데이터를 로컬 큐에 쌓았다가 다시 보냅니다. 큐는 최대 500 MB 이고 넘치면 **오래된 것부터 버립니다**. 원본 로그가 남아 있다면 `ai-usage-agent rescan` 으로 다시 수집할 수 있습니다.
 
@@ -116,6 +116,35 @@ powershell -ExecutionPolicy Bypass -c "& ([scriptblock]::Create((irm https://<�
 - 서비스 등록에 실패해도 설치 명령은 경고만 출력하고 끝납니다. 이 경우 출력된 `ai-usage-agent run --state-dir ...` 명령으로 직접 실행할 수 있습니다.
 - 설치 후 `ai-usage-agent status` 와 대시보드의 **기기 관리**(마지막 수신 시각)로 데이터가 들어오는지 확인하세요.
 
+### Claude Code 설정 폴더를 여러 개 쓰는 경우
+
+`CLAUDE_CONFIG_DIR` 로 `~/.claude` 가 아닌 설정 폴더를 쓰거나(예: 회사용 `~/.claude-work`, 개인용 `~/.claude-personal`), 한 기기에서 여러 설정을 번갈아 쓴다면 그 폴더들도 읽게 할 수 있습니다. 경로는 **설정 폴더**(= `CLAUDE_CONFIG_DIR` 에 넣는 값)로 지정하면 되고, 에이전트가 그 안의 `projects` 를 읽습니다.
+
+- **기본으로 읽는 곳**: `~/.claude/projects`, `~/.config/claude/projects`, 그리고 패턴 `~/.claude-*/projects`. 이름이 `~/.claude-<무엇>` 이면 따로 지정하지 않아도 됩니다.
+- **설치할 때**: `--claude-dir` 를 폴더마다 한 번씩 붙입니다. 붙이지 않으면 설치하는 셸의 `$CLAUDE_CONFIG_DIR`(쉼표로 여러 개 가능)를 씁니다. 서비스는 사용자 셸의 환경변수를 보지 못하므로, 설치할 때 config.json 에 저장해 두는 방식입니다. 다시 설치해도 이미 추가한 폴더는 그대로 남습니다.
+
+  ```sh
+  curl -fsSL https://<서버>/downloads/install.sh | sh -s -- --server https://<서버> --token aum_... \
+    --claude-dir ~/work/claude-cfg --claude-dir "/data/claude cfg"
+  ```
+
+  ```powershell
+  ... -Server https://<서버> -Token aum_... -ClaudeDir 'D:\claude\work','D:\claude personal'
+  ```
+
+- **설치한 뒤에**: `roots` 명령으로 보고 고칩니다. 바꾸면 실행 중인 서비스를 재시작해 바로 반영합니다(`--no-restart` 로 끌 수 있음).
+
+  ```sh
+  ai-usage-agent roots list                       # 읽는 폴더와 패턴이 펼쳐진 결과, 로그 파일 수
+  ai-usage-agent roots add ~/work/claude-cfg      # → <홈>/work/claude-cfg/projects 로 저장
+  ai-usage-agent roots add '~/cfgs/*'             # 따옴표로 감싸면 패턴 그대로 저장
+  ai-usage-agent roots remove ~/.claude           # 기본 폴더도 뺄 수 있음(모두 빼면 Claude Code 수집이 꺼짐)
+  ai-usage-agent scan --root ~/work/claude-cfg    # 저장하지 않고 그 폴더만 미리 읽어 보기
+  ```
+
+  `~` 와 환경변수는 명령을 실행한 사용자 기준으로 펼쳐 절대경로로 저장합니다. 서비스가 다른 계정(Windows LocalSystem, root 의 systemd 유닛)으로 돌아도 같은 폴더를 가리키게 하기 위해서입니다. 폴더가 없거나 로그가 아직 없으면 경고만 하고 추가합니다.
+- 같은 대화가 두 폴더에 모두 있어도(복사, 심볼릭 링크) 서버에는 한 번만 저장됩니다. 셸에 `CLAUDE_CONFIG_DIR` 이 설정돼 있는데 그 폴더를 읽지 않고 있으면 `status` 와 `scan` 이 알려줍니다.
+
 ### 서버 없이 이 기기의 사용량만 보기
 
 `/downloads/` 의 바이너리는 `ai-usage-agent_<os>_<arch>` 이름으로 올라가 있습니다. 내려받아 바로 실행할 수 있습니다.
@@ -156,6 +185,7 @@ ai-usage-agent scan       로컬 로그를 읽어 사용량 표 출력 (설정 �
 ai-usage-agent run        주기적으로 수집해 서버로 전송 (서비스가 실행하는 명령)
 ai-usage-agent status     설정, 커서, 큐, 서버 연결 상태
 ai-usage-agent rescan     커서와 큐를 비워 처음부터 다시 읽기
+ai-usage-agent roots      읽는 로그 폴더 보기·추가·제거 (list | add | remove)
 ai-usage-agent install    config.json 작성 + OS 서비스 등록
 ai-usage-agent uninstall | start | stop | restart
 ```

@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+### 추가
+
+- Claude Code 설정 폴더를 여러 개 읽습니다. `CLAUDE_CONFIG_DIR` 로 `~/.claude` 가 아닌 곳을 쓰거나 한 기기에서 설정을 여러 개 쓰는 경우를 위한 기능입니다.
+  - 기본으로 `~/.config/claude/projects` 와 `~/.claude-*/projects` 도 읽습니다. 기존 설치도 업그레이드하면 이 폴더들이 추가됩니다(`config_version` 1).
+  - 설치할 때 `--claude-dir`(Windows `-ClaudeDir`)로 폴더를 지정합니다. 지정하지 않으면 설치하는 셸의 `$CLAUDE_CONFIG_DIR` 을 씁니다.
+  - 설치한 뒤에는 `ai-usage-agent roots list | add | remove` 로 보고 고칩니다. `scan --root` 로 저장하지 않고 미리 읽어 볼 수 있습니다.
+  - `root` / `extra_roots` 에 glob 패턴을 쓸 수 있고, 수집할 때마다 다시 펼칩니다.
+  - Claude Code 커서는 폴더별로 저장됩니다. 이전 형식의 커서는 기본 폴더의 것으로 이어받으므로 업그레이드해도 다시 읽지 않습니다.
+
 ### 수정
 
 - 에이전트가 서비스 정지나 SIGTERM/SIGINT 를 받으면 마지막으로 한 번 수집해 보낸 뒤 종료합니다(최대 15초). 지금까지는 마지막 주기 이후에 생긴 기록을 보내지 않고 끝나, 파드처럼 로그가 함께 사라지는 환경에서는 그 사용량이 빠졌습니다.

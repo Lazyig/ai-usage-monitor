@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,7 +25,9 @@ func cmdScan(args []string) error {
 		asJSON   = fs.Bool("json", false, "dump the raw events as JSON instead of the tables")
 		stateDir = fs.String("state-dir", "", "state directory (default: $AI_USAGE_STATE_DIR or the per-OS config dir)")
 		days     = fs.Int("days", 14, "how many days the per-day table shows (0 = all)")
+		roots    stringList
 	)
+	fs.Var(&roots, "root", "read this Claude Code config directory instead of the configured ones, repeatable; nothing is saved (try a folder before `roots add`)")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "usage: ai-usage-agent scan [flags]\n\nRead the local logs and print a usage summary. No server required.\n\nflags:\n")
 		fs.PrintDefaults()
@@ -49,6 +52,23 @@ func cmdScan(args []string) error {
 	cfg, _, err := agentcfg.Load(dir)
 	if err != nil {
 		return err
+	}
+	if len(roots) > 0 {
+		if sel != nil && !sel[event.SourceClaudeCode] {
+			return usagef("--root is for %s, which --source leaves out", event.SourceClaudeCode)
+		}
+		sel = selected{event.SourceClaudeCode: true}
+		var dirs []string
+		for _, r := range roots {
+			d, err := agentcfg.NormalizeRoot(event.SourceClaudeCode, r)
+			if err != nil {
+				return usagef("--root: %v", err)
+			}
+			dirs = append(dirs, d)
+		}
+		cfg.Sources[event.SourceClaudeCode] = &agentcfg.SourceConfig{Enabled: true, Root: dirs[0], ExtraRoots: dirs[1:]}
+	} else if hint := unconfiguredClaudeDirs(cfg); len(hint) > 0 {
+		printClaudeEnvHint(os.Stderr, hint)
 	}
 
 	ctx, stop := signalContext()

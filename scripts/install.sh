@@ -1,10 +1,16 @@
 #!/bin/sh
 # ai-usage-agent installer for Linux / macOS.
 #   curl -fsSL https://SERVER/downloads/install.sh | sh -s -- --server https://SERVER --token aum_xxx
+# Extra Claude Code config directories: --claude-dir DIR, once per directory
+# (default: $CLAUDE_CONFIG_DIR, read by the agent itself).
 # Downloads the binary matching this machine from SERVER/downloads/, verifies its
 # sha256 against manifest.json, installs it and registers the OS service.
 set -eu
 SERVER=""; TOKEN=""; PREFIX=""; NO_SERVICE=0
+# Newline separated: POSIX sh has no arrays, and a path never holds a newline.
+CLAUDE_DIRS=""
+nl='
+'
 while [ $# -gt 0 ]; do
   case "$1" in
     --server) SERVER="$2"; shift 2;;
@@ -12,8 +18,10 @@ while [ $# -gt 0 ]; do
     --token) TOKEN="$2"; shift 2;;
     --token=*) TOKEN="${1#*=}"; shift;;
     --prefix) PREFIX="$2"; shift 2;;
+    --claude-dir) CLAUDE_DIRS="$CLAUDE_DIRS$nl$2"; shift 2;;
+    --claude-dir=*) CLAUDE_DIRS="$CLAUDE_DIRS$nl${1#*=}"; shift;;
     --no-service) NO_SERVICE=1; shift;;
-    -h|--help) echo "usage: install.sh --server <url> [--token <token>] [--prefix <directory>] [--no-service]"; exit 0;;
+    -h|--help) echo "usage: install.sh --server <url> [--token <token>] [--claude-dir <directory>]... [--prefix <directory>] [--no-service]"; exit 0;;
     *) echo "unknown arg $1" >&2; exit 2;;
   esac
 done
@@ -53,8 +61,15 @@ if [ -x "$PREFIX/ai-usage-agent" ]; then "$PREFIX/ai-usage-agent" stop >/dev/nul
 install -m 0755 "$tmp/$name" "$PREFIX/ai-usage-agent"
 echo "installed $PREFIX/ai-usage-agent ($("$PREFIX/ai-usage-agent" version 2>/dev/null || echo unknown))"
 
+# One --claude-dir per directory. Globbing is off while splitting, so a quoted
+# pattern such as '~/.claude-*' reaches the agent as typed.
+set -- install --server "$SERVER" --token "$TOKEN"
+hint=""
+set -f; old_ifs=$IFS; IFS=$nl
+for d in $CLAUDE_DIRS; do set -- "$@" --claude-dir "$d"; hint="$hint --claude-dir '$d'"; done
+IFS=$old_ifs; set +f
 if [ "$NO_SERVICE" = 0 ] && [ -n "$TOKEN" ]; then
-  "$PREFIX/ai-usage-agent" install --server "$SERVER" --token "$TOKEN"
+  "$PREFIX/ai-usage-agent" "$@"
 else
-  echo "next: $PREFIX/ai-usage-agent install --server $SERVER --token <device token>"
+  echo "next: $PREFIX/ai-usage-agent install --server $SERVER --token <device token>$hint"
 fi

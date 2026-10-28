@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"ai-usage-monitor/internal/agentcfg"
+	"ai-usage-monitor/internal/event"
 )
 
 // cmdService implements install, uninstall, start, stop and restart.
@@ -24,7 +25,11 @@ func cmdService(cmd string, args []string) error {
 		name     = fs.String("name", "", "device name (default: this machine's hostname)")
 		interval = fs.Int("interval", 0, "seconds between collection passes (default 60)")
 		stateDir = fs.String("state-dir", "", "state directory (default: $AI_USAGE_STATE_DIR or the per-OS config dir)")
+		claude   stringList
 	)
+	if cmd == "install" {
+		fs.Var(&claude, "claude-dir", "extra Claude Code config directory to read, repeatable (default: $"+agentcfg.EnvClaudeConfigDir+", comma separated)")
+	}
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "usage: ai-usage-agent %s [flags]\n\n", cmd)
 		if cmd == "install" {
@@ -44,7 +49,7 @@ func cmdService(cmd string, args []string) error {
 	dir := resolveStateDir(*stateDir)
 
 	if cmd == "install" {
-		return install(dir, *server, *token, *name, *interval)
+		return install(dir, *server, *token, *name, *interval, claude)
 	}
 
 	svc, err := newService(dir)
@@ -68,7 +73,7 @@ func cmdService(cmd string, args []string) error {
 	return nil
 }
 
-func install(dir, server, token, name string, interval int) error {
+func install(dir, server, token, name string, interval int, claudeDirs []string) error {
 	cfg, _, err := agentcfg.Load(dir)
 	if err != nil {
 		return err
@@ -91,6 +96,9 @@ func install(dir, server, token, name string, interval int) error {
 	if strings.TrimSpace(cfg.DeviceToken) == "" {
 		return usagef("--token is required (or set %s); get one with `POST /api/v1/devices` on the server", agentcfg.EnvToken)
 	}
+	if err := addClaudeDirs(&cfg, claudeDirs); err != nil {
+		return err
+	}
 	if err := agentcfg.Save(dir, cfg); err != nil {
 		return err
 	}
@@ -98,6 +106,9 @@ func install(dir, server, token, name string, interval int) error {
 	// Never print the token, not even partially.
 	fmt.Printf("wrote %s (device %s, name %q, interval %ds)\n",
 		agentcfg.ConfigPath(dir), cfg.DeviceID, cfg.DeviceName, cfg.Interval())
+	fmt.Println()
+	printRoots(os.Stdout, event.SourceClaudeCode, *cfg.Source(event.SourceClaudeCode))
+	fmt.Printf("add another Claude Code config dir with: %s roots add <dir>\n\n", exeName())
 
 	svc, err := newService(dir)
 	if err != nil {
@@ -128,6 +139,35 @@ func install(dir, server, token, name string, interval int) error {
 		return nil
 	}
 	fmt.Println("service started")
+	return nil
+}
+
+// addClaudeDirs adds the Claude Code config directories given to install, or
+// those in $CLAUDE_CONFIG_DIR when none were, to cfg. Folders already
+// configured (a re-install, an upgrade) are kept; install only ever adds.
+func addClaudeDirs(cfg *agentcfg.Config, dirs []string) error {
+	fromEnv := false
+	if len(dirs) == 0 {
+		dirs, fromEnv = agentcfg.ClaudeConfigDirsFromEnv(), true
+	}
+	sc := cfg.Source(event.SourceClaudeCode)
+	if fromEnv && len(dirs) > 0 && !sc.Enabled {
+		// Only an explicit --claude-dir turns a disabled source back on.
+		fmt.Printf("%s is disabled; ignoring $%s\n", event.SourceClaudeCode, agentcfg.EnvClaudeConfigDir)
+		return nil
+	}
+	for _, d := range dirs {
+		root, err := agentcfg.NormalizeRoot(event.SourceClaudeCode, d)
+		if err != nil {
+			return usagef("--claude-dir: %v", err)
+		}
+		if !sc.AddRoot(root) {
+			continue
+		}
+		for _, w := range rootWarnings(event.SourceClaudeCode, root) {
+			fmt.Fprintf(os.Stderr, "warning: %s: %s\n", root, w)
+		}
+	}
 	return nil
 }
 

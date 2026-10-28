@@ -53,8 +53,9 @@ type Collector struct {
 // New returns a collector reading every root, normally the CLI's
 // ~/.gemini/antigravity-cli and the desktop app's ~/.gemini/antigravity, which
 // keep the same layout. Conversation ids are UUIDs, so the cursor (keyed by
-// file name) stays unambiguous across roots. A missing root is not an error,
-// it just contributes no events.
+// file name) stays unambiguous across roots. Roots may be glob patterns,
+// expanded on every scan. A missing root is not an error, it just contributes
+// no events.
 func New(roots ...string) collector.Collector {
 	var keep []string
 	seen := map[string]bool{}
@@ -150,7 +151,7 @@ func (c *Collector) Scan(ctx context.Context, deviceID string, cur collector.Cur
 
 	// A root without conversations (tool not installed there) simply
 	// contributes nothing: an empty result is not an error.
-	for _, root := range c.roots {
+	for _, root := range collector.ExpandRoots(c.roots) {
 		paths := conversationFiles(root)
 		if len(paths) == 0 {
 			continue
