@@ -79,6 +79,7 @@ export function Downloads() {
 
       {state.status === 'success' && <InstallGuideCard />}
       {state.status === 'success' && <UpdateGuideCard version={state.data.version} />}
+      {state.status === 'success' && <ClaudeDirsGuideCard />}
       {state.status === 'success' && <UninstallGuideCard />}
     </div>
   )
@@ -216,6 +217,42 @@ function UpdateGuideCard({ version }: { version: string }) {
           <p className="mt-1 text-200 text-fg2">설치할 때와 같이 관리자 권한 PowerShell 에서 실행하세요.</p>
         </div>
       </div>
+    </Card>
+  )
+}
+
+/** How to make an installed agent read more Claude Code config directories.
+ * Few setups need it, so it starts collapsed. */
+function ClaudeDirsGuideCard() {
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const update = updateCommands(origin)
+  return (
+    <Card className="mb-6">
+      <details className="group">
+        <summary className="cursor-pointer text-400 leading-400 font-semibold select-none marker:text-fg3">
+          Claude Code 설정 폴더 추가 <span className="text-200 font-normal text-fg3">— CLAUDE_CONFIG_DIR 로 여러 설정을 쓰는 경우</span>
+        </summary>
+        <div className="mt-3 text-200 text-fg2 [&_h3]:mt-3 [&_h3]:mb-1.5 [&_p]:my-2">
+          <p>
+            기본으로 <code>~/.claude</code>, <code>~/.config/claude</code>, <code>~/.claude-*</code> 폴더를 읽습니다. 다른 이름의 설정 폴더(
+            <code>CLAUDE_CONFIG_DIR</code> 에 넣는 값)는 그 기기에서 아래처럼 추가합니다. 실행 중인 서비스는 자동으로 재시작되고, 같은 대화가 여러 폴더에
+            있어도 한 번만 집계됩니다.
+          </p>
+          <h3>Linux / macOS</h3>
+          <CommandBox command="ai-usage-agent roots add ~/work/claude-cfg" />
+          <CommandBox command="ai-usage-agent roots list" />
+          <p>
+            root 로 설치했다면 <code>sudo</code> 를 붙이고 경로는 절대경로로 쓰세요. 명령을 찾지 못하면 <code>~/.local/bin/ai-usage-agent</code> 로
+            실행합니다. 업데이트하면서 함께 추가할 수도 있습니다:
+          </p>
+          <CommandBox command={`${update.unix} --claude-dir ~/work/claude-cfg`} />
+          <h3>Windows (관리자 PowerShell)</h3>
+          <CommandBox command={'& "$env:LOCALAPPDATA\\ai-usage-agent\\ai-usage-agent.exe" roots add D:\\claude\\work'} />
+          <p>
+            <code>roots remove</code> 로 빼고, <code>scan --root</code> 로 저장하지 않고 미리 읽어 볼 수 있습니다.
+          </p>
+        </div>
+      </details>
     </Card>
   )
 }
