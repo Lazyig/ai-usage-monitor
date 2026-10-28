@@ -19,7 +19,8 @@ func IsGlob(root string) bool { return strings.ContainsAny(root, "*?[") }
 // not exist (yet): collectors treat a missing root as "tool not used here".
 // Roots that resolve to the same real directory (a symlink, the same folder
 // listed twice, a pattern matching a configured root) are read once, under the
-// first spelling seen. Empty entries are dropped.
+// first spelling seen. A pattern that matches nothing but names an existing
+// folder literally is read as that folder. Empty entries are dropped.
 func ExpandRoots(roots []string) []string {
 	var out []string
 	seen := map[string]bool{}
@@ -44,6 +45,12 @@ func ExpandRoots(roots []string) []string {
 			continue
 		}
 		matches, err := filepath.Glob(r)
+		if len(matches) == 0 && isDir(r) {
+			// A real folder whose name merely contains * ? or [ (say
+			// /data/[team]/cfg) matches nothing as a pattern: read it as named.
+			add(r)
+			continue
+		}
 		if err != nil {
 			continue // malformed pattern: nothing to read
 		}

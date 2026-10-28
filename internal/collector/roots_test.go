@@ -40,3 +40,13 @@ func TestExpandRoots(t *testing.T) {
 		t.Errorf("ExpandRoots =\n %v\nwant\n %v", got, want)
 	}
 }
+
+func TestExpandRootsLiteralBracketFolder(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "[team]", "projects")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if got := ExpandRoots([]string{dir}); !slices.Equal(got, []string{dir}) {
+		t.Errorf("a folder named with [ ] was dropped: %v", got)
+	}
+}
