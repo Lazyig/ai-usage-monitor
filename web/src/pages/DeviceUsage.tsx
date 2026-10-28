@@ -234,7 +234,10 @@ export function DeviceUsage() {
       <StateContainer
         loading={usageState.status === 'loading' || devicesState.status === 'loading'}
         error={usageError ?? (devicesState.status === 'error' ? devicesState.message : null)}
-        onRetry={usageState.reload}
+        onRetry={() => {
+          if (usageState.status === 'error') usageState.reload()
+          if (devicesState.status === 'error') devicesState.reload()
+        }}
         empty={usageState.status === 'success' && rows.length === 0}
         emptyMessage="등록된 기기가 없습니다."
       >

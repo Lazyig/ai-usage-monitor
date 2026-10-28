@@ -100,8 +100,10 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   })
 
   if (res.status === 401) {
-    // A candidate checked by the login form is not the active session.
-    if (opts.token === undefined) unauthorizedHandler?.()
+    // A candidate checked by the login form is not the active session, and a
+    // request sent with a token since replaced (a slow one, from before a
+    // re-login) says nothing about the current one.
+    if (opts.token === undefined && token === authToken) unauthorizedHandler?.()
     const data = await safeJson(res)
     throw new ApiError(401, data?.error ?? 'unauthorized')
   }

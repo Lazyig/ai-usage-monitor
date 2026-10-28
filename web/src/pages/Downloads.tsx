@@ -26,7 +26,8 @@ export function Downloads() {
 
   useEffect(() => {
     let cancelled = false
-    setState({ status: 'loading' })
+    // A refresh keeps the cards up (an expanded guide stays open).
+    setState((s) => (s.status === 'success' ? s : { status: 'loading' }))
     getDownloadsManifest()
       .then((data) => {
         if (!cancelled) setState({ status: 'success', data })

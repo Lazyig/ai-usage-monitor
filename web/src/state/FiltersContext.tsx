@@ -83,6 +83,11 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
   return <FiltersContext.Provider value={value}>{children}</FiltersContext.Provider>
 }
 
+/** The refresh counter, or undefined outside a FiltersProvider. */
+export function useRefreshKey(): number | undefined {
+  return useContext(FiltersContext)?.refreshKey
+}
+
 export function useFilters(): FiltersContextValue {
   const ctx = useContext(FiltersContext)
   if (!ctx) throw new Error('useFilters must be used within FiltersProvider')

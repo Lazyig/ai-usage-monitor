@@ -14,8 +14,8 @@ import { TrendChart } from '../components/TrendChart'
 import { type ApiState, useApiData } from '../hooks/useApiData'
 import { type Metric, METRIC_OPTIONS } from '../lib/chartData'
 import { colorForKey, labelForKey } from '../lib/colors'
-import { formatCompact, formatFull, formatPercent, formatUsd } from '../lib/format'
-import { tokensOf } from '../lib/usage'
+import { formatCompact, formatFull, formatUsd } from '../lib/format'
+import { pricedShareLabel, tokensOf } from '../lib/usage'
 import { useFilters } from '../state/FiltersContext'
 
 /** Below this share of priced tokens the headline cost is materially
@@ -51,9 +51,9 @@ export function Overview() {
                 value={formatUsd(totals.cost_usd)}
                 hint={
                   costIncomplete ? (
-                    <Badge kind="warning">가격 반영 {formatPercent(totals.cost_known_ratio)}</Badge>
+                    <Badge kind="warning">{pricedShareLabel(totals.cost_known_ratio)}</Badge>
                   ) : (
-                    `가격 반영 ${formatPercent(totals.cost_known_ratio)}`
+                    pricedShareLabel(totals.cost_known_ratio)
                   )
                 }
                 warn={costIncomplete}
