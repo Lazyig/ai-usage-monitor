@@ -39,8 +39,7 @@ func (s *Store) Summary(ctx context.Context, f Filter, p Pricer) (Summary, error
 		byModel  = newAccSet()
 	)
 	for _, r := range rows {
-		at := fromMillis(r.bucket * dayMs)
-		usd, known, est := priceRow(p, r, at)
+		usd, known, est := priceRow(p, r)
 
 		total.add(r, usd, known, est)
 		bySource.at(r.source, func(a *acc) { a.key = r.source }).add(r, usd, known, est)
@@ -94,8 +93,7 @@ func (s *Store) Breakdown(ctx context.Context, f Filter, groupBy string, limit i
 
 	groups := newAccSet()
 	for _, r := range rows {
-		at := fromMillis(r.bucket * dayMs)
-		usd, known, est := priceRow(p, r, at)
+		usd, known, est := priceRow(p, r)
 		key := r.key
 		if groupBy == "model" {
 			key = r.model + "\x00" + r.source

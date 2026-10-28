@@ -381,6 +381,32 @@ func TestRowWithoutTimestampIsSkipped(t *testing.T) {
 	}
 }
 
+// The gen row can be checkpointed before its step row. Its usage must come out
+// once the step appears, even though the cursor already passed its idx.
+func TestGenRowPlacedOnceItsStepAppears(t *testing.T) {
+	root := t.TempDir()
+	db := newConversation(t, root, testConvID)
+	insertGen(t, db, 0, encGen(genFixture{
+		stepUUID: "late-step", model: "gemini-3.7-flash",
+		usage: usageFixture{uncached: 7, output: 3, response: 3, requestID: "req-late"},
+	}))
+	c := New(root)
+	evs, cur := scan(t, c, nil)
+	if len(evs) != 0 {
+		t.Fatalf("no timestamp yet, want nothing: %+v", evs)
+	}
+	insertStep(t, db, 0, stepTypeModelGeneration, encStep(stepFixture{
+		uuid: "late-step", ts: baseTime, conversationID: testConvID,
+	}))
+	evs, cur = scan(t, c, cur)
+	if len(evs) != 1 || evs[0].Input != 7 {
+		t.Fatalf("want the late row once its step exists, got %+v", evs)
+	}
+	if evs, _ = scan(t, c, cur); len(evs) != 0 {
+		t.Fatalf("placed row must not come back: %+v", evs)
+	}
+}
+
 func TestMissingRootIsEmpty(t *testing.T) {
 	for _, root := range []string{"", filepath.Join(t.TempDir(), "nope")} {
 		c := New(root)

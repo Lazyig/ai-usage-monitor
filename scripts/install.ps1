@@ -34,6 +34,8 @@ if ($got -ne $want) { Remove-Item -Force $tmp; throw "sha256 mismatch: got $got 
 Write-Host "sha256 ok"
 # Stop a running service (and any stray process) before replacing the binary.
 $svc = Get-Service -Name ai-usage-agent -ErrorAction SilentlyContinue
+# Remembered so a run that does not re-register the service starts it again.
+$wasRunning = [bool]($svc -and $svc.Status -eq 'Running')
 if ($svc -and $svc.Status -ne 'Stopped') {
   Write-Host "stopping running ai-usage-agent service"
   Stop-Service -Name ai-usage-agent -Force -ErrorAction SilentlyContinue
@@ -50,8 +52,15 @@ Write-Host "installed $dst"
 $agentArgs = @('install', '--server', $Server)
 if ($Token) { $agentArgs += @('--token', $Token) }
 foreach ($d in $ClaudeDir) { $agentArgs += @('--claude-dir', $d) }
-if ($Token -or $Update) { & $dst @agentArgs }
-else {
+if ($Token -or $Update) {
+  & $dst @agentArgs
+  # A native command's failure does not trip $ErrorActionPreference.
+  if ($LASTEXITCODE -ne 0) { throw "ai-usage-agent install failed (exit code $LASTEXITCODE)" }
+} else {
+  if ($wasRunning) {
+    Start-Service -Name ai-usage-agent
+    Write-Host "restarted the ai-usage-agent service with the new binary"
+  }
   $hint = ($ClaudeDir | ForEach-Object { " --claude-dir '$_'" }) -join ''
   Write-Host "next: $dst install --server $Server --token <device token>$hint"
 }

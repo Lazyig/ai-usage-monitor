@@ -140,7 +140,7 @@ func decodeIngest(t *testing.T, w http.ResponseWriter, req *http.Request) (inges
 
 func writeAccepted(w http.ResponseWriter, accepted, duplicates int) {
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"accepted":%d,"duplicates":%d}`, accepted, duplicates)
+	fmt.Fprintf(w, `{"accepted":%d,"duplicates":%d,"device_id":"dev"}`, accepted, duplicates)
 }
 
 // newClient wires a client to srv with a fast retry policy and a queue in a
@@ -869,7 +869,7 @@ func TestUpdatedEventsAreNotCountedAsRejected(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"accepted":6,"duplicates":2,"updated":2,"rejected":0}`))
+		_, _ = w.Write([]byte(`{"accepted":6,"duplicates":2,"updated":2,"rejected":0,"device_id":"dev"}`))
 	}))
 	defer srv.Close()
 
@@ -879,5 +879,58 @@ func TestUpdatedEventsAreNotCountedAsRejected(t *testing.T) {
 	}
 	if accepted != 6 || duplicates != 2 || rejected != 0 {
 		t.Errorf("accepted=%d duplicates=%d rejected=%d, want 6/2/0", accepted, duplicates, rejected)
+	}
+}
+
+// A 4xx that is not the server's own JSON error (a proxy's 404 page, an nginx
+// 413) never judged the batch: the queued copy must survive, since the cursors
+// already moved past it. The server's own rejection still drops it.
+func TestFlushKeepsBatchesOnAForeign4xx(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		status    int
+		body      string
+		wantKept  int
+		wantError bool
+	}{
+		{"proxy 404 page", http.StatusNotFound, "<html>not here</html>", 1, true},
+		{"nginx 413", http.StatusRequestEntityTooLarge, "<html>413 Request Entity Too Large</html>", 1, true},
+		{"server rejection", http.StatusBadRequest, `{"error":"invalid JSON body"}`, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.status)
+				fmt.Fprint(w, tc.body)
+			}))
+			defer srv.Close()
+			c := newClient(t, srv)
+			payload, err := c.encode(makeEvents(1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := c.Queue.Enqueue(payload); err != nil {
+				t.Fatal(err)
+			}
+			_, err = c.Flush(context.Background())
+			if (err != nil) != tc.wantError {
+				t.Fatalf("Flush error = %v, want error %v", err, tc.wantError)
+			}
+			if n, _, _ := c.Queue.Stats(); n != tc.wantKept {
+				t.Errorf("%d batches left, want %d", n, tc.wantKept)
+			}
+		})
+	}
+}
+
+// A 2xx JSON body that does not name the device is not the server's receipt.
+func TestAcknowledgementNeedsADeviceID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"status":"ok"}`)
+	}))
+	defer srv.Close()
+	c := newClient(t, srv)
+	_, _, _, err := c.Push(context.Background(), makeEvents(1))
+	if !Queued(err) {
+		t.Fatalf("a portal's 200 counted as delivery: %v", err)
 	}
 }

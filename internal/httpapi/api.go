@@ -55,6 +55,9 @@ type api struct {
 
 	mu       sync.Mutex
 	devCache map[string]cachedDevice // token hash -> device
+	// devGen counts forgetDevice calls. A lookup that raced one (read the
+	// device before a revoke committed) must not cache what it read.
+	devGen uint64
 }
 
 type cachedDevice struct {
@@ -244,6 +247,7 @@ func (a *api) lookupDevice(ctx context.Context, hash string) (store.Device, erro
 		a.mu.Unlock()
 		return c.dev, nil
 	}
+	gen := a.devGen
 	a.mu.Unlock()
 
 	dev, err := a.store.DeviceByTokenHash(ctx, hash)
@@ -251,7 +255,9 @@ func (a *api) lookupDevice(ctx context.Context, hash string) (store.Device, erro
 		return store.Device{}, err
 	}
 	a.mu.Lock()
-	a.devCache[hash] = cachedDevice{dev: dev, at: time.Now()}
+	if a.devGen == gen {
+		a.devCache[hash] = cachedDevice{dev: dev, at: time.Now()}
+	}
 	a.mu.Unlock()
 	return dev, nil
 }
@@ -260,6 +266,7 @@ func (a *api) lookupDevice(ctx context.Context, hash string) (store.Device, erro
 func (a *api) forgetDevice(id string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.devGen++
 	for hash, c := range a.devCache {
 		if c.dev.ID == id {
 			delete(a.devCache, hash)

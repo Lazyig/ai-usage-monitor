@@ -88,6 +88,11 @@ func (e UsageEvent) TotalInput() int64 {
 	return e.Input + e.CacheRead + e.CacheWrite5m + e.CacheWrite1h + e.CacheWrite
 }
 
+// MaxTokens bounds every token count of one event. No single model call comes
+// near it (context windows are a few million tokens); it keeps a corrupt or
+// hostile value from overflowing the server's 64-bit sums.
+const MaxTokens = 10_000_000_000
+
 // Valid reports obvious inconsistencies a collector should never emit.
 func (e UsageEvent) Valid() bool {
 	switch {
@@ -98,6 +103,9 @@ func (e UsageEvent) Valid() bool {
 	case e.Input < 0 || e.Output < 0 || e.CacheRead < 0 || e.CacheWrite < 0 || e.CacheWrite5m < 0 || e.CacheWrite1h < 0:
 		return false
 	case e.Reasoning < 0 || e.Reasoning > e.Output:
+		return false
+	case e.Input > MaxTokens || e.Output > MaxTokens || e.CacheRead > MaxTokens || e.CacheWrite > MaxTokens ||
+		e.CacheWrite5m > MaxTokens || e.CacheWrite1h > MaxTokens:
 		return false
 	}
 	return strings.TrimSpace(string(e.Source)) != ""

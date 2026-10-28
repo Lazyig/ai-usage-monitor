@@ -133,9 +133,11 @@ func (s *Store) Timeseries(ctx context.Context, f Filter, bucket, groupBy string
 			return Timeseries{}, err
 		}
 		for _, r := range rows {
-			startMs := r.bucket*bucketMs - seg.offsetSec*1000
-			at := fromMillis(startMs)
-			usd, known, est := priceRow(p, r, at)
+			// The segment's offset is the one at its buckets' start. On a
+			// fall-back day the last local hour still maps one bucket on, so
+			// the key is taken from the local calendar, not the arithmetic.
+			startMs := bucketStart(fromMillis(r.bucket*bucketMs-seg.offsetSec*1000).In(loc), bucket).UnixMilli()
+			usd, known, est := priceRow(p, r)
 			m, ok := series[r.key]
 			if !ok {
 				m = map[int64]*acc{}

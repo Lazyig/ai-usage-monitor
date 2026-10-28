@@ -67,8 +67,13 @@ want=$(tr -d '\n ' < "$tmp/manifest.json" | sed -n "s/.*\"name\":\"$name\"[^}]*\
 if command -v sha256sum >/dev/null; then got=$(sha256sum "$tmp/$name" | cut -d' ' -f1); else got=$(shasum -a 256 "$tmp/$name" | cut -d' ' -f1); fi
 [ "$got" = "$want" ] || { echo "sha256 mismatch: got $got want $want" >&2; exit 1; }
 echo "sha256 ok"
-# Stop a running service first so the restart picks up the new binary cleanly.
-if [ -x "$PREFIX/ai-usage-agent" ]; then "$PREFIX/ai-usage-agent" stop >/dev/null 2>&1 || true; fi
+# Stop a running service first so the restart picks up the new binary cleanly,
+# remembering that it ran: a run that does not re-register it starts it again.
+WAS_RUNNING=0
+if [ -x "$PREFIX/ai-usage-agent" ]; then
+  if "$PREFIX/ai-usage-agent" status --timeout 2s 2>/dev/null | grep -q '^service *running'; then WAS_RUNNING=1; fi
+  "$PREFIX/ai-usage-agent" stop >/dev/null 2>&1 || true
+fi
 install -m 0755 "$tmp/$name" "$PREFIX/ai-usage-agent"
 echo "installed $PREFIX/ai-usage-agent ($("$PREFIX/ai-usage-agent" version 2>/dev/null || echo unknown))"
 
@@ -83,8 +88,11 @@ for d in $CLAUDE_DIRS; do set -- "$@" --claude-dir "$d"; hint="$hint --claude-di
 IFS=$old_ifs; set +f
 if [ "$NO_SERVICE" = 0 ] && { [ -n "$TOKEN" ] || [ "$UPDATE" = 1 ]; }; then
   "$PREFIX/ai-usage-agent" "$@"
-elif [ "$UPDATE" = 1 ]; then
-  echo "updated; restart the agent you run yourself to use the new version"
 else
-  echo "next: $PREFIX/ai-usage-agent install --server $SERVER --token <device token>$hint"
+  if [ "$WAS_RUNNING" = 1 ]; then
+    "$PREFIX/ai-usage-agent" start && echo "restarted the ai-usage-agent service with the new binary"
+  elif [ "$UPDATE" = 1 ]; then
+    echo "updated; restart the agent you run yourself to use the new version"
+  fi
+  [ "$UPDATE" = 1 ] || echo "next: $PREFIX/ai-usage-agent install --server $SERVER --token <device token>$hint"
 fi

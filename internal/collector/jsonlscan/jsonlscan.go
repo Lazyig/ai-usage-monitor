@@ -130,6 +130,7 @@ func isCompressed(path string) bool {
 // skipped; only when no file at all could be read does Scan fail, so a broken
 // install is visible instead of silently reporting zero usage.
 func (s Scanner[T, PT]) Scan(ctx context.Context, prev Cursor[T]) (Cursor[T], error) {
+	root := s.walkRoot()
 	files, err := s.Files()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -147,7 +148,7 @@ func (s Scanner[T, PT]) Scan(ctx context.Context, prev Cursor[T]) (Cursor[T], er
 		if err := ctx.Err(); err != nil {
 			return Cursor[T]{}, err
 		}
-		key := cursorKey(s.Root, path)
+		key := cursorKey(root, path)
 		fi, err := os.Stat(path)
 		if err != nil {
 			fileErr = append(fileErr, fmt.Errorf("%s: stat %s: %w", s.Name, path, err))
@@ -222,20 +223,32 @@ func cursorKey(root, path string) string {
 	return filepath.ToSlash(rel)
 }
 
+// walkRoot is Root with symlinks resolved. filepath.WalkDir does not follow a
+// root that is itself a symlink (a projects folder moved to another disk and
+// linked back), so the walk starts at the target. Paths below it, and with them
+// the cursor keys, stay relative to the same directory either way.
+func (s Scanner[T, PT]) walkRoot() string {
+	if real, err := filepath.EvalSymlinks(s.Root); err == nil {
+		return real
+	}
+	return s.Root
+}
+
 // Files lists every *.jsonl below Root (plus *.jsonl.zst when Compressed), in
 // lexical order. Both tools nest their transcripts (per project and session,
 // or per date), so the walk recurses.
 func (s Scanner[T, PT]) Files() ([]string, error) {
 	var out []string
-	err := filepath.WalkDir(s.Root, func(path string, d fs.DirEntry, err error) error {
+	root := s.walkRoot()
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			if path == s.Root {
+			if path == root {
 				return err
 			}
 			return nil // unreadable subtree: skip it, keep collecting the rest
 		}
 		if d.IsDir() {
-			if path != s.Root && s.SkipDir != nil && s.SkipDir(d.Name()) {
+			if path != root && s.SkipDir != nil && s.SkipDir(d.Name()) {
 				return fs.SkipDir
 			}
 			return nil

@@ -82,7 +82,11 @@ func TestSymlinkedRootIsReadOnce(t *testing.T) {
 	if err := os.Symlink(real, link); err != nil {
 		t.Fatal(err)
 	}
-	_, cur := scan(t, New(real, link), nil)
+	// The link first: it is the spelling kept, and must still be read.
+	evs, cur := scan(t, New(link, real), nil)
+	if len(evs) != 1 {
+		t.Fatalf("a root that is a symlink must be read, got %d events", len(evs))
+	}
 	var mc multiCursor
 	if err := json.Unmarshal(cur, &mc); err != nil {
 		t.Fatal(err)
@@ -134,5 +138,30 @@ func TestMissingRootKeepsItsCursor(t *testing.T) {
 	}
 	if evs, _ := scan(t, c, cur); len(evs) != 0 {
 		t.Fatalf("a root that came back was re-read: %+v", evs)
+	}
+}
+
+// A folder a pattern matched keeps its progress while it is away.
+func TestGlobMatchKeepsItsCursorWhileAway(t *testing.T) {
+	base := t.TempDir()
+	work := filepath.Join(base, ".claude-work", "projects")
+	writeSession(t, work, "-p", "msg_w")
+	// A plain root next to the pattern, so the scan still has a folder to read
+	// (with only the pattern, nothing at all is read and the cursor is kept).
+	home := filepath.Join(base, ".claude", "projects")
+	writeSession(t, home, "-p", "msg_h")
+	c := New(home, filepath.Join(base, ".claude-*", "projects"))
+	_, cur := scan(t, c, nil)
+
+	away := filepath.Join(base, "parked")
+	if err := os.Rename(filepath.Join(base, ".claude-work"), away); err != nil {
+		t.Fatal(err)
+	}
+	_, cur = scan(t, c, cur)
+	if err := os.Rename(away, filepath.Join(base, ".claude-work")); err != nil {
+		t.Fatal(err)
+	}
+	if evs, _ := scan(t, c, cur); len(evs) != 0 {
+		t.Fatalf("a matched folder that came back was re-read: %+v", evs)
 	}
 }

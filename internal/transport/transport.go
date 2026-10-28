@@ -467,8 +467,13 @@ func (c *Client) sendOnce(ctx context.Context, payload []byte, count int) (Stats
 		return Stats{}, &AuthError{StatusCode: resp.StatusCode, Body: snippet(body)}, false
 	case resp.StatusCode == http.StatusRequestTimeout, resp.StatusCode == http.StatusTooManyRequests:
 		return Stats{}, fmt.Errorf("transport: ingest: temporary HTTP %d: %s", resp.StatusCode, snippet(body)), true
-	case resp.StatusCode/100 == 4:
+	case resp.StatusCode/100 == 4 && serverRejection(body):
 		return Stats{}, &PermanentError{StatusCode: resp.StatusCode, Body: snippet(body)}, false
+	case resp.StatusCode/100 == 4:
+		// Not the server's own answer: a proxy's 404/413 page, a changed path
+		// prefix. The batch was never judged, so keep it (queued data would
+		// otherwise be deleted with its cursors already past it).
+		return Stats{}, fmt.Errorf("transport: ingest: HTTP %d not from the server: %s", resp.StatusCode, snippet(body)), true
 	case resp.StatusCode/100 != 2:
 		return Stats{}, fmt.Errorf("transport: ingest: HTTP %d: %s", resp.StatusCode, snippet(body)), true
 	}
@@ -486,6 +491,11 @@ func (c *Client) sendOnce(ctx context.Context, payload []byte, count int) (Stats
 		// offline queue. Replaying an already-stored event is idempotent.
 		return Stats{}, fmt.Errorf("transport: ingest acknowledgement: %w", err), true
 	}
+	if out.DeviceID == "" {
+		// The server always names the device. Any other JSON (a portal's
+		// {"status":"ok"}, null) is not an acknowledgement.
+		return Stats{}, errors.New("transport: ingest acknowledgement without device_id"), true
+	}
 	st := Stats{Accepted: out.Accepted, Duplicates: out.Duplicates, Updated: out.Updated, Requests: 1, Resync: out.Resync}
 	if count >= 0 {
 		if r := count - out.Accepted - out.Duplicates - out.Updated; r > 0 {
@@ -493,6 +503,15 @@ func (c *Client) sendOnce(ctx context.Context, payload []byte, count int) (Stats
 		}
 	}
 	return st, nil, false
+}
+
+// serverRejection reports whether a 4xx body is the server's own error reply
+// ({"error": "..."}), i.e. it read the batch and refused it.
+func serverRejection(body []byte) bool {
+	var e struct {
+		Error string `json:"error"`
+	}
+	return json.Unmarshal(body, &e) == nil && e.Error != ""
 }
 
 // backoff is base * 2^(attempt-1) with full jitter, capped at MaxDelay.
