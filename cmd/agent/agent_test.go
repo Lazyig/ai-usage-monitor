@@ -51,6 +51,7 @@ func setupState(t *testing.T) string {
 	t.Setenv("APPDATA", "")
 	t.Setenv(agentcfg.EnvServer, "")
 	t.Setenv(agentcfg.EnvToken, "")
+	t.Setenv(agentcfg.EnvClaudeConfigDir, "")
 
 	dir := filepath.Join(home, "state")
 	cfg := agentcfg.Defaults()

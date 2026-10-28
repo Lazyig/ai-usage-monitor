@@ -113,8 +113,9 @@ func (a *agent) pass(ctx context.Context, resyncOK bool) error {
 		got, cur, err := c.Collector.Scan(ctx, a.cfg.DeviceID, a.cursors.Get(c.Source))
 		if err != nil {
 			scanErr = append(scanErr, fmt.Errorf("%s: %w", c.Source, err))
-			// Keep whatever the collector managed to produce; its cursor came
-			// back unchanged, so nothing is skipped on the next pass.
+			// Keep whatever the collector managed to produce; its cursor only
+			// moved past what it returned (a multi-folder collector advances
+			// the folders it could read), so nothing is skipped next pass.
 		}
 		events = append(events, got...)
 		next[c.Source] = cur

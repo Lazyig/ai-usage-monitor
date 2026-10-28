@@ -2,7 +2,9 @@
 # script block (plain `irm | iex` cannot pass -Server/-Token):
 #   powershell -ExecutionPolicy Bypass -c "& ([scriptblock]::Create((irm https://SERVER/downloads/install.ps1))) -Server https://SERVER -Token aum_xxx"
 # or download it and run: .\install.ps1 -Server https://SERVER -Token aum_xxx
-param([string]$Server, [string]$Token, [string]$Prefix = "$env:LOCALAPPDATA\ai-usage-agent")
+# Extra Claude Code config directories: -ClaudeDir 'C:\cfg\work','D:\claude personal'
+# (default: $env:CLAUDE_CONFIG_DIR, read by the agent itself).
+param([string]$Server, [string]$Token, [string]$Prefix = "$env:LOCALAPPDATA\ai-usage-agent", [string[]]$ClaudeDir = @())
 $ErrorActionPreference = "Stop"
 if (-not $Server) { throw "-Server required" }
 $Server = $Server.TrimEnd('/')
@@ -38,5 +40,10 @@ for ($i = 0; $i -lt 10 -and -not $moved; $i++) {
 }
 if (-not $moved) { throw "could not replace $dst (still in use). Stop the ai-usage-agent service and retry." }
 Write-Host "installed $dst"
-if ($Token) { & $dst install --server $Server --token $Token }
-else { Write-Host "next: $dst install --server $Server --token <device token>" }
+$agentArgs = @('install', '--server', $Server, '--token', $Token)
+foreach ($d in $ClaudeDir) { $agentArgs += @('--claude-dir', $d) }
+if ($Token) { & $dst @agentArgs }
+else {
+  $hint = ($ClaudeDir | ForEach-Object { " --claude-dir '$_'" }) -join ''
+  Write-Host "next: $dst install --server $Server --token <device token>$hint"
+}

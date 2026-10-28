@@ -18,24 +18,30 @@ import (
 type factory func(roots []string) collector.Collector
 
 // registry is the single place that knows which collectors are compiled in.
-// Only Antigravity reads more than one root (CLI and desktop app).
+// Codex reads only its root; the others read every root (Claude Code: one per
+// config directory, Antigravity: CLI and desktop app).
 var registry = map[event.Source]factory{
-	event.SourceClaudeCode:  func(roots []string) collector.Collector { return claudecode.New(roots[0]) },
+	event.SourceClaudeCode:  func(roots []string) collector.Collector { return claudecode.New(roots...) },
 	event.SourceCodex:       func(roots []string) collector.Collector { return codex.New(roots[0]) },
 	event.SourceAntigravity: func(roots []string) collector.Collector { return antigravity.New(roots...) },
 }
 
-// usedRoots is what a source's collector actually reads, for display.
+// usedRoots is what a source's collector is configured to read, for display.
+// Entries may be glob patterns.
 func usedRoots(s event.Source, sc agentcfg.SourceConfig) []string {
-	if s == event.SourceAntigravity {
-		return sc.Roots()
+	if !multiRoot(s) {
+		return []string{sc.Root}
 	}
-	return []string{sc.Root}
+	return sc.Roots()
 }
 
-// anyDirExists reports whether at least one of the roots is present.
+// multiRoot reports whether the source's collector reads ExtraRoots too.
+func multiRoot(s event.Source) bool { return s != event.SourceCodex }
+
+// anyDirExists reports whether at least one of the roots (patterns expanded)
+// is present.
 func anyDirExists(roots []string) bool {
-	for _, r := range roots {
+	for _, r := range collector.ExpandRoots(roots) {
 		if dirExists(r) {
 			return true
 		}

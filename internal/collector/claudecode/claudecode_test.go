@@ -249,7 +249,7 @@ func TestCursorForgetsDeletedFiles(t *testing.T) {
 	}
 	_, cur = scan(t, c, cur)
 
-	st := decodeCursor(cur)
+	st := decodeCursor(cur, root)[filepath.Clean(root)]
 	if _, ok := st.Files["-home-user-proj-beta/partial.jsonl"]; ok {
 		t.Error("cursor must drop entries for files that no longer exist")
 	}
