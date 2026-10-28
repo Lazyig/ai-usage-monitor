@@ -31,3 +31,15 @@ foreach ($kind in @('valid', 'missing', 'short', 'mismatch', 'duplicate')) {
     Write-Host "PASS PowerShell installer: $kind"
   } finally { Remove-Item -Recurse -Force $dir }
 }
+
+# -Update with no agent at the prefix (wrong account or -Prefix) stops before downloading anything.
+$dir = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $dir | Out-Null
+try {
+  $global:ReviewInstallerEntries = @(@{ name = $name; sha256 = $expected })
+  $failure = ''
+  try { & "$PSScriptRoot/install.ps1" -Server 'https://example.test' -Prefix $dir -Update } catch { $failure = $_.Exception.Message }
+  if ($failure -notlike '*no agent at*') { throw "-Update without an installed agent did not refuse: '$failure'" }
+  if (Test-Path (Join-Path $dir 'ai-usage-agent.exe.new')) { throw "-Update downloaded before refusing" }
+  Write-Host "PASS PowerShell installer: update needs an installed agent"
+} finally { Remove-Item -Recurse -Force $dir }

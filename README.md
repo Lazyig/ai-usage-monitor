@@ -110,7 +110,7 @@ curl -fsSL https://<서버>/downloads/install.sh | sh -s -- --server https://<�
 powershell -ExecutionPolicy Bypass -c "& ([scriptblock]::Create((irm https://<서버>/downloads/install.ps1))) -Server https://<서버> -Token aum_..."
 ```
 
-설치 스크립트는 기기에 맞는 바이너리를 내려받고, `manifest.json` 에서 해당 파일의 sha256 을 찾으면 대조해 검증합니다(찾지 못하면 검증을 건너뜁니다). 해시도 같은 서버에서 받으므로 전송 중 손상은 막지만 서버 자체를 신뢰하는 것을 전제로 합니다. 이후 OS 서비스로 등록합니다.
+설치 스크립트는 기기에 맞는 바이너리를 내려받고, `manifest.json` 의 sha256 과 대조해 검증하고, 맞지 않거나 해시가 없으면 설치하지 않습니다. 해시도 같은 서버에서 받으므로 전송 중 손상은 막지만 서버 자체를 신뢰하는 것을 전제로 합니다. 이후 OS 서비스로 등록합니다.
 
 - Linux 는 root 면 시스템 systemd 서비스, 일반 사용자면 사용자 서비스(`systemctl --user`), macOS 는 launchd, Windows 는 Windows 서비스로 등록됩니다.
 - 서비스 등록에 실패해도 설치 명령은 경고만 출력하고 끝납니다. 이 경우 출력된 `ai-usage-agent run --state-dir ...` 명령으로 직접 실행할 수 있습니다.
@@ -144,6 +144,24 @@ powershell -ExecutionPolicy Bypass -c "& ([scriptblock]::Create((irm https://<�
 
   `~` 와 환경변수는 명령을 실행한 사용자 기준으로 펼쳐 절대경로로 저장합니다. 서비스가 다른 계정(Windows LocalSystem, root 의 systemd 유닛)으로 돌아도 같은 폴더를 가리키게 하기 위해서입니다. 폴더가 없거나 로그가 아직 없으면 경고만 하고 추가합니다.
 - 같은 대화가 두 폴더에 모두 있어도(복사, 심볼릭 링크) 서버에는 한 번만 저장됩니다. 셸에 `CLAUDE_CONFIG_DIR` 이 설정돼 있는데 그 폴더를 읽지 않고 있으면 `status` 와 `scan` 이 알려줍니다.
+
+### 에이전트 업데이트
+
+서버를 새 버전으로 올리면 `/downloads/` 의 에이전트도 함께 바뀝니다. **기기 관리**는 각 기기가 마지막으로 보고한 에이전트 버전을 `manifest.json` 의 버전과 비교해, 다른 기기에 **버전 불일치** 표시를 하고 업데이트 명령을 보여줍니다(폐기된 기기와 `dev` 빌드는 비교하지 않음). 같은 명령은 **다운로드** 페이지에도 있습니다.
+
+```sh
+# Linux / macOS — 처음 설치한 계정으로 (root 로 설치했다면 sudo sh)
+curl -fsSL https://<서버>/downloads/install.sh | sh -s -- --server https://<서버> --update
+```
+
+```powershell
+# Windows (관리자 권한 PowerShell)
+powershell -ExecutionPolicy Bypass -c "& ([scriptblock]::Create((irm https://<서버>/downloads/install.ps1))) -Server https://<서버> -Update"
+```
+
+- 토큰이 필요 없습니다. 바이너리만 바꾸고, `config.json` 에 있는 서버 주소·토큰·수집 폴더로 서비스를 다시 등록해 시작합니다. 새 버전은 다음 하트비트(1분 이내)에 보고됩니다.
+- 그 자리에 설치된 에이전트가 없으면(다른 계정으로 실행했거나 `--prefix` 가 다름) 아무것도 내려받지 않고 멈춥니다.
+- `--token` 으로 다시 설치해도 업데이트되지만, 토큰은 발급할 때 한 번만 보이므로 보통은 `--update` 를 씁니다.
 
 ### 서버 없이 이 기기의 사용량만 보기
 

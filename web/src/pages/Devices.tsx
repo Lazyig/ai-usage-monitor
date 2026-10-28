@@ -7,7 +7,7 @@ import { KeyReset20Regular } from '@fluentui/react-icons/headless/svg/key-reset'
 import { MoreHorizontal20Regular } from '@fluentui/react-icons/headless/svg/more-horizontal'
 import { Prohibited20Regular } from '@fluentui/react-icons/headless/svg/prohibited'
 import { useMemo, useState, type FormEvent } from 'react'
-import { createDevice, renameDevice, deleteDevice, getDevices, purgeDevice, purgeDeviceEvents, requestResync, rotateDevice } from '../api/client'
+import { createDevice, renameDevice, deleteDevice, getDevices, getDownloadsManifest, purgeDevice, purgeDeviceEvents, requestResync, rotateDevice } from '../api/client'
 import type { Device } from '../api/types'
 import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
@@ -24,9 +24,10 @@ import { Input } from '../components/ui/input'
 import { Spinner } from '../components/ui/spinner'
 import { Tooltip } from '../components/ui/tooltip'
 import { useApiData } from '../hooks/useApiData'
+import { agentVersionStatus } from '../lib/agentVersion'
 import { describeError } from '../lib/errors'
 import { formatDateTime, formatFull, formatRelative, isStale } from '../lib/format'
-import { installCommands } from '../lib/installCommands'
+import { installCommands, updateCommands } from '../lib/installCommands'
 import { useFilters } from '../state/FiltersContext'
 
 interface ConfirmState {
@@ -37,6 +38,10 @@ interface ConfirmState {
 export function Devices() {
   const { refreshKey, refresh } = useFilters()
   const state = useApiData(() => getDevices(), [refreshKey])
+  // The published agent build, which the update command installs. Without a
+  // manifest (or on a dev build) there is nothing to compare, and no badges.
+  const manifest = useApiData(() => getDownloadsManifest(), [refreshKey])
+  const published = manifest.status === 'success' ? manifest.data.version : ''
   const [newToken, setNewToken] = useState<{ name: string; token: string; id: string } | null>(null)
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
@@ -148,6 +153,15 @@ export function Devices() {
 
   const revokedCount = state.status === 'success' ? state.data.devices.filter((d) => d.revoked_at).length : 0
 
+  // Revoked devices cannot update (their token is gone), so they are not counted.
+  const mismatched = useMemo(
+    () =>
+      state.status === 'success'
+        ? state.data.devices.filter((d) => !d.revoked_at && agentVersionStatus(d.agent_version, published) === 'mismatch')
+        : [],
+    [state, published],
+  )
+
   const columns: Column<Device>[] = [
     {
       key: 'name',
@@ -226,7 +240,19 @@ export function Devices() {
       },
     },
     { key: 'os', header: 'OS / Arch', render: (d) => `${d.os}/${d.arch}`, sortValue: (d) => `${d.os}/${d.arch}` },
-    { key: 'agent_version', header: '에이전트 버전', render: (d) => d.agent_version, sortValue: (d) => d.agent_version },
+    {
+      key: 'agent_version',
+      header: '에이전트 버전',
+      render: (d) => (
+        <span>
+          {d.agent_version || '-'}{' '}
+          {!d.revoked_at && agentVersionStatus(d.agent_version, published) === 'mismatch' && (
+            <Badge kind="outdated" title={`배포 중인 버전: ${published}`} />
+          )}
+        </span>
+      ),
+      sortValue: (d) => d.agent_version,
+    },
     {
       key: 'last_seen',
       header: '마지막 하트비트',
@@ -317,6 +343,8 @@ export function Devices() {
         </p>
       )}
 
+      {mismatched.length > 0 && <UpdateNotice origin={origin} published={published} devices={mismatched} />}
+
       <Checkbox
         className="mb-3"
         checked={showRevoked}
@@ -399,6 +427,47 @@ export function Devices() {
           onCancel={() => setConfirmState(null)}
         />
       )}
+    </div>
+  )
+}
+
+/** Lists the devices whose agent differs from the published build, with the
+ * update one-liners. The update keeps config.json, so no token is involved. */
+function UpdateNotice({ origin, published, devices }: { origin: string; published: string; devices: Device[] }) {
+  const cmds = updateCommands(origin)
+  return (
+    <div
+      role="status"
+      className="mx-0 mt-0 mb-4 rounded-md border border-warning-stroke bg-warning-bg p-3 text-300 text-fg1 [&_code]:min-w-0 [&_code]:flex-1 [&_code]:overflow-x-auto [&_code]:rounded-md [&_code]:border [&_code]:border-stroke2 [&_code]:bg-bg1 [&_code]:px-2.5 [&_code]:py-2 [&_code]:font-mono [&_code]:text-200 [&_code]:whitespace-pre"
+    >
+      <strong>
+        배포 중인 버전({published})과 다른 에이전트가 {devices.length}대 있습니다.
+      </strong>
+      <ul className="mx-0 my-1.5 list-disc pl-[18px] text-200 text-fg2">
+        {devices.map((d) => (
+          <li key={d.id}>
+            {d.name} — {d.agent_version}
+          </li>
+        ))}
+      </ul>
+      <p className="m-0 text-200 text-fg2">
+        해당 기기에서 아래 명령을 실행하면 서버 주소·토큰·수집 폴더 설정을 그대로 둔 채 업데이트되고, 1분 안에 새 버전이 보고됩니다. 처음 설치한 계정으로
+        실행하세요(root 로 설치했다면 <strong>sudo sh</strong>, Windows 는 관리자 PowerShell).
+      </p>
+      <p style={{ marginTop: 10, marginBottom: 2 }}>Linux / macOS</p>
+      <div className="mt-1.5 flex items-center gap-2 [&_[data-slot=button]]:shrink-0">
+        <code>{cmds.unix}</code>
+        <Button touch size="small" onClick={() => navigator.clipboard?.writeText(cmds.unix)} aria-label="Linux / macOS 업데이트 명령 복사">
+          복사
+        </Button>
+      </div>
+      <p style={{ marginTop: 10, marginBottom: 2 }}>Windows (관리자 PowerShell)</p>
+      <div className="mt-1.5 flex items-center gap-2 [&_[data-slot=button]]:shrink-0">
+        <code>{cmds.windows}</code>
+        <Button touch size="small" onClick={() => navigator.clipboard?.writeText(cmds.windows)} aria-label="Windows 업데이트 명령 복사">
+          복사
+        </Button>
+      </div>
     </div>
   )
 }

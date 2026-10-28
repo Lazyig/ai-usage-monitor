@@ -4,9 +4,15 @@
 # or download it and run: .\install.ps1 -Server https://SERVER -Token aum_xxx
 # Extra Claude Code config directories: -ClaudeDir 'C:\cfg\work','D:\claude personal'
 # (default: $env:CLAUDE_CONFIG_DIR, read by the agent itself).
-param([string]$Server, [string]$Token, [string]$Prefix = "$env:LOCALAPPDATA\ai-usage-agent", [string[]]$ClaudeDir = @())
+# Update an installed agent, keeping its config.json (server, token, folders): -Update instead of -Token,
+# from an elevated PowerShell of the account that installed it.
+param([string]$Server, [string]$Token, [string]$Prefix = "$env:LOCALAPPDATA\ai-usage-agent", [string[]]$ClaudeDir = @(), [switch]$Update)
 $ErrorActionPreference = "Stop"
 if (-not $Server) { throw "-Server required" }
+# An update replaces an existing agent in place; none here means the wrong account or -Prefix.
+if ($Update -and -not $Token -and -not (Test-Path (Join-Path $Prefix "ai-usage-agent.exe"))) {
+  throw "-Update: no agent at $Prefix\ai-usage-agent.exe. Run as the account that installed it, pass -Prefix, or install with -Token."
+}
 $Server = $Server.TrimEnd('/')
 $arch = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'arm64' } else { 'amd64' }
 $name = "ai-usage-agent_windows_$arch.exe"
@@ -40,9 +46,11 @@ for ($i = 0; $i -lt 10 -and -not $moved; $i++) {
 }
 if (-not $moved) { throw "could not replace $dst (still in use). Stop the ai-usage-agent service and retry." }
 Write-Host "installed $dst"
-$agentArgs = @('install', '--server', $Server, '--token', $Token)
+# An update passes no token: `install` keeps the one in config.json and re-registers the service.
+$agentArgs = @('install', '--server', $Server)
+if ($Token) { $agentArgs += @('--token', $Token) }
 foreach ($d in $ClaudeDir) { $agentArgs += @('--claude-dir', $d) }
-if ($Token) { & $dst @agentArgs }
+if ($Token -or $Update) { & $dst @agentArgs }
 else {
   $hint = ($ClaudeDir | ForEach-Object { " --claude-dir '$_'" }) -join ''
   Write-Host "next: $dst install --server $Server --token <device token>$hint"
