@@ -1,8 +1,9 @@
-import type { ReactElement, ReactNode } from 'react'
+import type { ReactElement } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { TooltipProps } from 'recharts'
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent'
 import { formatPercent } from '../lib/format'
+import { TooltipDivider, TooltipRow, TooltipShell } from './ChartTooltip'
 import { PHONE_QUERY, useMediaQuery } from '../hooks/useMediaQuery'
 
 export interface CompositionRow {
@@ -179,70 +180,6 @@ export function CompositionLegend({ segments }: { segments: CompositionSegment[]
       ))}
     </div>
   )
-}
-
-// ---- tooltip building blocks, shared with page-specific tooltips ---------
-
-/** The themed popover every chart tooltip sits in. `minWidth` keeps a
- * multi-row tooltip from reflowing as the hovered values change width. */
-export function TooltipShell({ label, minWidth = 190, children }: { label?: ReactNode; minWidth?: number; children: ReactNode }) {
-  return (
-    <div
-      style={{
-        background: 'var(--colorNeutralBackground1)',
-        border: '1px solid var(--colorTransparentStroke)',
-        borderRadius: 'var(--borderRadiusLarge)',
-        padding: '8px 12px',
-        fontSize: 12,
-        boxShadow: 'var(--shadow16)',
-        ...(minWidth > 0 ? { minWidth } : {}),
-      }}
-    >
-      <div style={{ color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
-      {children}
-    </div>
-  )
-}
-
-/** One `label ......... value` line, optionally with a colour swatch. */
-export function TooltipRow({
-  color,
-  label,
-  gap = 8,
-  bold,
-  muted,
-  children,
-}: {
-  color?: string
-  label: string
-  gap?: number
-  bold?: boolean
-  muted?: boolean
-  children: ReactNode
-}) {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        gap,
-        justifyContent: 'space-between',
-        color: muted ? 'var(--text-secondary)' : 'var(--text-primary)',
-        ...(bold ? { fontWeight: 600 } : {}),
-      }}
-    >
-      <span>
-        {color && (
-          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: color, marginRight: 6 }} />
-        )}
-        {label}
-      </span>
-      <span style={{ fontVariantNumeric: 'tabular-nums' }}>{children}</span>
-    </div>
-  )
-}
-
-export function TooltipDivider() {
-  return <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0 4px' }} />
 }
 
 /** "gemini-3.7-flash-control" -> "gemini-…-control": keeps both ends, which is

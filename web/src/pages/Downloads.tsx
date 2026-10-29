@@ -1,76 +1,60 @@
-import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { ApiError, getDownloadsManifest } from '../api/client'
 import type { DownloadFile, DownloadsManifest } from '../api/types'
 import { OsBadge, osLabel } from '../components/Badge'
 import { Card } from '../components/Card'
+import { CommandBox } from '../components/CommandBox'
 import { type Column, DataTable } from '../components/DataTable'
-import { StateContainer } from '../components/StateContainer'
+import { Notice } from '../components/Notice'
+import { PageHeader } from '../components/PageHeader'
+import { EmptyState, StateContainer } from '../components/StateContainer'
 import { Button } from '../components/ui/button'
 import { Tooltip } from '../components/ui/tooltip'
-import { describeError } from '../lib/errors'
+import { useApiData } from '../hooks/useApiData'
+import { copyText } from '../lib/clipboard'
 import { formatBytes, formatDateTime } from '../lib/format'
-import { installCommands, isInsecureOrigin, uninstallCommands, updateCommands } from '../lib/installCommands'
+import { currentOrigin, installCommands, isInsecureOrigin, uninstallCommands, updateCommands } from '../lib/installCommands'
 import { useFilters } from '../state/FiltersContext'
 
 const TOKEN_PLACEHOLDER = '<기기 관리에서 발급받은 토큰>'
 
-type LoadState =
-  | { status: 'loading' }
-  | { status: 'not-built' }
-  | { status: 'error'; message: string }
-  | { status: 'success'; data: DownloadsManifest }
+/** The manifest, or null when no agent has been built yet (the server
+ * answers 404 until CI publishes the first release). */
+function getManifestIfBuilt(): Promise<DownloadsManifest | null> {
+  return getDownloadsManifest().catch((err: unknown) => {
+    if (err instanceof ApiError && err.status === 404) return null
+    throw err
+  })
+}
 
 export function Downloads() {
   const { refreshKey } = useFilters()
-  const [state, setState] = useState<LoadState>({ status: 'loading' })
-
-  useEffect(() => {
-    let cancelled = false
-    // A refresh keeps the cards up (an expanded guide stays open).
-    setState((s) => (s.status === 'success' ? s : { status: 'loading' }))
-    getDownloadsManifest()
-      .then((data) => {
-        if (!cancelled) setState({ status: 'success', data })
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return
-        if (err instanceof ApiError && err.status === 404) {
-          setState({ status: 'not-built' })
-        } else {
-          setState({ status: 'error', message: describeError(err) })
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [refreshKey])
+  // A refresh keeps the cards up (an expanded guide stays open).
+  const state = useApiData(getManifestIfBuilt, [refreshKey])
+  const manifest = state.status === 'success' ? state.data : null
 
   return (
     <div>
-      <div className="mt-2 mb-5 flex flex-wrap items-center justify-between gap-3 [&>h1]:m-0">
-        <h1>다운로드</h1>
-      </div>
+      <PageHeader title="다운로드" />
 
-      {isInsecureOrigin(typeof window !== 'undefined' ? window.location.origin : '') && (
-        <p className="mx-0 mt-0 mb-4 rounded-md border border-warning-stroke bg-warning-bg px-3 py-2 text-200 leading-200 [&_strong]:text-warning-fg" role="note">
+      {isInsecureOrigin(currentOrigin()) && (
+        <Notice className="mt-0 mb-4">
           <strong>HTTP 로 접속 중</strong> — 에이전트 바이너리와 기기 토큰이 암호화되지 않고 전송되어, 같은 네트워크의 누군가가 가로채거나 바꿔칠 수 있습니다.
           설치 스크립트는 이런 서버를 기본으로 거부하므로 아래 명령에는 허용 옵션(<code>--allow-http</code> / <code>-AllowHttp</code>)이 붙어
           있습니다. 가능하면 HTTPS 리버스 프록시 뒤에서 사용하세요.
-        </p>
+        </Notice>
       )}
 
-      {state.status === 'not-built' ? (
-        <div className="flex items-center justify-center rounded-lg border border-dashed border-stroke2 px-4 py-8 text-center text-fg3 [&_p]:m-0 [&_p]:text-inherit">
-          <p>아직 빌드된 에이전트가 없습니다. CI가 첫 릴리스를 만들면 여기에 표시됩니다.</p>
-        </div>
+      {state.status === 'success' && !manifest ? (
+        <EmptyState>아직 빌드된 에이전트가 없습니다. CI가 첫 릴리스를 만들면 여기에 표시됩니다.</EmptyState>
       ) : (
         <Card
           className="mb-6"
           title="에이전트 다운로드"
           controls={
-            state.status === 'success' ? (
+            manifest ? (
               <span className="text-200 whitespace-nowrap text-fg3">
-                버전 {state.data.version} · 빌드 {formatDateTime(state.data.built_at)}
+                버전 {manifest.version} · 빌드 {formatDateTime(manifest.built_at)}
               </span>
             ) : undefined
           }
@@ -78,18 +62,18 @@ export function Downloads() {
           <StateContainer
             loading={state.status === 'loading'}
             error={state.status === 'error' ? state.message : null}
-            empty={state.status === 'success' && state.data.files.length === 0}
+            empty={!!manifest && manifest.files.length === 0}
             emptyMessage="아직 빌드된 파일이 없습니다."
           >
-            {state.status === 'success' && <DownloadsTable files={state.data.files} />}
+            {manifest && <DownloadsTable files={manifest.files} />}
           </StateContainer>
         </Card>
       )}
 
-      {state.status === 'success' && <InstallGuideCard />}
-      {state.status === 'success' && <UpdateGuideCard version={state.data.version} />}
-      {state.status === 'success' && <ClaudeDirsGuideCard />}
-      {state.status === 'success' && <UninstallGuideCard />}
+      {manifest && <InstallGuideCard />}
+      {manifest && <UpdateGuideCard version={manifest.version} />}
+      {manifest && <ClaudeDirsGuideCard />}
+      {manifest && <UninstallGuideCard />}
     </div>
   )
 }
@@ -114,7 +98,7 @@ function DownloadsTable({ files }: { files: DownloadFile[] }) {
             {f.sha256.slice(0, 10)}…
           </span>
           <Tooltip content="SHA256 전체 복사">
-            <Button touch size="small" appearance="subtle" onClick={() => navigator.clipboard?.writeText(f.sha256)}>
+            <Button touch size="small" appearance="subtle" onClick={() => copyText(f.sha256)}>
               복사
             </Button>
           </Tooltip>
@@ -136,35 +120,16 @@ function DownloadsTable({ files }: { files: DownloadFile[] }) {
   return <DataTable columns={columns} rows={files} rowKey={(f) => f.name} initialSortKey="os" initialSortDir="asc" />
 }
 
-/** Splits a command string around a placeholder substring so the
- * placeholder can be highlighted in a distinct color; the rest of the
- * command renders as plain monospace text. */
-function CommandBox({ command, highlight = '' }: { command: string; highlight?: string }) {
-  const idx = highlight ? command.indexOf(highlight) : -1
-  const before = idx >= 0 ? command.slice(0, idx) : command
-  const after = idx >= 0 ? command.slice(idx + highlight.length) : ''
-  return (
-    <div className="relative mb-1">
-      <pre className="m-0 max-w-full overflow-x-auto rounded-md border border-code-stroke bg-code-bg py-2.5 pr-11 pl-3 font-mono text-200 whitespace-pre text-code-fg">
-        {before}
-        {idx >= 0 && <span className="font-mono font-semibold text-series-4">{highlight}</span>}
-        {after}
-      </pre>
-      <Button touch size="small" className="absolute top-1.5 right-1.5 shadow-[-10px_0_10px_var(--code-bg)]"
-        onClick={() => navigator.clipboard?.writeText(command)}
-        aria-label="명령 복사"
-      >
-        복사
-      </Button>
-    </div>
-  )
+/** Numbered steps under a command. */
+function StepList({ children }: { children: ReactNode }) {
+  return <ol className="mx-0 mt-1 mb-0 list-decimal pl-[18px] text-200 text-fg2 [&_li]:mb-[3px]">{children}</ol>
 }
 
 /** Copy-paste install guide for both platforms, using a placeholder token
  * since this page (unlike the Devices page right after issuance) isn't tied
  * to any one device. */
 function InstallGuideCard() {
-  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const origin = currentOrigin()
   const cmds = installCommands(origin, TOKEN_PLACEHOLDER)
   return (
     <Card
@@ -176,24 +141,24 @@ function InstallGuideCard() {
         <div>
           <h3>Linux / macOS</h3>
           <CommandBox command={cmds.unix} highlight={TOKEN_PLACEHOLDER} />
-          <ol className="mx-0 mt-1 mb-0 list-decimal pl-[18px] text-200 text-fg2 [&_li]:mb-[3px]">
+          <StepList>
             <li>기기 관리에서 기기 추가 → 토큰 발급</li>
             <li>아래 명령을 실행</li>
             <li>1분 안에 기기 관리 목록에 나타남</li>
-          </ol>
+          </StepList>
         </div>
         <div>
           <h3>Windows (PowerShell)</h3>
-          <p className="mx-0 mt-1.5 mb-2 rounded-md border border-warning-stroke bg-warning-bg px-3 py-2 text-200 leading-200 [&_strong]:text-warning-fg" role="note">
+          <Notice>
             <strong>관리자 권한 필수</strong> — 시작 메뉴에서 PowerShell 을 &quot;관리자 권한으로 실행&quot; 한 뒤 아래 명령을 붙여 넣으세요. 일반 권한에서는
             서비스 등록이 실패합니다.
-          </p>
+          </Notice>
           <CommandBox command={cmds.windows} highlight={TOKEN_PLACEHOLDER} />
-          <ol className="mx-0 mt-1 mb-0 list-decimal pl-[18px] text-200 text-fg2 [&_li]:mb-[3px]">
+          <StepList>
             <li>기기 관리에서 기기 추가 → 토큰 발급</li>
             <li>관리자 PowerShell 에서 위 명령을 실행</li>
             <li>1분 안에 기기 관리 목록에 나타남</li>
-          </ol>
+          </StepList>
         </div>
       </div>
       <p className="mt-2 text-200 text-fg3">
@@ -206,7 +171,7 @@ function InstallGuideCard() {
 
 /** Update one-liners: no token, the installed config.json is kept. */
 function UpdateGuideCard({ version }: { version: string }) {
-  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const origin = currentOrigin()
   const cmds = updateCommands(origin)
   return (
     <Card
@@ -233,7 +198,7 @@ function UpdateGuideCard({ version }: { version: string }) {
 /** How to make an installed agent read more Claude Code config directories.
  * Few setups need it, so it starts collapsed. */
 function ClaudeDirsGuideCard() {
-  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const origin = currentOrigin()
   const update = updateCommands(origin)
   return (
     <Card className="mb-6">
@@ -267,7 +232,7 @@ function ClaudeDirsGuideCard() {
 }
 
 function UninstallGuideCard() {
-  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const origin = currentOrigin()
   const cmds = uninstallCommands(origin)
   return (
     <Card
@@ -279,11 +244,11 @@ function UninstallGuideCard() {
         <div>
           <h3>Linux / macOS</h3>
           <CommandBox command={cmds.unix} />
-          <ol className="mx-0 mt-1 mb-0 list-decimal pl-[18px] text-200 text-fg2 [&_li]:mb-[3px]">
+          <StepList>
             <li>systemd(user) 또는 launchd 등록 해제</li>
             <li>바이너리(/usr/local/bin 또는 ~/.local/bin) 삭제</li>
             <li>~/.config/ai-usage-agent (macOS 는 ~/Library/Application Support) 삭제</li>
-          </ol>
+          </StepList>
           <p className="mt-2 text-200 text-fg3">
             로컬 상태를 남기려면 <code>| sh -s -- --keep-state</code> 로 실행하세요.
           </p>
@@ -291,14 +256,14 @@ function UninstallGuideCard() {
         <div>
           <h3>Windows (PowerShell)</h3>
           <CommandBox command={cmds.windows} />
-          <ol className="mx-0 mt-1 mb-0 list-decimal pl-[18px] text-200 text-fg2 [&_li]:mb-[3px]">
+          <StepList>
             <li>ai-usage-agent 서비스 중지 및 삭제</li>
             <li>%ProgramFiles%\ai-usage-agent 삭제</li>
             <li>%ProgramData%\ai-usage-agent (설정·커서·큐) 삭제 — 이전 버전의 %LOCALAPPDATA%·%APPDATA% 위치도 함께</li>
-          </ol>
-          <p className="mx-0 mt-1.5 mb-2 rounded-md border border-warning-stroke bg-warning-bg px-3 py-2 text-200 leading-200 [&_strong]:text-warning-fg" role="note">
+          </StepList>
+          <Notice>
             <strong>관리자 권한 필수</strong> — 서비스 삭제에 필요합니다. 로컬 상태를 남기려면 명령 끝에 <code> -KeepState</code> 를 붙이세요.
-          </p>
+          </Notice>
         </div>
       </div>
       <p className="mt-2 text-200 text-fg3">

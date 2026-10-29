@@ -3,6 +3,7 @@ import { getBreakdown } from '../api/client'
 import type { BreakdownRow } from '../api/types'
 import { type Column, DataTable } from '../components/DataTable'
 import { costColumn, countColumn, dateTimeColumn, tokenColumn } from '../components/columns'
+import { PageHeader } from '../components/PageHeader'
 import { StateContainer } from '../components/StateContainer'
 import { useApiData } from '../hooks/useApiData'
 import { labelForKey } from '../lib/colors'
@@ -42,9 +43,7 @@ export function Projects() {
 
   return (
     <div>
-      <div className="mt-2 mb-5 flex flex-wrap items-center justify-between gap-3 [&>h1]:m-0">
-        <h1>프로젝트</h1>
-      </div>
+      <PageHeader title="프로젝트" />
       <StateContainer
         loading={state.status === 'loading'}
         error={state.status === 'error' ? state.message : null}

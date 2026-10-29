@@ -6,21 +6,21 @@ import { getBreakdown } from '../api/client'
 import type { BreakdownRow, Source } from '../api/types'
 import { tokensOf } from './usage'
 
-export interface MatrixEntry {
+interface MatrixEntry {
   source: Source
   rows: BreakdownRow[]
 }
 
 /** One (source, device) intersection. `cost` sums only the rows with a known
  * price; `unpriced` marks that at least one merged row had none. */
-export interface MatrixCell {
+interface MatrixCell {
   cost: number
   tokens: number
   events: number
   unpriced: boolean
 }
 
-export interface MatrixDevice extends MatrixCell {
+interface MatrixDevice extends MatrixCell {
   id: string
   name: string
   /** Position in the id-sorted device list — the color slot. Fixed per device
@@ -31,11 +31,11 @@ export interface MatrixDevice extends MatrixCell {
   other?: boolean
 }
 
-export interface MatrixSource extends MatrixCell {
+interface MatrixSource extends MatrixCell {
   key: Source
 }
 
-export interface Matrix {
+interface Matrix {
   /** Devices with data, largest first; anything past `maxDevices` is folded
    * into a single "기타" row. */
   devices: MatrixDevice[]
@@ -44,7 +44,7 @@ export interface Matrix {
   total: MatrixCell
 }
 
-export const OTHER_DEVICE_ID = '__other__'
+const OTHER_DEVICE_ID = '__other__'
 
 /** Past this the stacked segments stop being distinguishable, so the tail
  * folds into one neutral band instead of cycling hues. */

@@ -128,7 +128,7 @@ export function mergeSeries(
   return { data, keys: series.map((s) => s.key) }
 }
 
-export function tokensOfPoint(p: TimeseriesPoint): number {
+function tokensOfPoint(p: TimeseriesPoint): number {
   return tokensOf(p)
 }
 

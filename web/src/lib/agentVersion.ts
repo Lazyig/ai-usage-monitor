@@ -1,7 +1,7 @@
 // Compares each device's agent with the build the server hands out, so the
 // device list can point at agents that need the update command.
 
-export type AgentVersionStatus = 'current' | 'mismatch' | 'unknown'
+type AgentVersionStatus = 'current' | 'mismatch' | 'unknown'
 
 /** "v0.2.1" and "0.2.1" are the same build. */
 export function normalizeVersion(v: string | undefined | null): string {

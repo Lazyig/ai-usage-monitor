@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getDevices } from '../api/client'
 import type { Device, Source, UsageEventDTO } from '../api/types'
 import { type Column, DataTable } from '../components/DataTable'
+import { PageHeader } from '../components/PageHeader'
 import { RowField } from '../components/RowField'
 import { StateContainer } from '../components/StateContainer'
 import { costColumn, Swatch, tokenColumn, unsorted } from '../components/columns'
@@ -48,9 +49,7 @@ export function Events() {
 
   return (
     <div>
-      <div className="mt-2 mb-5 flex flex-wrap items-center justify-between gap-3 [&>h1]:m-0">
-        <h1>이벤트</h1>
-      </div>
+      <PageHeader title="이벤트" />
 
       <div className="mb-4 flex flex-wrap items-end gap-3 max-phone:flex-col max-phone:items-stretch">
         <RowField label="소스">
@@ -77,12 +76,12 @@ export function Events() {
       <StateContainer loading={status === 'loading'} error={status === 'error' ? error : null} empty={status === 'success' && events.length === 0}>
         <DataTable columns={columns} rows={events} rowKey={(e) => e.event_id} size="small" />
         {loadMoreError && (
-          <p className="text-200 text-danger" role="alert" style={{ textAlign: 'center', marginTop: 8 }}>
+          <p className="mt-2 text-center text-200 text-danger" role="alert">
             추가 이벤트를 불러오지 못했습니다: {loadMoreError}
           </p>
         )}
         {nextCursor && (
-          <div style={{ textAlign: 'center', marginTop: 12 }}>
+          <div className="mt-3 text-center">
             <Button touch onClick={loadMore} disabled={loadingMore}>
               {loadingMore ? '불러오는 중…' : '더 보기'}
             </Button>

@@ -13,7 +13,7 @@ export const SOURCE_COLOR_VARS: Record<Source, string> = {
  * a source keeps its slot (and color) whether or not it has data. */
 export const SOURCE_ORDER: Source[] = ['claude_code', 'codex', 'antigravity']
 
-export const SOURCE_LABELS: Record<Source, string> = {
+const SOURCE_LABELS: Record<Source, string> = {
   claude_code: 'Claude Code',
   codex: 'Codex',
   antigravity: 'Antigravity',
