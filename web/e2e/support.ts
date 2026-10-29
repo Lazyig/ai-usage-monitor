@@ -42,6 +42,9 @@ export async function selectPreset(page: Page, label: string, menu?: string) {
   if (opener && (await opener.isVisible())) await opener.click()
   else await page.getByRole('button', { name: MORE }).click()
   await page.getByRole('menuitemcheckbox', { name: label }).first().click()
+  // A menu still closing hands focus back when it is done: the next step must
+  // not open something (a calendar) before that.
+  await noOpenMenu(page)
 }
 
 /** Whether automatic refresh is on, read from the switch or the "⋯" menu. */
