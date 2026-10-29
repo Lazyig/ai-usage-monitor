@@ -18,25 +18,25 @@ import (
 // never contacts the server, so it is safe to run at any time, and it works on
 // a machine that has no config file at all.
 func cmdScan(args []string) error {
-	fs := newFlagSet("scan")
+	flags := newFlagSet("scan")
 	var (
-		since    = fs.String("since", "7d", "only report events newer than this (e.g. 24h, 7d, 4w, or 'all')")
-		sources  = fs.String("source", "", "comma separated sources to scan (default: all enabled)")
-		asJSON   = fs.Bool("json", false, "dump the raw events as JSON instead of the tables")
-		stateDir = fs.String("state-dir", "", "state directory (default: $AI_USAGE_STATE_DIR or the per-OS config dir)")
-		days     = fs.Int("days", 14, "how many days the per-day table shows (0 = all)")
+		since    = flags.String("since", "7d", "only report events newer than this (e.g. 24h, 7d, 4w, or 'all')")
+		sources  = flags.String("source", "", "comma separated sources to scan (default: all enabled)")
+		asJSON   = flags.Bool("json", false, "dump the raw events as JSON instead of the tables")
+		stateDir = flags.String("state-dir", "", stateDirUsage)
+		days     = flags.Int("days", 14, "how many days the per-day table shows (0 = all)")
 		roots    stringList
 	)
-	fs.Var(&roots, "root", "read this Claude Code config directory instead of the configured ones, repeatable; nothing is saved (try a folder before `roots add`)")
-	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: ai-usage-agent scan [flags]\n\nRead the local logs and print a usage summary. No server required.\n\nflags:\n")
-		fs.PrintDefaults()
+	flags.Var(&roots, "root", "read this Claude Code config directory instead of the configured ones, repeatable; nothing is saved (try a folder before `roots add`)")
+	flags.Usage = func() {
+		fmt.Fprintf(flags.Output(), "usage: ai-usage-agent scan [flags]\n\nRead the local logs and print a usage summary. No server required.\n\nflags:\n")
+		flags.PrintDefaults()
 	}
-	if err := parseFlags(fs, args); err != nil {
+	if err := parseFlags(flags, args); err != nil {
 		return err
 	}
-	if fs.NArg() > 0 {
-		return usagef("scan takes no positional arguments (got %q)", fs.Arg(0))
+	if err := noArgs(flags, "scan"); err != nil {
+		return err
 	}
 
 	cutoff, err := parseSince(*since)

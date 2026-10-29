@@ -139,6 +139,15 @@ func newFlagSet(name string) *flag.FlagSet {
 	return fs
 }
 
+// stringList is a flag that may be given several times.
+type stringList []string
+
+func (l *stringList) String() string { return strings.Join(*l, ", ") }
+func (l *stringList) Set(v string) error {
+	*l = append(*l, v)
+	return nil
+}
+
 // parseFlags wraps flag parsing so a bad flag becomes exit code 2.
 func parseFlags(fs *flag.FlagSet, args []string) error {
 	if err := fs.Parse(args); err != nil {
@@ -146,6 +155,17 @@ func parseFlags(fs *flag.FlagSet, args []string) error {
 	}
 	return nil
 }
+
+// noArgs rejects positional arguments for a command that takes none.
+func noArgs(flags *flag.FlagSet, name string) error {
+	if flags.NArg() > 0 {
+		return usagef("%s takes no positional arguments (got %q)", name, flags.Arg(0))
+	}
+	return nil
+}
+
+// stateDirUsage is the --state-dir help text every command shares.
+const stateDirUsage = "state directory (default: $AI_USAGE_STATE_DIR or the per-OS config dir)"
 
 // resolveStateDir lets --state-dir win over $AI_USAGE_STATE_DIR and the per-OS
 // default, matching the "flags override env" rule.

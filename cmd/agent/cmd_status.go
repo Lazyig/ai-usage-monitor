@@ -17,20 +17,20 @@ import (
 // cmdStatus reports what this device is configured to do and how far it got.
 // It is read-only: it never creates a config or advances a cursor.
 func cmdStatus(args []string) error {
-	fs := newFlagSet("status")
+	flags := newFlagSet("status")
 	var (
-		stateDir = fs.String("state-dir", "", "state directory (default: $AI_USAGE_STATE_DIR or the per-OS config dir)")
-		timeout  = fs.Duration("timeout", 5*time.Second, "server health check timeout")
+		stateDir = flags.String("state-dir", "", stateDirUsage)
+		timeout  = flags.Duration("timeout", 5*time.Second, "server health check timeout")
 	)
-	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: ai-usage-agent status [flags]\n\nShow the configuration, cursors, queue and server health.\n\nflags:\n")
-		fs.PrintDefaults()
+	flags.Usage = func() {
+		fmt.Fprintf(flags.Output(), "usage: ai-usage-agent status [flags]\n\nShow the configuration, cursors, queue and server health.\n\nflags:\n")
+		flags.PrintDefaults()
 	}
-	if err := parseFlags(fs, args); err != nil {
+	if err := parseFlags(flags, args); err != nil {
 		return err
 	}
-	if fs.NArg() > 0 {
-		return usagef("status takes no positional arguments (got %q)", fs.Arg(0))
+	if err := noArgs(flags, "status"); err != nil {
+		return err
 	}
 
 	dir := resolveStateDir(*stateDir)

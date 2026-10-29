@@ -42,20 +42,21 @@ func cmdRoots(args []string) error {
 		return usagef("unknown roots command %q (want list, add or remove)", action)
 	}
 
-	fs := newFlagSet("roots " + action)
+	flags := newFlagSet("roots " + action)
 	var (
-		source    = fs.String("source", "", "source to show or change (default: claude_code; list shows every multi-folder source)")
-		stateDir  = fs.String("state-dir", "", "state directory (default: $AI_USAGE_STATE_DIR or the per-OS config dir)")
-		noRestart = fs.Bool("no-restart", false, "do not restart a running service after a change")
+		source    = flags.String("source", "", "source to show or change (default: claude_code; list shows every multi-folder source)")
+		stateDir  = flags.String("state-dir", "", stateDirUsage)
+		noRestart = flags.Bool("no-restart", false, "do not restart a running service after a change")
 	)
-	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), rootsUsage)
-		fs.PrintDefaults()
+	flags.Usage = func() {
+		fmt.Fprint(flags.Output(), rootsUsage)
+		flags.PrintDefaults()
 	}
-	if err := parseFlags(fs, args[1:]); err != nil {
+	if err := parseFlags(flags, args[1:]); err != nil {
 		return err
 	}
 
+	dir := resolveStateDir(*stateDir)
 	var sources []event.Source
 	if *source != "" {
 		s := event.Source(*source)
@@ -63,26 +64,29 @@ func cmdRoots(args []string) error {
 			return usagef("unknown source %q (available: %s)", s, strings.Join(sourceNames(), ", "))
 		}
 		if !multiRoot(s) {
-			return usagef("%s reads a single folder; change sources.%s.root in %s instead", s, s, agentcfg.ConfigPath(resolveStateDir(*stateDir)))
+			return usagef("%s reads a single folder; change sources.%s.root in %s instead", s, s, agentcfg.ConfigPath(dir))
 		}
 		sources = []event.Source{s}
 	}
-	dir := resolveStateDir(*stateDir)
+
+	if action == "list" && flags.NArg() > 0 {
+		return usagef("roots list takes no paths (got %q)", flags.Arg(0))
+	}
+	if action != "list" && flags.NArg() == 0 {
+		return usagef("roots %s needs at least one path", action)
+	}
+	cfg, _, err := agentcfg.LoadFile(dir)
+	if err != nil {
+		return err
+	}
 
 	if action == "list" {
-		if fs.NArg() > 0 {
-			return usagef("roots list takes no paths (got %q)", fs.Arg(0))
-		}
 		if sources == nil {
 			for _, s := range known() {
 				if multiRoot(s) {
 					sources = append(sources, s)
 				}
 			}
-		}
-		cfg, _, err := agentcfg.LoadFile(dir)
-		if err != nil {
-			return err
 		}
 		for i, s := range sources {
 			if i > 0 {
@@ -97,25 +101,18 @@ func cmdRoots(args []string) error {
 		return nil
 	}
 
-	if fs.NArg() == 0 {
-		return usagef("roots %s needs at least one path", action)
-	}
 	s := event.SourceClaudeCode
 	if sources != nil {
 		s = sources[0]
 	}
-	cfg, _, err := agentcfg.LoadFile(dir)
-	if err != nil {
-		return err
-	}
 	sc := cfg.Source(s)
 	changed := false
-	for _, arg := range fs.Args() {
+	for _, arg := range flags.Args() {
 		if strings.HasPrefix(arg, "-") {
 			return usagef("flags go before the paths (got %q after a path)", arg)
 		}
 	}
-	for _, arg := range fs.Args() {
+	for _, arg := range flags.Args() {
 		root, err := agentcfg.NormalizeRoot(s, arg)
 		if err != nil {
 			return usagef("%v", err)
@@ -199,14 +196,24 @@ func printRoots(w io.Writer, s event.Source, sc agentcfg.SourceConfig) {
 
 // describeDir is the short state of one folder for printRoots.
 func describeDir(s event.Source, dir string) string {
-	if !dirExists(dir) {
+	exists, n, err := dirState(s, dir)
+	switch {
+	case !exists:
 		return "missing"
-	}
-	n, err := countLogs(s, dir)
-	if err != nil {
+	case err != nil:
 		return "unreadable (" + err.Error() + ")"
 	}
 	return fmt.Sprintf("ok, %d log file(s)", n)
+}
+
+// dirState reports whether dir is a folder and, if so, how many of the
+// source's log files are below it; err is set when dir cannot be read.
+func dirState(s event.Source, dir string) (exists bool, n int, err error) {
+	if !dirExists(dir) {
+		return false, 0, nil
+	}
+	n, err = countLogs(s, dir)
+	return true, n, err
 }
 
 // logExt is the file type a source's logs are stored in.
@@ -243,11 +250,10 @@ func rootWarnings(s event.Source, root string) []string {
 		}
 		return nil
 	}
-	if !dirExists(root) {
-		return []string{"folder does not exist (yet)"}
-	}
-	n, err := countLogs(s, root)
+	exists, n, err := dirState(s, root)
 	switch {
+	case !exists:
+		return []string{"folder does not exist (yet)"}
 	case err != nil:
 		return []string{"not readable by you: " + err.Error()}
 	case n == 0:
@@ -300,13 +306,4 @@ func shellQuote(p string) string {
 		return p
 	}
 	return "'" + strings.ReplaceAll(p, "'", `'\''`) + "'"
-}
-
-// stringList is a flag that may be given several times.
-type stringList []string
-
-func (l *stringList) String() string { return strings.Join(*l, ", ") }
-func (l *stringList) Set(v string) error {
-	*l = append(*l, v)
-	return nil
 }

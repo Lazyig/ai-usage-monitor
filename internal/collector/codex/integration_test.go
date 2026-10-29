@@ -99,7 +99,7 @@ func TestIntegrationRealHome(t *testing.T) {
 	var all totals
 	for _, m := range models {
 		tt := byModel[m]
-		fmt.Fprintf(&b, row, m, itoa(tt.calls), itoa(tt.in), itoa(tt.out), itoa(tt.cr), itoa(tt.cw), itoa(tt.reason))
+		fmt.Fprintf(&b, row, m, commas(tt.calls), commas(tt.in), commas(tt.out), commas(tt.cr), commas(tt.cw), commas(tt.reason))
 		all.calls += tt.calls
 		all.in += tt.in
 		all.out += tt.out
@@ -107,12 +107,12 @@ func TestIntegrationRealHome(t *testing.T) {
 		all.cw += tt.cw
 		all.reason += tt.reason
 	}
-	fmt.Fprintf(&b, row, "TOTAL", itoa(all.calls), itoa(all.in), itoa(all.out), itoa(all.cr), itoa(all.cw), itoa(all.reason))
+	fmt.Fprintf(&b, row, "TOTAL", commas(all.calls), commas(all.in), commas(all.out), commas(all.cr), commas(all.cw), commas(all.reason))
 	t.Log(b.String())
 }
 
-// itoa formats v with thousands separators so the eyeball table stays readable.
-func itoa(v int64) string {
+// commas formats v with thousands separators so the eyeball table stays readable.
+func commas(v int64) string {
 	s := strconv.FormatInt(v, 10)
 	neg := strings.HasPrefix(s, "-")
 	s = strings.TrimPrefix(s, "-")

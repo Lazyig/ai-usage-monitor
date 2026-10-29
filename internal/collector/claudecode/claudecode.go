@@ -272,12 +272,12 @@ func decodeLine(raw []byte, deviceID string) (ev event.UsageEvent, nativeKey str
 		Model:        l.Message.Model,
 		SessionID:    l.SessionID,
 		Project:      l.CWD,
-		Input:        nonNeg(u.InputTokens),
-		Output:       nonNeg(u.OutputTokens),
-		CacheRead:    nonNeg(u.CacheReadInputTokens),
-		CacheWrite5m: nonNeg(write5m),
-		CacheWrite1h: nonNeg(write1h),
-		Reasoning:    nonNeg(reasoning),
+		Input:        max(u.InputTokens, 0),
+		Output:       max(u.OutputTokens, 0),
+		CacheRead:    max(u.CacheReadInputTokens, 0),
+		CacheWrite5m: max(write5m, 0),
+		CacheWrite1h: max(write1h, 0),
+		Reasoning:    max(reasoning, 0),
 		Confidence:   event.ConfidenceExact,
 		ToolVersion:  l.Version,
 	}
@@ -288,11 +288,4 @@ func decodeLine(raw []byte, deviceID string) (ev event.UsageEvent, nativeKey str
 		return event.UsageEvent{}, "", false
 	}
 	return ev, msgID + "\x00" + l.RequestID, true
-}
-
-func nonNeg(v int64) int64 {
-	if v < 0 {
-		return 0
-	}
-	return v
 }

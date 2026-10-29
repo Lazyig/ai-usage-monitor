@@ -2,10 +2,8 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"ai-usage-monitor/internal/agentcfg"
-	"ai-usage-monitor/internal/cursor"
 )
 
 // cmdRescan throws away this device's collection progress so the next pass
@@ -21,20 +19,20 @@ import (
 // The offline queue goes with the cursors: its batches only hold events that
 // the very next scan produces again.
 func cmdRescan(args []string) error {
-	fs := newFlagSet("rescan")
-	stateDir := fs.String("state-dir", "", "state directory (default: $AI_USAGE_STATE_DIR or the per-OS config dir)")
-	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: ai-usage-agent rescan [flags]\n\n"+
+	flags := newFlagSet("rescan")
+	stateDir := flags.String("state-dir", "", stateDirUsage)
+	flags.Usage = func() {
+		fmt.Fprintf(flags.Output(), "usage: ai-usage-agent rescan [flags]\n\n"+
 			"Forget every collector cursor and the offline queue, so the agent re-reads\n"+
 			"all local logs from the beginning. A running service is stopped and started\n"+
 			"again around it.\n\nflags:\n")
-		fs.PrintDefaults()
+		flags.PrintDefaults()
 	}
-	if err := parseFlags(fs, args); err != nil {
+	if err := parseFlags(flags, args); err != nil {
 		return err
 	}
-	if fs.NArg() > 0 {
-		return usagef("rescan takes no positional arguments (got %q)", fs.Arg(0))
+	if err := noArgs(flags, "rescan"); err != nil {
+		return err
 	}
 	dir := resolveStateDir(*stateDir)
 
@@ -48,11 +46,8 @@ func cmdRescan(args []string) error {
 		fmt.Fprintf(stdout, "stopped the %s service\n", serviceName)
 	}
 
-	if err := cursor.Clear(agentcfg.CursorPath(dir)); err != nil {
+	if err := clearProgress(dir); err != nil {
 		return err
-	}
-	if err := os.RemoveAll(agentcfg.QueueDir(dir)); err != nil {
-		return fmt.Errorf("remove %s: %w", agentcfg.QueueDir(dir), err)
 	}
 	fmt.Fprintf(stdout, "cleared %s and %s\n", agentcfg.CursorPath(dir), agentcfg.QueueDir(dir))
 

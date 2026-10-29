@@ -18,35 +18,35 @@ import (
 // (containers without systemd are a normal case here): the config is kept and
 // the user is told how to run the agent manually.
 func cmdService(cmd string, args []string) error {
-	fs := newFlagSet(cmd)
+	flags := newFlagSet(cmd)
 	var (
-		server    = fs.String("server", "", "server base URL, e.g. https://usage.example.com")
-		token     = fs.String("token", "", "device token issued by the server")
-		name      = fs.String("name", "", "device name (default: this machine's hostname)")
-		interval  = fs.Int("interval", 0, "seconds between collection passes (default 60)")
-		stateDir  = fs.String("state-dir", "", "state directory (default: $AI_USAGE_STATE_DIR or the per-OS config dir)")
+		server    = flags.String("server", "", "server base URL, e.g. https://usage.example.com")
+		token     = flags.String("token", "", "device token issued by the server")
+		name      = flags.String("name", "", "device name (default: this machine's hostname)")
+		interval  = flags.Int("interval", 0, "seconds between collection passes (default 60)")
+		stateDir  = flags.String("state-dir", "", stateDirUsage)
 		claude    stringList
 		allowHTTP bool
 	)
 	if cmd == "install" {
-		fs.BoolVar(&allowHTTP, "allow-http", false, "permit (and remember) a plain http:// server that is not on this machine: the token then crosses the network unencrypted")
-		fs.Var(&claude, "claude-dir", "extra Claude Code config directory to read, repeatable (default: $"+agentcfg.EnvClaudeConfigDir+", comma separated)")
+		flags.BoolVar(&allowHTTP, "allow-http", false, "permit (and remember) a plain http:// server that is not on this machine: the token then crosses the network unencrypted")
+		flags.Var(&claude, "claude-dir", "extra Claude Code config directory to read, repeatable (default: $"+agentcfg.EnvClaudeConfigDir+", comma separated)")
 	}
-	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: ai-usage-agent %s [flags]\n\n", cmd)
+	flags.Usage = func() {
+		fmt.Fprintf(flags.Output(), "usage: ai-usage-agent %s [flags]\n\n", cmd)
 		if cmd == "install" {
-			fmt.Fprint(fs.Output(), "Write config.json and register the OS service.\n\nflags:\n")
-			fs.PrintDefaults()
+			fmt.Fprint(flags.Output(), "Write config.json and register the OS service.\n\nflags:\n")
+			flags.PrintDefaults()
 			return
 		}
-		fmt.Fprintf(fs.Output(), "%s the %s OS service.\n\nflags:\n", cmd, serviceName)
-		fs.PrintDefaults()
+		fmt.Fprintf(flags.Output(), "%s the %s OS service.\n\nflags:\n", cmd, serviceName)
+		flags.PrintDefaults()
 	}
-	if err := parseFlags(fs, args); err != nil {
+	if err := parseFlags(flags, args); err != nil {
 		return err
 	}
-	if fs.NArg() > 0 {
-		return usagef("%s takes no positional arguments (got %q)", cmd, fs.Arg(0))
+	if err := noArgs(flags, cmd); err != nil {
+		return err
 	}
 	dir := resolveStateDir(*stateDir)
 
@@ -71,7 +71,7 @@ func cmdService(cmd string, args []string) error {
 	if err != nil {
 		return fmt.Errorf("%s %s: %w", cmd, serviceName, err)
 	}
-	fmt.Printf("%s: %s ok\n", serviceName, cmd)
+	fmt.Fprintf(stdout, "%s: %s ok\n", serviceName, cmd)
 	return nil
 }
 
@@ -81,7 +81,7 @@ func install(dir, server, token, name string, interval int, claudeDirs []string,
 	if from, err := agentcfg.MigrateLegacyState(dir); err != nil {
 		return err
 	} else if from != "" {
-		fmt.Printf("moved the agent state from %s to %s\n", from, dir)
+		fmt.Fprintf(stdout, "moved the agent state from %s to %s\n", from, dir)
 	}
 	cfg, _, err := agentcfg.Load(dir)
 	if err != nil {
@@ -120,13 +120,13 @@ func install(dir, server, token, name string, interval int, claudeDirs []string,
 	if err := agentcfg.Save(dir, cfg); err != nil {
 		return err
 	}
-	syncDeviceID(dir, &cfg, func(format string, args ...any) { fmt.Printf(format+"\n", args...) })
+	syncDeviceID(dir, &cfg, func(format string, args ...any) { fmt.Fprintf(stdout, format+"\n", args...) })
 	// Never print the token, not even partially.
-	fmt.Printf("wrote %s (device %s, name %q, interval %ds)\n",
+	fmt.Fprintf(stdout, "wrote %s (device %s, name %q, interval %ds)\n",
 		agentcfg.ConfigPath(dir), cfg.DeviceID, cfg.DeviceName, cfg.Interval())
-	fmt.Println()
-	printRoots(os.Stdout, event.SourceClaudeCode, *cfg.Source(event.SourceClaudeCode))
-	fmt.Printf("add another Claude Code config dir with: %s roots add <dir>\n\n", exeName())
+	fmt.Fprintln(stdout)
+	printRoots(stdout, event.SourceClaudeCode, *cfg.Source(event.SourceClaudeCode))
+	fmt.Fprintf(stdout, "add another Claude Code config dir with: %s roots add <dir>\n\n", exeName())
 
 	svc, err := newService(dir)
 	if err != nil {
@@ -149,14 +149,14 @@ func install(dir, server, token, name string, interval int, claudeDirs []string,
 		manualHint(dir, ierr)
 		return nil
 	}
-	fmt.Printf("registered the %s service (%s)\n", serviceName, svc.Platform())
+	fmt.Fprintf(stdout, "registered the %s service (%s)\n", serviceName, svc.Platform())
 
 	if err := svc.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not start the service: %v\n", err)
-		fmt.Printf("start it later with: %s start\n", exeName())
+		fmt.Fprintf(stdout, "start it later with: %s start\n", exeName())
 		return nil
 	}
-	fmt.Println("service started")
+	fmt.Fprintln(stdout, "service started")
 	return nil
 }
 
@@ -171,7 +171,7 @@ func addClaudeDirs(cfg *agentcfg.Config, dirs []string) error {
 	sc := cfg.Source(event.SourceClaudeCode)
 	if fromEnv && len(dirs) > 0 && !sc.Enabled {
 		// Only an explicit --claude-dir turns a disabled source back on.
-		fmt.Printf("%s is disabled; ignoring $%s\n", event.SourceClaudeCode, agentcfg.EnvClaudeConfigDir)
+		fmt.Fprintf(stdout, "%s is disabled; ignoring $%s\n", event.SourceClaudeCode, agentcfg.EnvClaudeConfigDir)
 		return nil
 	}
 	for _, d := range dirs {

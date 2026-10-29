@@ -373,26 +373,9 @@ func (c *Client) rewriteDevice(payload []byte) []byte {
 // reinstall would change it).
 func (c *Client) WhoAmI(ctx context.Context) (WhoAmIResponse, error) {
 	var out WhoAmIResponse
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url("/api/v1/agent/whoami"), nil)
+	body, err := c.get(ctx, "whoami", "/api/v1/agent/whoami", true)
 	if err != nil {
-		return out, fmt.Errorf("transport: whoami request: %w", err)
-	}
-	req.Header.Set("User-Agent", c.userAgent())
-	req.Header.Set("Accept", "application/json")
-	if c.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.Token)
-	}
-	resp, err := c.httpClient().Do(req)
-	if err != nil {
-		return out, fmt.Errorf("transport: whoami: %w", err)
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	switch {
-	case resp.StatusCode == http.StatusUnauthorized, resp.StatusCode == http.StatusForbidden:
-		return out, &AuthError{StatusCode: resp.StatusCode, Body: snippet(body)}
-	case resp.StatusCode/100 != 2:
-		return out, fmt.Errorf("transport: whoami: HTTP %d: %s", resp.StatusCode, snippet(body))
+		return out, err
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
 		return out, fmt.Errorf("transport: whoami: %w", err)
@@ -403,26 +386,42 @@ func (c *Client) WhoAmI(ctx context.Context) (WhoAmIResponse, error) {
 // Health queries GET /health. It never sends the device token.
 func (c *Client) Health(ctx context.Context) (HealthResponse, error) {
 	var out HealthResponse
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url("/health"), nil)
+	body, err := c.get(ctx, "health", "/health", false)
 	if err != nil {
-		return out, fmt.Errorf("transport: health request: %w", err)
-	}
-	req.Header.Set("User-Agent", c.userAgent())
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.httpClient().Do(req)
-	if err != nil {
-		return out, fmt.Errorf("transport: health: %w", err)
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode/100 != 2 {
-		return out, fmt.Errorf("transport: health: HTTP %d: %s", resp.StatusCode, snippet(body))
+		return out, err
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
 		return out, fmt.Errorf("transport: health: decode: %w", err)
 	}
 	return out, nil
+}
+
+// get fetches a JSON endpoint and returns the body of a 2xx reply; name labels
+// the errors. With auth the device token is sent and a 401/403 is reported as
+// an *AuthError.
+func (c *Client) get(ctx context.Context, name, path string, auth bool) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url(path), nil)
+	if err != nil {
+		return nil, fmt.Errorf("transport: %s request: %w", name, err)
+	}
+	req.Header.Set("User-Agent", c.userAgent())
+	req.Header.Set("Accept", "application/json")
+	if auth && c.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("transport: %s: %w", name, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	switch {
+	case auth && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden):
+		return nil, &AuthError{StatusCode: resp.StatusCode, Body: snippet(body)}
+	case resp.StatusCode/100 != 2:
+		return nil, fmt.Errorf("transport: %s: HTTP %d: %s", name, resp.StatusCode, snippet(body))
+	}
+	return body, nil
 }
 
 // encode builds a gzipped ingest payload. The stored (queued) form is the plain
@@ -453,7 +452,7 @@ func (c *Client) send(ctx context.Context, payload []byte, count int) (Stats, er
 				return Stats{}, errors.Join(last, err)
 			}
 		}
-		st, err, retryable := c.sendOnce(ctx, payload, count)
+		st, retryable, err := c.sendOnce(ctx, payload, count)
 		if err == nil {
 			return st, nil
 		}
@@ -465,19 +464,21 @@ func (c *Client) send(ctx context.Context, payload []byte, count int) (Stats, er
 	return Stats{}, fmt.Errorf("transport: giving up after %d attempts: %w", attempts, last)
 }
 
-func (c *Client) sendOnce(ctx context.Context, payload []byte, count int) (Stats, error, bool) {
+// sendOnce makes one ingest request; retryable tells send whether another
+// attempt may succeed.
+func (c *Client) sendOnce(ctx context.Context, payload []byte, count int) (Stats, bool, error) {
 	var buf bytes.Buffer
 	zw := gzip.NewWriter(&buf)
 	if _, err := zw.Write(payload); err != nil {
-		return Stats{}, fmt.Errorf("transport: gzip: %w", err), false
+		return Stats{}, false, fmt.Errorf("transport: gzip: %w", err)
 	}
 	if err := zw.Close(); err != nil {
-		return Stats{}, fmt.Errorf("transport: gzip close: %w", err), false
+		return Stats{}, false, fmt.Errorf("transport: gzip close: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url("/api/v1/ingest"), bytes.NewReader(buf.Bytes()))
 	if err != nil {
-		return Stats{}, fmt.Errorf("transport: ingest request: %w", err), false
+		return Stats{}, false, fmt.Errorf("transport: ingest request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Encoding", "gzip")
@@ -490,31 +491,31 @@ func (c *Client) sendOnce(ctx context.Context, payload []byte, count int) (Stats
 
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
-		return Stats{}, fmt.Errorf("transport: ingest: %w", err), true // network: retry
+		return Stats{}, true, fmt.Errorf("transport: ingest: %w", err) // network: retry
 	}
 	defer resp.Body.Close()
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
 
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized, resp.StatusCode == http.StatusForbidden:
-		return Stats{}, &AuthError{StatusCode: resp.StatusCode, Body: snippet(body)}, false
+		return Stats{}, false, &AuthError{StatusCode: resp.StatusCode, Body: snippet(body)}
 	case resp.StatusCode == http.StatusRequestTimeout, resp.StatusCode == http.StatusTooManyRequests:
-		return Stats{}, fmt.Errorf("transport: ingest: temporary HTTP %d: %s", resp.StatusCode, snippet(body)), true
+		return Stats{}, true, fmt.Errorf("transport: ingest: temporary HTTP %d: %s", resp.StatusCode, snippet(body))
 	case resp.StatusCode/100 == 4 && serverRejection(body):
-		return Stats{}, &PermanentError{StatusCode: resp.StatusCode, Body: snippet(body)}, false
+		return Stats{}, false, &PermanentError{StatusCode: resp.StatusCode, Body: snippet(body)}
 	case resp.StatusCode/100 == 4:
 		// Not the server's own answer: a proxy's 404/413 page, a changed path
 		// prefix. The batch was never judged, so keep it (queued data would
 		// otherwise be deleted with its cursors already past it).
-		return Stats{}, &ForeignRejectionError{StatusCode: resp.StatusCode, Body: snippet(body)}, false
+		return Stats{}, false, &ForeignRejectionError{StatusCode: resp.StatusCode, Body: snippet(body)}
 	case resp.StatusCode/100 != 2:
-		return Stats{}, fmt.Errorf("transport: ingest: HTTP %d: %s", resp.StatusCode, snippet(body)), true
+		return Stats{}, true, fmt.Errorf("transport: ingest: HTTP %d: %s", resp.StatusCode, snippet(body))
 	}
 	if readErr != nil {
-		return Stats{}, fmt.Errorf("transport: ingest response: %w", readErr), true
+		return Stats{}, true, fmt.Errorf("transport: ingest response: %w", readErr)
 	}
 	if len(body) > 1<<20 {
-		return Stats{}, errors.New("transport: ingest response exceeds 1 MiB"), true
+		return Stats{}, true, errors.New("transport: ingest response exceeds 1 MiB")
 	}
 
 	var out ingestResponse
@@ -522,12 +523,12 @@ func (c *Client) sendOnce(ctx context.Context, payload []byte, count int) (Stats
 		// A proxy can return a 2xx error page before the batch reaches the
 		// server. Retry within the normal bound, then retain the batch in the
 		// offline queue. Replaying an already-stored event is idempotent.
-		return Stats{}, fmt.Errorf("transport: ingest acknowledgement: %w", err), true
+		return Stats{}, true, fmt.Errorf("transport: ingest acknowledgement: %w", err)
 	}
 	if out.DeviceID == "" {
 		// The server always names the device. Any other JSON (a portal's
 		// {"status":"ok"}, null) is not an acknowledgement.
-		return Stats{}, errors.New("transport: ingest acknowledgement without device_id"), true
+		return Stats{}, true, errors.New("transport: ingest acknowledgement without device_id")
 	}
 	st := Stats{Accepted: out.Accepted, Duplicates: out.Duplicates, Updated: out.Updated, Requests: 1, Resync: out.Resync}
 	if count >= 0 {
@@ -535,7 +536,7 @@ func (c *Client) sendOnce(ctx context.Context, payload []byte, count int) (Stats
 			st.Rejected = r
 		}
 	}
-	return st, nil, false
+	return st, false, nil
 }
 
 // serverRejection reports whether a 4xx body is the server's own error reply
