@@ -1,15 +1,12 @@
 // This file holds the query machinery every aggregate endpoint shares: the
 // WHERE clause, the SQL builder, the single GROUP BY that feeds all of them and
 // the accumulators their rows are folded into. The endpoints themselves live in
-// summary.go (/summary, /breakdown), timeseries.go and events.go.
+// summary.go (/summary, /breakdown), timeseries.go, throughput.go and events.go.
 
 package store
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -85,30 +82,6 @@ func (q *queryBuilder) sql() string {
 		b.WriteString(q.tailSQL)
 	}
 	return b.String()
-}
-
-// --- cursors ---------------------------------------------------------------
-
-type cursorV1 struct {
-	TS      int64  `json:"ts"`
-	EventID string `json:"e"`
-}
-
-func encodeCursor(ts int64, eventID string) string {
-	b, _ := json.Marshal(cursorV1{TS: ts, EventID: eventID})
-	return base64.RawURLEncoding.EncodeToString(b)
-}
-
-func decodeCursor(s string) (cursorV1, error) {
-	b, err := base64.RawURLEncoding.DecodeString(s)
-	if err != nil {
-		return cursorV1{}, errors.New("store: bad cursor")
-	}
-	var c cursorV1
-	if err := json.Unmarshal(b, &c); err != nil || c.EventID == "" {
-		return cursorV1{}, errors.New("store: bad cursor")
-	}
-	return c, nil
 }
 
 // --- token accumulation ----------------------------------------------------

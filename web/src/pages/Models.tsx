@@ -5,18 +5,12 @@ import { getBreakdown, getThroughput, getTimeseries } from '../api/client'
 import type { BreakdownRow, Source } from '../api/types'
 import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
-import { ChartTooltip } from '../components/ChartTooltip'
-import {
-  CompositionChart,
-  type CompositionRow,
-  type CompositionSegment,
-  TooltipDivider,
-  TooltipRow,
-  TooltipShell,
-} from '../components/CompositionChart'
+import { ChartTooltip, TooltipDivider, TooltipRow, TooltipShell } from '../components/ChartTooltip'
+import { CompositionChart, CompositionLegend, type CompositionRow, type CompositionSegment } from '../components/CompositionChart'
 import { type Column, DataTable } from '../components/DataTable'
 import { costColumn, countColumn, Swatch, tokenColumn } from '../components/columns'
 import { ErrorBoundary } from '../components/ErrorBoundary'
+import { PageHeader } from '../components/PageHeader'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { StateContainer } from '../components/StateContainer'
 import { ThroughputCard } from '../components/ThroughputCard'
@@ -119,9 +113,7 @@ export function Models() {
 
   return (
     <div>
-      <div className="mt-2 mb-5 flex flex-wrap items-center justify-between gap-3 [&>h1]:m-0">
-        <h1>모델</h1>
-      </div>
+      <PageHeader title="모델" />
 
       <div className="mb-4 flex flex-wrap items-end gap-3 max-phone:flex-col max-phone:items-stretch">
         <RowField label="소스">
@@ -173,7 +165,7 @@ export function Models() {
                 {visibleTokenRows.length > 0 && (
                   <>
                     <ModelTokenBarChart rows={visibleTokenRows} grandTotal={grandTotalTokens} />
-                    <TokenClassLegend />
+                    <CompositionLegend segments={TOKEN_SEGMENTS} />
                   </>
                 )}
               </StateContainer>
@@ -305,19 +297,6 @@ function ModelTokenBarChart({ rows, grandTotal }: { rows: BreakdownRow[]; grandT
   )
 }
 
-function TokenClassLegend() {
-  return (
-    <div className="mt-2 flex flex-wrap gap-4 text-200 text-fg2">
-      {TOKEN_SEGMENTS.map((seg) => (
-        <span key={seg.key}>
-          <span className="mr-1.5 inline-block size-2.5 rounded-sm align-[-1px]" style={{ background: seg.color }} />
-          {seg.label}
-        </span>
-      ))}
-    </div>
-  )
-}
-
 /** Custom tooltip for the token chart: exact per-class counts + total/share + a reasoning subset line. */
 function TokenBarTooltip({ active, payload, label }: TooltipProps<ValueType, NameType>) {
   if (!active || !payload || payload.length === 0) return null
@@ -368,9 +347,5 @@ const MODEL_COLUMNS: Column<BreakdownRow>[] = [
 ]
 
 function ModelsTable({ rows }: { rows: BreakdownRow[] }) {
-  return rows.length === 0 ? (
-    <p className="text-fg3">해당 기간에 데이터가 없습니다.</p>
-  ) : (
-    <DataTable columns={MODEL_COLUMNS} rows={rows} rowKey={(r) => `${r.source}:${r.key}`} initialSortKey="cost" />
-  )
+  return <DataTable columns={MODEL_COLUMNS} rows={rows} rowKey={(r) => `${r.source}:${r.key}`} initialSortKey="cost" />
 }

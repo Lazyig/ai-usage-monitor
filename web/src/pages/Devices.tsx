@@ -13,6 +13,9 @@ import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { type Column, DataTable } from '../components/DataTable'
+import { NewTokenPanel } from '../components/devices/NewTokenPanel'
+import { UpdateNotice } from '../components/devices/UpdateNotice'
+import { PageHeader } from '../components/PageHeader'
 import { PromptDialog } from '../components/PromptDialog'
 import { RowField } from '../components/RowField'
 import { StateContainer } from '../components/StateContainer'
@@ -27,7 +30,7 @@ import { useApiData } from '../hooks/useApiData'
 import { agentVersionStatus } from '../lib/agentVersion'
 import { describeError } from '../lib/errors'
 import { formatDateTime, formatFull, formatRelative, isStale } from '../lib/format'
-import { installCommands, updateCommands } from '../lib/installCommands'
+import { currentOrigin } from '../lib/installCommands'
 import { useFilters } from '../state/FiltersContext'
 
 interface ConfirmState {
@@ -144,7 +147,7 @@ export function Devices() {
     }
   }
 
-  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const origin = currentOrigin()
 
   const visibleDevices = useMemo(() => {
     if (state.status !== 'success') return []
@@ -268,9 +271,7 @@ export function Devices() {
 
   return (
     <div>
-      <div className="mt-2 mb-5 flex flex-wrap items-center justify-between gap-3 [&>h1]:m-0">
-        <h1>기기</h1>
-      </div>
+      <PageHeader title="기기" />
 
       <ul className="mx-0 mt-0 mb-4 flex list-none flex-col gap-0.75 p-0 text-200 text-fg2 [&_strong]:text-fg1">
         <li>
@@ -302,39 +303,7 @@ export function Devices() {
         {createError && <p className="text-200 text-danger">{createError}</p>}
       </Card>
 
-      {newToken &&
-        (() => {
-          const cmds = installCommands(origin, newToken.token)
-          return (
-            <div className="mx-0 my-3 rounded-md border border-warning-stroke bg-warning-bg p-3 [&_code]:min-w-0 [&_code]:flex-1 [&_code]:overflow-x-auto [&_code]:rounded-md [&_code]:border [&_code]:border-stroke2 [&_code]:bg-bg1 [&_code]:px-2.5 [&_code]:py-2 [&_code]:font-mono [&_code]:text-200 [&_code]:whitespace-pre">
-              <strong>{newToken.name}</strong>의 토큰이 발급되었습니다. 이 토큰은 다시 표시되지 않으니 지금 복사하세요.
-              <div className="mt-1.5 flex items-center gap-2 [&_[data-slot=button]]:shrink-0">
-                <code>{newToken.token}</code>
-                <Button touch size="small" onClick={() => navigator.clipboard?.writeText(newToken.token)}>
-                  복사
-                </Button>
-              </div>
-              <p style={{ marginTop: 10, marginBottom: 2 }}>Linux / macOS 설치 명령</p>
-              <div className="mt-1.5 flex items-center gap-2 [&_[data-slot=button]]:shrink-0">
-                <code>{cmds.unix}</code>
-                <Button touch size="small" onClick={() => navigator.clipboard?.writeText(cmds.unix)}>
-                  복사
-                </Button>
-              </div>
-              <p style={{ marginTop: 10, marginBottom: 2 }}>Windows (PowerShell) 설치 명령</p>
-              <p className="mx-0 mt-1.5 mb-2 rounded-md border border-warning-stroke bg-warning-bg px-3 py-2 text-200 leading-200 [&_strong]:text-warning-fg" role="note">
-                <strong>관리자 권한 필수</strong> — PowerShell 을 &quot;관리자 권한으로 실행&quot; 한 창에서 실행하세요. 일반 권한에서는 Windows 서비스 등록이 실패해
-                에이전트가 자동 시작되지 않습니다.
-              </p>
-              <div className="mt-1.5 flex items-center gap-2 [&_[data-slot=button]]:shrink-0">
-                <code>{cmds.windows}</code>
-                <Button touch size="small" onClick={() => navigator.clipboard?.writeText(cmds.windows)}>
-                  복사
-                </Button>
-              </div>
-            </div>
-          )
-        })()}
+      {newToken && <NewTokenPanel origin={origin} name={newToken.name} token={newToken.token} />}
 
       {actionNotice && <p className="mx-0 my-2 rounded-md border border-success-stroke bg-success-bg px-3 py-2 text-300 text-fg1">{actionNotice}</p>}
       {actionError && (
@@ -431,43 +400,3 @@ export function Devices() {
   )
 }
 
-/** Lists the devices whose agent differs from the published build, with the
- * update one-liners. The update keeps config.json, so no token is involved. */
-function UpdateNotice({ origin, published, devices }: { origin: string; published: string; devices: Device[] }) {
-  const cmds = updateCommands(origin)
-  return (
-    <div
-      role="status"
-      className="mx-0 mt-0 mb-4 rounded-md border border-warning-stroke bg-warning-bg p-3 text-300 text-fg1 [&_code]:min-w-0 [&_code]:flex-1 [&_code]:overflow-x-auto [&_code]:rounded-md [&_code]:border [&_code]:border-stroke2 [&_code]:bg-bg1 [&_code]:px-2.5 [&_code]:py-2 [&_code]:font-mono [&_code]:text-200 [&_code]:whitespace-pre"
-    >
-      <strong>
-        배포 중인 버전({published})과 다른 에이전트가 {devices.length}대 있습니다.
-      </strong>
-      <ul className="mx-0 my-1.5 list-disc pl-[18px] text-200 text-fg2">
-        {devices.map((d) => (
-          <li key={d.id}>
-            {d.name} — {d.agent_version}
-          </li>
-        ))}
-      </ul>
-      <p className="m-0 text-200 text-fg2">
-        해당 기기에서 아래 명령을 실행하면 서버 주소·토큰·수집 폴더 설정을 그대로 둔 채 업데이트되고, 1분 안에 새 버전이 보고됩니다. 처음 설치한 계정으로
-        실행하세요(root 로 설치했다면 <strong>sudo sh</strong>, Windows 는 관리자 PowerShell).
-      </p>
-      <p style={{ marginTop: 10, marginBottom: 2 }}>Linux / macOS</p>
-      <div className="mt-1.5 flex items-center gap-2 [&_[data-slot=button]]:shrink-0">
-        <code>{cmds.unix}</code>
-        <Button touch size="small" onClick={() => navigator.clipboard?.writeText(cmds.unix)} aria-label="Linux / macOS 업데이트 명령 복사">
-          복사
-        </Button>
-      </div>
-      <p style={{ marginTop: 10, marginBottom: 2 }}>Windows (관리자 PowerShell)</p>
-      <div className="mt-1.5 flex items-center gap-2 [&_[data-slot=button]]:shrink-0">
-        <code>{cmds.windows}</code>
-        <Button touch size="small" onClick={() => navigator.clipboard?.writeText(cmds.windows)} aria-label="Windows 업데이트 명령 복사">
-          복사
-        </Button>
-      </div>
-    </div>
-  )
-}

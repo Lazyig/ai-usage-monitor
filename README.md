@@ -229,7 +229,6 @@ ai-usage-agent uninstall | start | stop | restart
 ## 알려진 제한
 
 - Antigravity 수집은 비공식 로컬 데이터 형식에 의존하므로 CLI 업데이트로 동작이 달라질 수 있습니다.
-
 - Claude Code · Codex 도 공식 API 가 아닌 로컬 로그 형식에 의존합니다.
 - 관리자는 단일 토큰 하나뿐이며, 사용자·권한 구분이 없습니다. 개인 또는 소규모 기기군을 전제로 합니다.
 - 서버는 SQLite 단일 인스턴스입니다. 수평 확장을 고려하지 않았습니다.
@@ -237,8 +236,10 @@ ai-usage-agent uninstall | start | stop | restart
 
 ## 개발
 
+전체 검사 목록(gofmt, `go test -race`, 웹 빌드, 설치 스크립트 검사, 실제 브라우저 검증)과 코드 경계는 [CONTRIBUTING.md](CONTRIBUTING.md) 를 따릅니다.
+
 ```sh
-go build ./... && go vet ./... && go test ./...
+go vet ./... && go test -race ./...
 (cd web && npm test)
 
 # 대시보드 개발: 서버를 띄워 두고 Vite 개발 서버를 실행하면 /api 요청이 :8080 으로 프록시됩니다
@@ -246,18 +247,22 @@ ADMIN_TOKEN=dev go run ./cmd/server
 (cd web && npm run dev)
 ```
 
-`internal/collector/*/integration_test.go` 는 실행하는 기기의 실제 로그를 읽어 형식과 커서 동작을 확인하며, 로그가 없으면 건너뜁니다.
+`internal/collector/*/integration_test.go` 는 실행하는 기기의 실제 로그를 읽기 전용으로 검사하며, `AI_USAGE_INTEGRATION=1` 을 지정했을 때만 실행됩니다(`AI_USAGE_INTEGRATION=1 go test ./internal/collector/... -run TestIntegrationRealHome`). 기본 검증과 CI 는 고정 픽스처만 검사합니다.
 
 ## 디렉터리 구성
 
 ```
-cmd/agent      기기별 수집 에이전트
-cmd/server     취합 서버
-internal/      event, collector/{claudecode,codex,antigravity}, pricing, store, transport, httpapi
-web/           대시보드 SPA (React + Vite + TypeScript)
-scripts/       에이전트 빌드, 설치/제거 스크립트
-pricing.yaml   모델별 단가
-docs/          API 명세(API.md), 배포 설정(DEPLOY.md)
+cmd/agent       기기별 수집 에이전트
+cmd/server      취합 서버
+internal/       event, agentcfg(에이전트 설정·상태 경로), cursor(수집 커서 저장),
+                collector/{claudecode,codex,antigravity,jsonlscan}, pricing, store, transport, httpapi
+web/            대시보드 SPA (React + Vite + TypeScript)
+scripts/        에이전트 빌드, 설치/제거 스크립트, embed.go(서버 fallback 이 내장하는 install.sh),
+                review-fixture.py(브라우저 검증용 임시 DB 픽스처)
+pricing.yaml    모델별 단가
+docs/           API 명세(API.md), 배포 설정(DEPLOY.md), 프로젝트 리뷰 기록(REVIEW.md)
+.github/        GitHub Actions CI (Go·웹·브라우저·Windows 설치 검사)
+.gitlab-ci.yml  GitLab 파이프라인 (테스트, 에이전트·웹 빌드, 서버 이미지 릴리스, 패키지 정리)
 ```
 
 ## 라이선스

@@ -16,10 +16,6 @@ import (
 	"ai-usage-monitor/internal/event"
 )
 
-// unknownModel is used for token_count lines that precede every record naming
-// a model (session_meta, thread_settings_applied, turn_context).
-const unknownModel = event.UnknownModel
-
 // Collector reads one Codex sessions directory.
 type Collector struct {
 	root string
@@ -235,9 +231,11 @@ func decodeLine(raw []byte, offset int64, deviceID string, st *fileState) (event
 			return event.UsageEvent{}, false
 		}
 
+		// token_count lines can precede every record naming a model
+		// (session_meta, thread_settings_applied, turn_context).
 		model := st.Model
 		if model == "" {
-			model = unknownModel
+			model = event.UnknownModel
 		}
 
 		// OpenAI -> our convention: input includes cached, so subtract it out.
@@ -255,10 +253,10 @@ func decodeLine(raw []byte, offset int64, deviceID string, st *fileState) (event
 			SessionID:   st.SessionID,
 			Project:     st.CWD,
 			Input:       input,
-			Output:      nonNeg(u.OutputTokens),
-			CacheRead:   nonNeg(u.CachedInputTokens),
-			CacheWrite:  nonNeg(u.CacheWriteTokens),
-			Reasoning:   nonNeg(u.ReasoningTokens),
+			Output:      max(u.OutputTokens, 0),
+			CacheRead:   max(u.CachedInputTokens, 0),
+			CacheWrite:  max(u.CacheWriteTokens, 0),
+			Reasoning:   max(u.ReasoningTokens, 0),
 			Confidence:  event.ConfidenceExact,
 			ToolVersion: st.CLIVersion,
 		}
@@ -272,11 +270,4 @@ func decodeLine(raw []byte, offset int64, deviceID string, st *fileState) (event
 	}
 
 	return event.UsageEvent{}, false
-}
-
-func nonNeg(v int64) int64 {
-	if v < 0 {
-		return 0
-	}
-	return v
 }

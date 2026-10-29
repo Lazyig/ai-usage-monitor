@@ -110,7 +110,7 @@ func TestScanMapping(t *testing.T) {
 			event: event.UsageEvent{
 				EventID:   eventID("sess-one", oneOff[2]),
 				Timestamp: time.Date(2026, 8, 1, 9, 0, 2, 0, time.UTC),
-				Model:     unknownModel, SessionID: "sess-one", Project: "/home/user/proj-one",
+				Model:     event.UnknownModel, SessionID: "sess-one", Project: "/home/user/proj-one",
 				Input: 200, Output: 50, CacheRead: 800, Reasoning: 30, ToolVersion: "0.150.0",
 			},
 		},
@@ -274,8 +274,8 @@ func TestCursorResumeKeepsSessionContext(t *testing.T) {
 	if len(reread) != 1 {
 		t.Fatalf("want a full re-read of the truncated file, got %d: %+v", len(reread), reread)
 	}
-	if reread[0].Model != unknownModel {
-		t.Errorf("a re-read file has no turn_context yet, want %q, got %q", unknownModel, reread[0].Model)
+	if reread[0].Model != event.UnknownModel {
+		t.Errorf("a re-read file has no turn_context yet, want %q, got %q", event.UnknownModel, reread[0].Model)
 	}
 }
 

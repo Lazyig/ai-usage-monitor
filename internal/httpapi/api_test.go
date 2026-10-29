@@ -114,6 +114,24 @@ func (h *harness) newDevice(name string) (string, string) {
 	return res.ID, res.Token
 }
 
+// ingest posts one batch as a device and returns the decoded response.
+func (h *harness) ingest(devID, token string, evs ...event.UsageEvent) ingestResponse {
+	h.t.Helper()
+	if evs == nil {
+		evs = []event.UsageEvent{}
+	}
+	w := h.do(http.MethodPost, "/api/v1/ingest", token, map[string]any{
+		"device": map[string]string{"id": devID, "name": "mac"},
+		"events": evs,
+	})
+	if w.Code != http.StatusOK {
+		h.t.Fatalf("ingest = %d %s", w.Code, w.Body)
+	}
+	var res ingestResponse
+	h.decode(w, &res)
+	return res
+}
+
 func TestAdminAuth(t *testing.T) {
 	// No admin token configured: every admin route is 503, not 401.
 	unset := newHarness(t, Options{})

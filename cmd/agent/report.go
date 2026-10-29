@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -250,9 +249,4 @@ func pluralDays(n int) string {
 		return "all days"
 	}
 	return strconv.Itoa(n) + " days"
-}
-
-func dirExists(path string) bool {
-	fi, err := os.Stat(path)
-	return err == nil && fi.IsDir()
 }

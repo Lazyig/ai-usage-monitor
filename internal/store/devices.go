@@ -111,13 +111,16 @@ func (s *Store) CreateDevice(ctx context.Context, name string) (Device, string, 
 
 const deviceCols = `d.id, d.name, d.os, d.arch, d.agent_version, d.token_created_at, d.last_seen, d.last_ingest, d.revoked_at, d.hostname`
 
-func scanDevice(sc interface{ Scan(...any) error }) (Device, error) {
+// scanDevice reads the deviceCols of one row; extra receives any columns the
+// query selects after them.
+func scanDevice(sc interface{ Scan(...any) error }, extra ...any) (Device, error) {
 	var (
 		d                             Device
 		created                       int64
 		lastSeen, lastIngest, revoked sql.NullInt64
 	)
-	if err := sc.Scan(&d.ID, &d.Name, &d.OS, &d.Arch, &d.AgentVersion, &created, &lastSeen, &lastIngest, &revoked, &d.Hostname); err != nil {
+	dest := append([]any{&d.ID, &d.Name, &d.OS, &d.Arch, &d.AgentVersion, &created, &lastSeen, &lastIngest, &revoked, &d.Hostname}, extra...)
+	if err := sc.Scan(dest...); err != nil {
 		return Device{}, err
 	}
 	d.TokenCreatedAt = fromMillis(created)
@@ -159,37 +162,19 @@ func (s *Store) ListDevices(ctx context.Context) ([]Device, error) {
 	defer rows.Close()
 	out := []Device{}
 	for rows.Next() {
-		var (
-			d                             Device
-			created                       int64
-			lastSeen, lastIngest, revoked sql.NullInt64
-			events                        int64
-		)
-		if err := rows.Scan(&d.ID, &d.Name, &d.OS, &d.Arch, &d.AgentVersion, &created,
-			&lastSeen, &lastIngest, &revoked, &d.Hostname, &events); err != nil {
+		var events int64
+		d, err := scanDevice(rows, &events)
+		if err != nil {
 			return nil, err
 		}
-		d.TokenCreatedAt = fromMillis(created)
-		d.LastSeen = nullMillis(lastSeen)
-		d.LastIngest = nullMillis(lastIngest)
-		d.RevokedAt = nullMillis(revoked)
 		d.EventsTotal = events
 		out = append(out, d)
 	}
 	return out, rows.Err()
 }
 
-// RevokeDevice invalidates the device token. Events are kept; the token hash is
-// rewritten so the old token can never be used again and the UNIQUE index stays
-// happy if the same name is registered later.
-func (s *Store) RevokeDevice(ctx context.Context, id string) error {
-	now := nowMillis()
-	res, err := s.db.ExecContext(ctx,
-		`UPDATE devices SET revoked_at = COALESCE(revoked_at, ?), token_hash = 'revoked:' || id || ':' || ?
-		 WHERE id = ?`, now, now, id)
-	if err != nil {
-		return err
-	}
+// requireRow turns an UPDATE or DELETE that matched no row into ErrNotFound.
+func requireRow(res sql.Result) error {
 	n, err := res.RowsAffected()
 	if err != nil {
 		return err
@@ -198,6 +183,23 @@ func (s *Store) RevokeDevice(ctx context.Context, id string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// flagResyncSQL sets the flag ConsumeResync reads and clears.
+const flagResyncSQL = `UPDATE devices SET resync_requested = 1 WHERE id = ?`
+
+// RevokeDevice invalidates the device token. Events are kept; the token hash is
+// rewritten to a per-device placeholder so the old token can never be used
+// again, and the placeholder stays unique under the token_hash UNIQUE index.
+func (s *Store) RevokeDevice(ctx context.Context, id string) error {
+	now := nowMillis()
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE devices SET revoked_at = COALESCE(revoked_at, ?), token_hash = 'revoked:' || id || ':' || ?
+		 WHERE id = ?`, now, now, id)
+	if err != nil {
+		return err
+	}
+	return requireRow(res)
 }
 
 // RotateToken mints a fresh token for an existing device: the old one stops
@@ -218,12 +220,8 @@ func (s *Store) RotateToken(ctx context.Context, id string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("store: rotate token: %w", err)
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
+	if err := requireRow(res); err != nil {
 		return "", err
-	}
-	if n == 0 {
-		return "", ErrNotFound
 	}
 	return token, nil
 }
@@ -242,16 +240,12 @@ func (s *Store) PurgeEvents(ctx context.Context, id string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	res, err := tx.ExecContext(ctx, `UPDATE devices SET resync_requested = 1 WHERE id = ?`, id)
+	res, err := tx.ExecContext(ctx, flagResyncSQL, id)
 	if err != nil {
 		return 0, fmt.Errorf("store: flag resync: %w", err)
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
+	if err := requireRow(res); err != nil {
 		return 0, err
-	}
-	if n == 0 {
-		return 0, ErrNotFound
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
@@ -292,12 +286,8 @@ func (s *Store) DeleteDevice(ctx context.Context, id string, purge bool) (int64,
 	if err != nil {
 		return 0, fmt.Errorf("store: delete device: %w", err)
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
+	if err := requireRow(res); err != nil {
 		return 0, err
-	}
-	if n == 0 {
-		return 0, ErrNotFound
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
@@ -310,18 +300,11 @@ func (s *Store) DeleteDevice(ctx context.Context, id string, purge bool) (int64,
 // are dropped as duplicates or, when a copy is more complete than what was
 // stored (a streamed response caught mid-stream), refresh it. See InsertEvents.
 func (s *Store) RequestResync(ctx context.Context, id string) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE devices SET resync_requested = 1 WHERE id = ?`, id)
+	res, err := s.db.ExecContext(ctx, flagResyncSQL, id)
 	if err != nil {
 		return fmt.Errorf("store: flag resync: %w", err)
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return requireRow(res)
 }
 
 // ConsumeResync reports whether a re-sync was requested for the device and
@@ -384,10 +367,7 @@ func (s *Store) TouchDevice(ctx context.Context, m DeviceMeta, ingest bool, at t
 func (s *Store) RenameDevice(ctx context.Context, id, name string) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE devices SET name = ? WHERE id = ?`, name, id)
 	if err != nil {
-		return err
+		return fmt.Errorf("store: rename device: %w", err)
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return requireRow(res)
 }

@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -549,7 +550,7 @@ func runSelfChecks(convID, path string, gens []genRow, stepTime map[string]time.
 		}
 		// 3. model id must look like a known provider.
 		if g.Model != "" && !knownModel(g.Model) {
-			if !containsString(d.UnknownModels, g.Model) {
+			if !slices.Contains(d.UnknownModels, g.Model) {
 				d.UnknownModels = append(d.UnknownModels, g.Model)
 			}
 		}
@@ -589,13 +590,4 @@ func runSelfChecks(convID, path string, gens []genRow, stepTime map[string]time.
 // treated as possible schema drift.
 func knownModel(m string) bool {
 	return strings.HasPrefix(m, "gemini-") || strings.HasPrefix(m, "claude-") || m == internalModel
-}
-
-func containsString(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }

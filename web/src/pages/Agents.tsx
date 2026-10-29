@@ -6,6 +6,7 @@ import { Card } from '../components/Card'
 import { CompositionChart, CompositionLegend, type CompositionSegment } from '../components/CompositionChart'
 import { type Column, DataTable } from '../components/DataTable'
 import { ErrorBoundary } from '../components/ErrorBoundary'
+import { PageHeader } from '../components/PageHeader'
 import { RowField } from '../components/RowField'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { StateContainer } from '../components/StateContainer'
@@ -90,9 +91,7 @@ export function Agents() {
 
   return (
     <div>
-      <div className="mt-2 mb-5 flex flex-wrap items-center justify-between gap-3 [&>h1]:m-0">
-        <h1>에이전트</h1>
-      </div>
+      <PageHeader title="에이전트" />
 
       <div className="mb-4 flex flex-wrap items-end gap-3 max-phone:flex-col max-phone:items-stretch">
         <RowField label="기기">

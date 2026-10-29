@@ -3,6 +3,7 @@ import { getPricing, reloadPricing } from '../api/client'
 import type { PricingRate } from '../api/types'
 import { Badge } from '../components/Badge'
 import { type Column, DataTable } from '../components/DataTable'
+import { PageHeader } from '../components/PageHeader'
 import { StateContainer } from '../components/StateContainer'
 import { Button } from '../components/ui/button'
 import { useApiData } from '../hooks/useApiData'
@@ -74,12 +75,11 @@ export function Pricing() {
 
   return (
     <div>
-      <div className="mt-2 mb-5 flex flex-wrap items-center justify-between gap-3 [&>h1]:m-0">
-        <h1>가격표</h1>
+      <PageHeader title="가격표">
         <Button touch onClick={onReload} disabled={reloading}>
           {reloading ? '재로드 중…' : 'pricing.yaml 다시 읽기'}
         </Button>
-      </div>
+      </PageHeader>
       {reloadError && <p className="text-200 text-danger">{reloadError}</p>}
       <p className="text-fg3">
         입력/출력 단가가 <strong>—</strong>로 표시되는 모델은 단가를 알 수 없어 비용 합계에서 <Badge kind="unknown" /> (단가 미상)으로 집계됩니다.{' '}
@@ -93,7 +93,16 @@ export function Pricing() {
         empty={state.status === 'success' && state.data.rates.length === 0}
         emptyMessage="가격표 항목이 없습니다."
       >
-            {state.status === 'success' && <DataTable columns={PRICING_COLUMNS} rows={state.data.rates} rowKey={(r) => `${r.match}:${r.effective_from ?? ''}:${r.effective_to ?? ''}`} initialSortKey="match" initialSortDir="asc" size="small" />}
+        {state.status === 'success' && (
+          <DataTable
+            columns={PRICING_COLUMNS}
+            rows={state.data.rates}
+            rowKey={(r) => `${r.match}:${r.effective_from ?? ''}:${r.effective_to ?? ''}`}
+            initialSortKey="match"
+            initialSortDir="asc"
+            size="small"
+          />
+        )}
       </StateContainer>
     </div>
   )

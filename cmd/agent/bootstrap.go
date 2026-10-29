@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -119,18 +120,26 @@ func migrateIDScheme(dir string, cfg *agentcfg.Config, logf func(format string, 
 	}
 	logf("event id scheme %d -> %d: clearing cursors so this device's history is re-sent with the new ids",
 		cfg.IDScheme, event.IDScheme)
-	if err := cursor.Clear(agentcfg.CursorPath(dir)); err != nil {
-		logf("warn: %v (will retry on the next start)", err)
-		return
-	}
 	// Queued batches carry the old ids: replayed after the rescan they would
 	// be stored a second time. The rescan re-sends what they held.
-	if err := os.RemoveAll(agentcfg.QueueDir(dir)); err != nil {
-		logf("warn: clear queue: %v (will retry on the next start)", err)
+	if err := clearProgress(dir); err != nil {
+		logf("warn: %v (will retry on the next start)", err)
 		return
 	}
 	cfg.IDScheme = event.IDScheme
 	if err := updateStored(dir, func(c *agentcfg.Config) { c.IDScheme = event.IDScheme }); err != nil {
 		logf("save config: %v", err)
 	}
+}
+
+// clearProgress deletes the collector cursors and the offline queue of the
+// state directory, so the next pass re-reads every log from the beginning.
+func clearProgress(dir string) error {
+	if err := cursor.Clear(agentcfg.CursorPath(dir)); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(agentcfg.QueueDir(dir)); err != nil {
+		return fmt.Errorf("remove %s: %w", agentcfg.QueueDir(dir), err)
+	}
+	return nil
 }

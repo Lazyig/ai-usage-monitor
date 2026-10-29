@@ -37,12 +37,15 @@ export function StateContainer({ loading, error, empty, emptyMessage, onRetry, c
       </Alert>
     )
   }
-  if (empty) {
-    return (
-      <div className="flex items-center justify-center rounded-lg border border-dashed border-stroke2 px-4 py-8 text-center text-fg3 [&_p]:m-0 [&_p]:text-inherit">
-        <p>{emptyMessage ?? '해당 기간에 데이터가 없습니다.'}</p>
-      </div>
-    )
-  }
+  if (empty) return <EmptyState>{emptyMessage ?? '해당 기간에 데이터가 없습니다.'}</EmptyState>
   return <>{children}</>
+}
+
+/** The dashed placeholder box for a section with nothing to show. */
+export function EmptyState({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-center rounded-lg border border-dashed border-stroke2 px-4 py-8 text-center text-fg3 [&_p]:m-0 [&_p]:text-inherit">
+      <p>{children}</p>
+    </div>
+  )
 }

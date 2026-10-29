@@ -11,6 +11,10 @@ export type ApiState<T> =
  * Runs `fetcher` whenever `deps` change, tracking loading/error/success state.
  * `fetcher` is expected to be stable-enough (usually an inline closure) —
  * only `deps` controls when it re-runs.
+ *
+ * Callers must list `refreshKey` (from useFilters) in `deps` for the refresh
+ * button and auto refresh to re-fetch at all; a change of only that key (or a
+ * `reload()`) is what keeps the current data on screen while it loads.
  */
 export function useApiData<T>(fetcher: () => Promise<T>, deps: unknown[]): ApiState<T> & { reload: () => void } {
   const [state, setState] = useState<ApiState<T>>({ status: 'loading' })

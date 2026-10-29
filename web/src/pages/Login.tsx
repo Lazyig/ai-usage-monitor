@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button'
 import { Card } from '../components/ui/card'
 import { Field } from '../components/ui/field'
 import { Input } from '../components/ui/input'
+import { safeReturnPath } from '../lib/navigation'
 import { useAuth } from '../state/AuthContext'
 
 export function Login() {
@@ -65,12 +66,4 @@ export function Login() {
       </Card>
     </div>
   )
-}
-
-/** The page to return to after login: an in-app path only. "//host" and
- * "/\\host" would be read as another origin (react-router advisory
- * GHSA-wrjc-x8rr-h8h6). */
-export function safeReturnPath(p: string | undefined): string {
-  if (!p || !p.startsWith('/') || p.startsWith('//') || p.startsWith('/\\')) return '/'
-  return p
 }

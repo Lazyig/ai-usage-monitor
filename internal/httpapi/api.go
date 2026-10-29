@@ -4,17 +4,10 @@
 package httpapi
 
 import (
-	"context"
-	"crypto/subtle"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"net/url"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -30,11 +23,6 @@ const MaxBatchEvents = 5000
 
 // DefaultTZ is the timezone day buckets use when the caller does not pass one.
 const DefaultTZ = "Asia/Seoul"
-
-// deviceTokenTTL bounds how long a device token stays cached; revocation through
-// this server invalidates the entry immediately, the TTL only covers changes
-// made by another process.
-const deviceTokenTTL = 60 * time.Second
 
 // Options configures New.
 type Options struct {
@@ -70,11 +58,6 @@ type api struct {
 
 	counts   store.Counts // /health's cached row counts, see cachedCounts
 	countsAt time.Time
-}
-
-type cachedDevice struct {
-	dev store.Device
-	at  time.Time
 }
 
 // New builds the complete handler tree.
@@ -124,191 +107,6 @@ func New(st *store.Store, pr *Pricing, opt Options) http.Handler {
 	return a.logging(securityHeaders(noStoreAPI(limitBody(mux))))
 }
 
-// contentSecurityPolicy fits the built SPA: its scripts, styles, fonts and
-// images are all same-origin files; recharts and Radix set inline style
-// attributes; nothing is framed, posted cross-site or loaded from elsewhere.
-const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-	"img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; " +
-	"base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
-
-// securityHeaders goes on every response. The admin token lives in the
-// dashboard's localStorage, so the dashboard must never run in a frame
-// (clickjacking its delete and rotate buttons) or load script from anywhere
-// else.
-func securityHeaders(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hd := w.Header()
-		hd.Set("Content-Security-Policy", contentSecurityPolicy)
-		hd.Set("X-Frame-Options", "DENY")
-		hd.Set("X-Content-Type-Options", "nosniff")
-		hd.Set("Referrer-Policy", "no-referrer")
-		h.ServeHTTP(w, r)
-	})
-}
-
-// --- middleware ------------------------------------------------------------
-
-func limitBody(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Body != nil {
-			r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)
-		}
-		h.ServeHTTP(w, r)
-	})
-}
-
-// noStoreAPI keeps API answers out of every cache; the dashboard polls them.
-func noStoreAPI(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/health" || strings.HasPrefix(r.URL.Path, "/health/") {
-			w.Header().Set("Cache-Control", "no-store")
-		}
-		h.ServeHTTP(w, r)
-	})
-}
-
-type statusWriter struct {
-	http.ResponseWriter
-	status int
-	bytes  int
-}
-
-func (w *statusWriter) WriteHeader(code int) {
-	if w.status == 0 {
-		w.status = code
-	}
-	w.ResponseWriter.WriteHeader(code)
-}
-
-func (w *statusWriter) Write(b []byte) (int, error) {
-	if w.status == 0 {
-		w.status = http.StatusOK
-	}
-	n, err := w.ResponseWriter.Write(b)
-	w.bytes += n
-	return n, err
-}
-
-func (a *api) logging(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		sw := &statusWriter{ResponseWriter: w}
-		h.ServeHTTP(sw, r)
-		if sw.status == 0 {
-			sw.status = http.StatusOK
-		}
-		attrs := []any{
-			"method", r.Method,
-			"path", r.URL.Path,
-			"status", sw.status,
-			"bytes", sw.bytes,
-			"duration", time.Since(start).Round(time.Microsecond).String(),
-		}
-		if d, ok := deviceFrom(r.Context()); ok {
-			attrs = append(attrs, "device", d.ID)
-		}
-		level := slog.LevelInfo
-		if sw.status >= 500 {
-			level = slog.LevelError
-		}
-		a.log.Log(r.Context(), level, "http", attrs...)
-	})
-}
-
-// bearer extracts the Authorization bearer token.
-func bearer(r *http.Request) string {
-	h := r.Header.Get("Authorization")
-	if len(h) < 7 || !strings.EqualFold(h[:7], "bearer ") {
-		return ""
-	}
-	return strings.TrimSpace(h[7:])
-}
-
-// admin guards the query/administration routes.
-func (a *api) admin(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if a.opt.AdminToken == "" {
-			writeError(w, http.StatusServiceUnavailable, "admin token not configured")
-			return
-		}
-		tok := bearer(r)
-		if subtle.ConstantTimeCompare([]byte(tok), []byte(a.opt.AdminToken)) != 1 {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
-		}
-		h.ServeHTTP(w, r)
-	})
-}
-
-type ctxKey int
-
-const deviceKey ctxKey = 1
-
-func deviceFrom(ctx context.Context) (store.Device, bool) {
-	d, ok := ctx.Value(deviceKey).(store.Device)
-	return d, ok
-}
-
-// device guards ingest: the bearer token must hash to a live device.
-func (a *api) device(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tok := bearer(r)
-		if tok == "" {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
-		}
-		dev, err := a.lookupDevice(r.Context(), store.HashToken(tok))
-		if err != nil {
-			if !errors.Is(err, store.ErrNotFound) {
-				a.log.Error("device lookup", "err", err)
-				writeError(w, http.StatusInternalServerError, "internal error")
-				return
-			}
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
-		}
-		if dev.RevokedAt != nil {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
-		}
-		h.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), deviceKey, dev)))
-	})
-}
-
-func (a *api) lookupDevice(ctx context.Context, hash string) (store.Device, error) {
-	a.mu.Lock()
-	if c, ok := a.devCache[hash]; ok && time.Since(c.at) < deviceTokenTTL {
-		a.mu.Unlock()
-		return c.dev, nil
-	}
-	gen := a.devGen
-	a.mu.Unlock()
-
-	dev, err := a.store.DeviceByTokenHash(ctx, hash)
-	if err != nil {
-		return store.Device{}, err
-	}
-	a.mu.Lock()
-	if a.forgotAt[dev.ID] <= gen {
-		a.devCache[hash] = cachedDevice{dev: dev, at: time.Now()}
-	}
-	a.mu.Unlock()
-	return dev, nil
-}
-
-// forgetDevice drops cached tokens for a device so a revocation takes effect now.
-func (a *api) forgetDevice(id string) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.devGen++
-	a.forgotAt[id] = a.devGen
-	for hash, c := range a.devCache {
-		if c.dev.ID == id {
-			delete(a.devCache, hash)
-		}
-	}
-}
-
 // --- responses -------------------------------------------------------------
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -321,41 +119,4 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
-}
-
-// boolParam reads a flag query parameter: "true", "1", "yes" and "on" (any
-// case) enable it, anything else - including a missing parameter - does not.
-func boolParam(r *http.Request, name string) bool {
-	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get(name))) {
-	case "true", "1", "yes", "on":
-		return true
-	}
-	return false
-}
-
-func intParam(r *http.Request, name string, def int) int {
-	v := r.URL.Query().Get(name)
-	if v == "" {
-		return def
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n <= 0 {
-		return def
-	}
-	return n
-}
-
-// ParsePublicURL checks a configured public base URL: http or https with a
-// host and nothing after the path, returned without a trailing slash. An empty
-// value is allowed (the request decides).
-func ParsePublicURL(raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", nil
-	}
-	u, err := url.Parse(raw)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
-		return "", fmt.Errorf("public URL %q: want http(s)://host[:port][/path]", raw)
-	}
-	return strings.TrimRight(u.String(), "/"), nil
 }

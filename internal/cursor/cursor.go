@@ -74,8 +74,8 @@ func (s *Store) Set(source event.Source, cur collector.Cursor) error {
 }
 
 // Reset forgets every cursor, in memory and on disk, so the next scan starts
-// from the beginning. Used when the server asks for a full resync and when the
-// EventID scheme changes.
+// from the beginning. Used when the server asks for a full resync; a state
+// directory with no open Store (rescan, an EventID scheme change) uses Clear.
 func (s *Store) Reset() error {
 	s.mu.Lock()
 	s.data = map[string]json.RawMessage{}

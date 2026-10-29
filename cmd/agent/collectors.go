@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -47,6 +48,11 @@ func anyDirExists(roots []string) bool {
 		}
 	}
 	return false
+}
+
+func dirExists(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.IsDir()
 }
 
 // known lists the compiled-in sources in agentcfg.Sources order.

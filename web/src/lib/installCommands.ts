@@ -1,8 +1,14 @@
-// Shared with Devices (token issuance) and Downloads (generic reference) —
-// keeps the two install one-liners in exactly one place.
-export interface InstallCommands {
+// Agent install, update and uninstall one-liners for both platforms, shared by
+// Devices (token issuance, update notice) and Downloads (generic reference),
+// so each command exists in exactly one place.
+interface InstallCommands {
   unix: string
   windows: string
+}
+
+/** The dashboard's own origin, which the commands point the agent at. */
+export function currentOrigin(): string {
+  return typeof window !== 'undefined' ? window.location.origin : ''
 }
 
 /** True when the dashboard is served over plain http from another machine:
@@ -17,7 +23,7 @@ export function isInsecureOrigin(origin: string): boolean {
   }
 }
 
-function insecureFlags(origin: string): { unix: string; windows: string } {
+function insecureFlags(origin: string): InstallCommands {
   return isInsecureOrigin(origin) ? { unix: ' --allow-http', windows: ' -AllowHttp' } : { unix: '', windows: '' }
 }
 

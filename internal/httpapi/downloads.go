@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -152,17 +153,34 @@ func (a *api) baseURL(r *http.Request) string {
 	return requestBaseURL(r)
 }
 
+// ParsePublicURL checks a configured public base URL: http or https with a
+// host and nothing after the path, returned without a trailing slash. An empty
+// value is allowed (the request decides).
+func ParsePublicURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		return "", fmt.Errorf("public URL %q: want http(s)://host[:port][/path]", raw)
+	}
+	return strings.TrimRight(u.String(), "/"), nil
+}
+
 func requestBaseURL(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
 	if v := r.Header.Get("X-Forwarded-Proto"); v != "" {
-		scheme = strings.TrimSpace(strings.Split(v, ",")[0])
+		first, _, _ := strings.Cut(v, ",")
+		scheme = strings.TrimSpace(first)
 	}
 	host := r.Host
 	if v := r.Header.Get("X-Forwarded-Host"); v != "" {
-		host = strings.TrimSpace(strings.Split(v, ",")[0])
+		first, _, _ := strings.Cut(v, ",")
+		host = strings.TrimSpace(first)
 	}
 	return scheme + "://" + host
 }

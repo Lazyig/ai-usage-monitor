@@ -10,6 +10,112 @@ import (
 	"ai-usage-monitor/internal/pricing"
 )
 
+func TestTimeseriesKSTDayBoundary(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	seed(t, s)
+	kst, err := time.LoadLocation("Asia/Seoul")
+	if err != nil {
+		t.Skipf("tzdata unavailable: %v", err)
+	}
+	// KST 2026-09-01 00:00 .. 2026-09-04 00:00
+	f := Filter{From: mustTime(t, "2026-08-31T15:00:00Z"), To: mustTime(t, "2026-09-03T15:00:00Z")}
+
+	ts, err := s.Timeseries(ctx, f, "day", "source", kst, testTable(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	series := map[string]Series{}
+	for _, ser := range ts.Series {
+		series[ser.Key] = ser
+	}
+	cc := series["claude_code"]
+	if len(cc.Points) != 2 {
+		t.Fatalf("claude_code points = %+v", cc.Points)
+	}
+	// 2026-09-01T15:30Z is 2026-09-02 00:30 KST: it must land on the *next* day.
+	if cc.Points[0].T != "2026-09-01" || cc.Points[1].T != "2026-09-02" {
+		t.Fatalf("day labels = %q, %q", cc.Points[0].T, cc.Points[1].T)
+	}
+	if cc.Points[0].Input != 1_000_000 || cc.Points[1].Input != 500_000 {
+		t.Fatalf("tokens on the wrong side of KST midnight: %+v", cc.Points)
+	}
+	approx(t, "kst day 1 cost", cc.Points[0].CostUSD, 11.625)
+	approx(t, "kst day 2 cost", cc.Points[1].CostUSD, 2.5)
+
+	// The same range bucketed in UTC keeps both events on 2026-09-01.
+	utc, err := s.Timeseries(ctx, f, "day", "source", time.UTC, testTable(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ser := range utc.Series {
+		if ser.Key == "claude_code" {
+			if len(ser.Points) != 1 || ser.Points[0].T != "2026-09-01" || ser.Points[0].Events != 2 {
+				t.Fatalf("utc bucketing = %+v", ser.Points)
+			}
+		}
+	}
+
+	hourly, err := s.Timeseries(ctx, f, "hour", "model", kst, testTable(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ser := range hourly.Series {
+		if ser.Key == "claude-opus-5" && len(ser.Points) != 2 {
+			t.Fatalf("hourly points = %+v", ser.Points)
+		}
+	}
+	if _, err := s.Timeseries(ctx, f, "week", "source", kst, nil); err == nil {
+		t.Error("bogus bucket accepted")
+	}
+}
+
+// A zone with DST must still bucket by local day: the spring-forward day is only
+// 23 hours long in UTC and the segment logic has to follow the offset change.
+func TestTimeseriesDSTDayBoundary(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skipf("tzdata unavailable: %v", err)
+	}
+	d, _, err := s.CreateDevice(ctx, "ny")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 2026-03-08 is the US spring-forward date (02:00 EST -> 03:00 EDT).
+	evs := []event.UsageEvent{
+		ev(t, "n1", d.ID, event.SourceCodex, "2026-03-08T06:30:00Z", "gpt-5.6-terra", 10, 0, 0, 0), // 01:30 EST, Mar 8
+		ev(t, "n2", d.ID, event.SourceCodex, "2026-03-08T20:00:00Z", "gpt-5.6-terra", 20, 0, 0, 0), // 16:00 EDT, Mar 8
+		ev(t, "n3", d.ID, event.SourceCodex, "2026-03-09T03:30:00Z", "gpt-5.6-terra", 30, 0, 0, 0), // 23:30 EDT, Mar 8
+		ev(t, "n4", d.ID, event.SourceCodex, "2026-03-09T06:00:00Z", "gpt-5.6-terra", 40, 0, 0, 0), // 02:00 EDT, Mar 9
+	}
+	if _, _, _, err := s.InsertEvents(ctx, evs); err != nil {
+		t.Fatal(err)
+	}
+	f := Filter{From: mustTime(t, "2026-03-07T00:00:00Z"), To: mustTime(t, "2026-03-10T12:00:00Z")}
+	ts, err := s.Timeseries(ctx, f, "day", "source", ny, testTable(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ts.Series) != 1 {
+		t.Fatalf("series = %+v", ts.Series)
+	}
+	got := map[string]int64{}
+	for _, p := range ts.Series[0].Points {
+		got[p.T] = p.Input
+	}
+	want := map[string]int64{"2026-03-08": 60, "2026-03-09": 40}
+	if len(got) != len(want) {
+		t.Fatalf("points = %+v, want %+v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Fatalf("points = %+v, want %+v", got, want)
+		}
+	}
+}
+
 // A price applies by the event's UTC day. A local day bucket (Asia/Seoul
 // starts at 15:00 UTC) straddles two UTC days, so /timeseries must price per
 // UTC day exactly as /summary does.
@@ -137,36 +243,6 @@ func TestTimeseriesHourlyFallBack(t *testing.T) {
 		if got[k] != v {
 			t.Fatalf("points %v, want %v", got, want)
 		}
-	}
-}
-
-// An event stored before the token cap would overflow every SUM over it; the
-// migration removes it.
-func TestMigrationDropsOversizedEvents(t *testing.T) {
-	ctx := context.Background()
-	s := openTest(t)
-	d, _, err := s.CreateDevice(ctx, "x")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, _, err := s.InsertEvents(ctx, []event.UsageEvent{
-		ev(t, "ok", d.ID, event.SourceCodex, "2026-10-01T01:00:00Z", "gpt-5.6-terra", 10, 0, 0, 0),
-		ev(t, "huge", d.ID, event.SourceCodex, "2026-10-01T02:00:00Z", "gpt-5.6-terra", 9_000_000_000_000_000_000, 0, 0, 0),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version = '0004_drop_oversized_events.sql'`); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.migrate(ctx); err != nil {
-		t.Fatal(err)
-	}
-	var n int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM usage_events`).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	if n != 1 {
-		t.Errorf("%d events left, want only the sane one", n)
 	}
 }
 

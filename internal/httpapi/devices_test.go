@@ -5,27 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"ai-usage-monitor/internal/event"
 	"ai-usage-monitor/internal/store"
 )
-
-// ingest posts one batch as a device and returns the decoded response.
-func (h *harness) ingest(devID, token string, evs ...event.UsageEvent) ingestResponse {
-	h.t.Helper()
-	if evs == nil {
-		evs = []event.UsageEvent{}
-	}
-	w := h.do(http.MethodPost, "/api/v1/ingest", token, map[string]any{
-		"device": map[string]string{"id": devID, "name": "mac"},
-		"events": evs,
-	})
-	if w.Code != http.StatusOK {
-		h.t.Fatalf("ingest = %d %s", w.Code, w.Body)
-	}
-	var res ingestResponse
-	h.decode(w, &res)
-	return res
-}
 
 func TestRotateDeviceToken(t *testing.T) {
 	h := newHarness(t, Options{AdminToken: adminToken})

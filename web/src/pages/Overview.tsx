@@ -7,6 +7,7 @@ import { type Column, DataTable } from '../components/DataTable'
 import { Desktop20Regular } from '@fluentui/react-icons/headless/svg/desktop'
 import { costColumn, countColumn, Swatch, tokenColumn } from '../components/columns'
 import { ErrorBoundary } from '../components/ErrorBoundary'
+import { PageHeader } from '../components/PageHeader'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { StateContainer } from '../components/StateContainer'
 import { StatTile } from '../components/StatTile'
@@ -38,9 +39,7 @@ export function Overview() {
 
   return (
     <div>
-      <div className="mt-2 mb-5 flex flex-wrap items-center justify-between gap-3 [&>h1]:m-0">
-        <h1>개요</h1>
-      </div>
+      <PageHeader title="개요" />
 
       <ErrorBoundary label="통계 타일을 표시할 수 없습니다">
         <StateContainer loading={summaryState.status === 'loading'} error={summaryError} onRetry={summaryState.reload}>

@@ -80,7 +80,7 @@ export function ThroughputCard({ title, loading, error, onRetry, data, labelFor,
               </div>
               <DataTable columns={columns} rows={visible} rowKey={(g) => g.key} initialSortKey="pm_total" />
               {(hidden > 0 || showAll) && limit && groups.length > limit && (
-                <Button touch size="small" appearance="subtle" style={{ marginTop: 8 }} onClick={() => setShowAll((v) => !v)}>
+                <Button touch size="small" appearance="subtle" className="mt-2" onClick={() => setShowAll((v) => !v)}>
                   {showAll ? `상위 ${limit}개만 보기` : `${hidden}개 더 보기`}
                 </Button>
               )}
