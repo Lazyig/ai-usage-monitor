@@ -49,7 +49,7 @@ func resolveDB(flagValue string, flagSet bool, getenv func(string) string, exist
 		// empty PostgreSQL database just because DATABASE_URL appeared.
 		if exists(defaultDBPath) {
 			return dbSetting{}, fmt.Errorf("DATABASE_URL is set, but the SQLite database %s exists: set DB_PATH=%s to keep using it, "+
-				"or set DB_PATH to the PostgreSQL URL to switch deliberately", defaultDBPath, defaultDBPath)
+				"or set DB_PATH to the PostgreSQL URL to switch deliberately (ai-usage-server copy-db copies the data over)", defaultDBPath, defaultDBPath)
 		}
 		return dbSetting{dsn: dbURL, source: "DATABASE_URL"}, nil
 	}

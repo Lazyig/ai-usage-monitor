@@ -178,6 +178,63 @@ readinessProbe:
   httpGet: { path: /health/ready, port: 8080 }
 ```
 
+### SQLite 에서 옮기기 (`copy-db`)
+
+`ai-usage-server copy-db` 는 기기(토큰 해시 포함)와 이벤트를 다른 DB 로 그대로 복사한다. 기기 토큰이 그대로 옮겨지므로 에이전트는 다시 설치하지 않아도 된다. 반대 방향(PostgreSQL → SQLite)도 된다.
+
+- 대상은 비어 있어야 한다(없으면 스키마를 만든다). 원본은 읽기만 하고 마이그레이션하지 않으므로, 원본이 이 버전의 스키마가 아니면 먼저 이 버전 서버를 원본으로 한 번 띄운다.
+- 원본은 한 스냅샷으로 읽고 대상은 한 트랜잭션으로 쓴다. 끝나면 양쪽 행 수를 비교해 출력한다. 실패하면 대상에는 아무것도 남지 않는다.
+- 복사하는 동안 들어온 이벤트는 옮겨지지 않으므로 **서버를 멈추고** 실행한다. 에이전트는 그동안 보내지 못한 이벤트를 큐에 두었다가 새 서버로 다시 보낸다.
+- `-to` 를 주지 않으면 서버 자신의 설정(`DB_PATH`, 없으면 `DATABASE_URL`)을 대상으로 쓴다. 비밀번호가 `ps` 에 보이지 않도록 URL 은 `-from-env`/`-to-env` 와 `PGPASSWORD` 로 넘긴다.
+- 예전 SQLite 데이터의 자유 텍스트에 NUL·깨진 UTF-8 이 있으면 U+FFFD 로 바꿔 넣고 그 개수를 알려 준다. id 에 그런 문자가 있으면 복사하지 않고 해당 id 를 보여 준다.
+
+Docker:
+
+```sh
+docker stop ai-usage-monitor
+docker run --rm -v ai-usage-data:/data \
+  -e TARGET='postgres://ai_usage@db.example.com/ai_usage?sslmode=verify-full' -e PGPASSWORD \
+  ghcr.io/lazyig/ai-usage-monitor:latest copy-db -from /data/usage.db -to-env TARGET
+# copied 3 devices and 182311 events; counts verified
+```
+
+그다음 서버를 `DB_PATH` 없이 `DATABASE_URL` 로(또는 `DB_PATH` 에 그 URL 을 주고) 다시 띄운다. `DB_PATH=/data/usage.db` 가 남아 있으면 SQLite 를 계속 쓰므로 꼭 바꾼다. 옛 볼륨은 서버에서 떼어 내고, 확인이 끝날 때까지 백업으로 남겨 둔다. 원본에 기기도 이벤트도 없으면 `-from` 을 잘못 준 것으로 보고 거부한다(일부러면 `-allow-empty`).
+
+Kubernetes: Deployment 를 0으로 줄이고, PVC 를 **읽기·쓰기로** 붙인 Job 으로 실행한다(SQLite 가 읽기 전용 열기에도 `-shm` 파일을 쓴다).
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata: { name: ai-usage-copy-db }
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext: { runAsUser: 65532, runAsGroup: 65532, fsGroup: 65532 }
+      containers:
+        - name: copy
+          image: ghcr.io/lazyig/ai-usage-monitor:latest
+          args: [copy-db, -from, /data/usage.db, -to-env, DATABASE_URL]
+          env:
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: ai-usage-monitor, key: database-url } }
+            - name: PGPASSWORD
+              valueFrom: { secretKeyRef: { name: ai-usage-monitor, key: database-password } }
+          volumeMounts: [{ name: data, mountPath: /data }]
+      volumes:
+        - { name: data, persistentVolumeClaim: { claimName: ai-usage-data } }
+```
+
+```sh
+kubectl scale deploy/ai-usage-monitor --replicas=0
+kubectl apply -f copy-db-job.yaml
+kubectl wait --for=condition=complete --timeout=30m job/ai-usage-copy-db   # Job 이 실패해도 시간 제한까지 기다리므로 kubectl get job 으로 상태를 함께 본다
+kubectl logs job/ai-usage-copy-db          # copied N devices and M events; counts verified
+# Deployment 의 DB_PATH 를 지우고 DATABASE_URL·PGPASSWORD·startupProbe 를 넣은 뒤
+kubectl scale deploy/ai-usage-monitor --replicas=1
+```
+
 ### 서버 여러 대
 
 PostgreSQL 이면 서버를 여러 대 띄울 수 있다(SQLite 는 한 대만). 동시에 기동해도 마이그레이션은 advisory lock 으로 한 번만 적용된다. 주의할 점:

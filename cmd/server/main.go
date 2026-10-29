@@ -29,6 +29,9 @@ import (
 var version = "dev"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "copy-db" {
+		os.Exit(runCopyDB(os.Args[2:], os.Stdout, os.Stderr, os.Getenv))
+	}
 	addr := flag.String("addr", envOr("ADDR", ":8080"), "listen address")
 	// No default shown here: it would print a URL with its password in -h.
 	dbFlag := flag.String("db", "", "database: a SQLite file path or a postgres:// URL (env DB_PATH, then DATABASE_URL; default "+defaultDBPath+")")
@@ -36,6 +39,10 @@ func main() {
 	downloadsDir := flag.String("downloads", envOr("DOWNLOADS_DIR", defaultDownloadsDir()), "directory served at /downloads/")
 	publicURLFlag := flag.String("public-url", envOr("PUBLIC_URL", ""), "external base URL for install commands, e.g. https://usage.example.com (default: taken from each request)")
 	showVersion := flag.Bool("version", false, "print version and exit")
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "usage: %s [flags]\n       %s copy-db ...   copy the data to another database (copy-db -h)\n\nflags:\n", os.Args[0], os.Args[0])
+		flag.PrintDefaults()
+	}
 	flag.Parse()
 	dbFlagSet := false
 	flag.Visit(func(f *flag.Flag) { dbFlagSet = dbFlagSet || f.Name == "db" })

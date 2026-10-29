@@ -50,8 +50,8 @@ func openSQLite(ctx context.Context, path string) (*Store, error) {
 		}
 		f.Close()
 	}
-	dsn := "file:" + path +
-		"?_pragma=busy_timeout(5000)" +
+	dsn := sqliteURI(path) +
+		"_pragma=busy_timeout(5000)" +
 		"&_pragma=journal_mode(WAL)" +
 		"&_pragma=synchronous(NORMAL)" +
 		"&_pragma=foreign_keys(on)" +
@@ -91,6 +91,13 @@ func openSQLite(ctx context.Context, path string) (*Store, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// sqliteURI is path as a SQLite "file:" URI ready for parameters: characters
+// that the URI form gives a meaning (? starts the parameters, # a fragment,
+// % an escape) are percent-encoded, so the file opened is the one named.
+func sqliteURI(path string) string {
+	return "file:" + strings.NewReplacer("%", "%25", "?", "%3f", "#", "%23").Replace(path) + "?"
 }
 
 // permHint explains the usual cause of a permission error: the image runs as
