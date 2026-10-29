@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-29
+
 ### 추가
 
 - 대시보드 왼쪽 메뉴 아래에 서버의 릴리스 버전과 커밋 해시를 표시합니다(마우스를 올리면 전체 해시·커밋 시각·Go 버전). 관리자 API `GET /api/v1/server` 로도 볼 수 있고, `ai-usage-server -version` 도 커밋을 함께 출력합니다.
@@ -128,7 +130,8 @@
 
 첫 공개 릴리스입니다. Claude Code · Codex CLI · Antigravity CLI 사용량을 모으는 에이전트, SQLite · JSON API 서버, 내장 웹 대시보드를 포함합니다.
 
-[Unreleased]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Lazyig/ai-usage-monitor/releases/tag/v0.1.0
