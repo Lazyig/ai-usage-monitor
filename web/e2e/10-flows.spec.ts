@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { prepare, selectPreset, setAutoRefresh } from './support'
+import { noOpenMenu, prepare, selectPreset, setAutoRefresh } from './support'
 
 test('login rejects an invalid token, accepts the test token, and logs out', async ({ page }) => {
   await prepare(page, false)
@@ -127,7 +127,7 @@ test('filter dropdowns and the date picker calendar work by pointer and keyboard
   await expect(page.getByLabel('소스')).toHaveText('전체')
 
   await page.goto('/')
-  await page.getByRole('tab', { name: '직접 선택', exact: true }).click()
+  await selectPreset(page, '직접 선택')
   await page.getByLabel('시작일', { exact: true }).fill('2026-10-22')
   await page.getByRole('button', { name: '시작일 달력 열기' }).click()
   const calendar = page.getByRole('dialog', { name: '시작일 달력' })
@@ -165,7 +165,7 @@ test('on phones the dropdown and calendar open by tap and fit the screen', async
   await expect(listbox).toHaveCount(0)
 
   await page.goto('/')
-  await page.getByRole('tab', { name: '직접 선택', exact: true }).tap()
+  await selectPreset(page, '직접 선택')
   await page.getByRole('button', { name: '종료일 달력 열기' }).tap()
   const calendar = page.getByRole('dialog', { name: '종료일 달력' })
   await expect(calendar).toBeVisible()
@@ -241,6 +241,7 @@ test('a group menu picks an earlier period and the tab takes its name', async ({
   expect((await lastWeek).ok()).toBe(true)
   await expect(page.getByRole('tab', { name: '지난주', exact: true })).toHaveAttribute('aria-selected', 'true')
   // Back to the current week from the same menu.
+  await noOpenMenu(page)
   await page.getByRole('button', { name: '지난 주', exact: true }).click()
   await page.getByRole('menuitem', { name: '이번 주' }).click()
   await expect(page.getByRole('tab', { name: '이번 주', exact: true })).toHaveAttribute('aria-selected', 'true')
