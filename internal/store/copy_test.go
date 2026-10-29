@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -293,7 +294,11 @@ func TestCopyEmptySource(t *testing.T) {
 func TestSQLitePathsWithURICharacters(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	for _, name := range []string{"my#1.db", "a?b.db", "p%41.db"} {
+	names := []string{"my#1.db", "a?b.db", "p%41.db"}
+	if runtime.GOOS == "windows" {
+		names = []string{"my#1.db", "p%41.db"} // Windows file names cannot hold '?'
+	}
+	for _, name := range names {
 		path := filepath.Join(dir, name)
 		s, err := Open(path)
 		if err != nil {
@@ -311,12 +316,12 @@ func TestSQLitePathsWithURICharacters(t *testing.T) {
 		src.Close()
 	}
 	entries, _ := os.ReadDir(dir)
-	if len(entries) != 3*3 && len(entries) != 3 { // each file, maybe with -wal and -shm
-		var names []string
+	if len(entries) != len(names)*3 && len(entries) != len(names) { // each file, maybe with -wal and -shm
+		var got []string
 		for _, e := range entries {
-			names = append(names, e.Name())
+			got = append(got, e.Name())
 		}
-		t.Errorf("unexpected files: %v", names)
+		t.Errorf("unexpected files: %v", got)
 	}
 }
 
