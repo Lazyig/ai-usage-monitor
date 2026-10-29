@@ -6,6 +6,13 @@
 
 ### 추가
 
+- **PostgreSQL 지원(실험적)**: `DB_PATH`(`--db`)에 `postgres://` URL 을 주거나, 둘 다 없을 때 `DATABASE_URL` 을 주면 PostgreSQL 에 저장합니다. SQLite 가 여전히 기본이며 API 결과는 같습니다. 설정 방법·주의사항은 [docs/DEPLOY.md](docs/DEPLOY.md#postgresql)에 있습니다.
+  - 서버 여러 대가 같은 DB 를 쓸 수 있습니다. 마이그레이션은 advisory lock 으로 한 번만 적용됩니다.
+  - `DB_MAX_CONNS` 로 연결 풀 크기를 정합니다(기본 10). DB 가 아직 뜨지 않았으면 최대 60초 동안 다시 시도합니다.
+  - 로그와 오류의 DB URL 은 비밀번호를 가립니다. URL 의 `password=` 매개변수는 거부합니다.
+  - `DATABASE_URL` 만 있는데 기본 SQLite 파일이 이미 있으면 기동하지 않습니다(빈 DB 로 조용히 바뀌는 것을 막습니다).
+  - 기존 SQLite 데이터를 옮기는 도구는 다음 버전에서 제공합니다.
+
 - 대시보드 왼쪽 메뉴 아래에 서버의 릴리스 버전과 커밋 해시를 표시합니다(마우스를 올리면 전체 해시·커밋 시각·Go 버전). 관리자 API `GET /api/v1/server` 로도 볼 수 있고, `ai-usage-server -version` 도 커밋을 함께 출력합니다.
 
 - Claude Code 설정 폴더를 여러 개 읽습니다. `CLAUDE_CONFIG_DIR` 로 `~/.claude` 가 아닌 곳을 쓰거나 한 기기에서 설정을 여러 개 쓰는 경우를 위한 기능입니다.

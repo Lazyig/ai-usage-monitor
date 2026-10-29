@@ -46,6 +46,8 @@ variables:
   paths:
     - .go/pkg/mod/
 
+# Runs the suites on SQLite only; the PostgreSQL run (storetest with
+# AUM_TEST_POSTGRES_URL) lives in GitHub Actions (job go-postgres).
 test:
   stage: test
   image: golang:1.27-alpine

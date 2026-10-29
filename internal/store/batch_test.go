@@ -107,75 +107,79 @@ func TestInsertEventsMatchesReference(t *testing.T) {
 	ctx := context.Background()
 	rng := rand.New(rand.NewPCG(7, 9))
 	models := []string{event.UnknownModel, "claude-opus-5", "", "m\x00x"}
-	sizes := []batchSize{sqliteBatch, {rows: 3, ids: 2, prepare: true}, {rows: 7, ids: 5}, {rows: 500, ids: 500}}
+	sizes := []batchSize{sqliteBatch, postgresBatch, {rows: 3, ids: 2, prepare: true}, {rows: 7, ids: 5}}
 	for round := range 120 {
-		batched, ref := openTest(t), openTest(t)
-		batched.batch = sizes[round%len(sizes)]
-		var devices []string
-		for i := range 2 {
-			a, _, err := batched.CreateDevice(ctx, fmt.Sprint("d", i))
-			if err != nil {
-				t.Fatal(err)
+		t.Run(fmt.Sprint(round), func(t *testing.T) {
+			// The reference always runs on SQLite; with the PostgreSQL suite this
+			// also compares the two backends.
+			batched, ref := openTest(t), openSQLiteTest(t)
+			batched.batch = sizes[round%len(sizes)]
+			var devices []string
+			for i := range 2 {
+				a, _, err := batched.CreateDevice(ctx, fmt.Sprint("d", i))
+				if err != nil {
+					t.Fatal(err)
+				}
+				// Same ids in both databases, so the dumps compare.
+				if _, err := ref.DB().Exec(`INSERT INTO devices(id, name, token_hash, token_created_at) VALUES($1, $2, $3, 0)`,
+					a.ID, a.Name, "h"+a.ID); err != nil {
+					t.Fatal(err)
+				}
+				devices = append(devices, a.ID)
 			}
-			// Same ids in both databases, so the dumps compare.
-			if _, err := ref.DB().Exec(`INSERT INTO devices(id, name, token_hash, token_created_at) VALUES($1, $2, $3, 0)`,
-				a.ID, a.Name, "h"+a.ID); err != nil {
-				t.Fatal(err)
-			}
-			devices = append(devices, a.ID)
-		}
-		for b := range 5 {
-			evs := make([]event.UsageEvent, 1+rng.IntN(40))
-			for i := range evs {
-				evs[i] = event.UsageEvent{
-					EventID:      fmt.Sprintf("e%02d", rng.IntN(25)),
-					DeviceID:     devices[rng.IntN(len(devices))],
-					Source:       event.SourceClaudeCode,
-					Timestamp:    time.UnixMilli(int64(rng.IntN(1000))),
-					Model:        models[rng.IntN(len(models))],
-					SessionID:    fmt.Sprint("s", rng.IntN(3)),
-					Project:      fmt.Sprint("p", rng.IntN(3)),
-					Input:        int64(rng.IntN(100)),
-					Output:       int64(rng.IntN(6)),
-					CacheRead:    int64(rng.IntN(9)),
-					CacheWrite5m: int64(rng.IntN(9)),
-					CacheWrite1h: int64(rng.IntN(9)),
-					CacheWrite:   int64(rng.IntN(9)),
-					Reasoning:    int64(rng.IntN(9)),
-					Confidence:   event.Confidence(fmt.Sprint("c", rng.IntN(3))),
-					ToolVersion:  fmt.Sprint("v", rng.IntN(3)),
+			for b := range 5 {
+				evs := make([]event.UsageEvent, 1+rng.IntN(40))
+				for i := range evs {
+					evs[i] = event.UsageEvent{
+						EventID:      fmt.Sprintf("e%02d", rng.IntN(25)),
+						DeviceID:     devices[rng.IntN(len(devices))],
+						Source:       event.SourceClaudeCode,
+						Timestamp:    time.UnixMilli(int64(rng.IntN(1000))),
+						Model:        models[rng.IntN(len(models))],
+						SessionID:    fmt.Sprint("s", rng.IntN(3)),
+						Project:      fmt.Sprint("p", rng.IntN(3)),
+						Input:        int64(rng.IntN(100)),
+						Output:       int64(rng.IntN(6)),
+						CacheRead:    int64(rng.IntN(9)),
+						CacheWrite5m: int64(rng.IntN(9)),
+						CacheWrite1h: int64(rng.IntN(9)),
+						CacheWrite:   int64(rng.IntN(9)),
+						Reasoning:    int64(rng.IntN(9)),
+						Confidence:   event.Confidence(fmt.Sprint("c", rng.IntN(3))),
+						ToolVersion:  fmt.Sprint("v", rng.IntN(3)),
+					}
+				}
+				var want [3]int
+				err := ref.writeTx(ctx, func(tx *sql.Tx) error {
+					var err error
+					want[0], want[1], want[2], err = referenceInsert(ctx, tx, evs, 1000)
+					return err
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				// insertEventsTx directly, so received_at is the same fixed value.
+				clean := make([]event.UsageEvent, len(evs))
+				for i, e := range evs {
+					clean[i] = cleanEvent(e)
+				}
+				var got [3]int
+				err = batched.writeTx(ctx, func(tx *sql.Tx) error {
+					var err error
+					got[0], got[1], got[2], err = insertEventsTx(ctx, tx, batched.batchSize(), clean, 1000)
+					return err
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got != want {
+					t.Fatalf("round %d batch %d (%+v): counts %v, reference %v\nbatch %+v", round, b, batched.batch, got, want, evs)
+				}
+				if g, w := dumpEvents(t, batched), dumpEvents(t, ref); !reflect.DeepEqual(g, w) {
+					t.Fatalf("round %d batch %d (%+v): stored rows differ\n got %v\nwant %v", round, b, batched.batch, g, w)
 				}
 			}
-			var want [3]int
-			err := ref.writeTx(ctx, func(tx *sql.Tx) error {
-				var err error
-				want[0], want[1], want[2], err = referenceInsert(ctx, tx, evs, 1000)
-				return err
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			// insertEventsTx directly, so received_at is the same fixed value.
-			clean := make([]event.UsageEvent, len(evs))
-			for i, e := range evs {
-				clean[i] = cleanEvent(e)
-			}
-			var got [3]int
-			err = batched.writeTx(ctx, func(tx *sql.Tx) error {
-				var err error
-				got[0], got[1], got[2], err = insertEventsTx(ctx, tx, batched.batch, clean, 1000)
-				return err
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got != want {
-				t.Fatalf("round %d batch %d (%+v): counts %v, reference %v\nbatch %+v", round, b, batched.batch, got, want, evs)
-			}
-			if g, w := dumpEvents(t, batched), dumpEvents(t, ref); !reflect.DeepEqual(g, w) {
-				t.Fatalf("round %d batch %d (%+v): stored rows differ\n got %v\nwant %v", round, b, batched.batch, g, w)
-			}
-		}
+		})
 	}
 }
 

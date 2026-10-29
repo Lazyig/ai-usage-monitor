@@ -1,20 +1,22 @@
 # 서버 배포
 
-`cmd/server` 는 cgo 없는 단일 정적 바이너리다(`modernc.org/sqlite`). `ko` 로 distroless/static 이미지에 올리고, SQLite 파일 하나만 보존하면 된다.
+`cmd/server` 는 cgo 없는 단일 정적 바이너리다. `ko` 로 distroless/static 이미지에 올린다. 데이터는 기본으로 SQLite 파일 하나에 저장하며(`modernc.org/sqlite`), 설정 하나로 PostgreSQL 을 쓸 수도 있다([PostgreSQL](#postgresql) 참고).
 
 ## 설정
 
 | 환경변수 | 플래그 | 기본값 | 설명 |
 |---|---|---|---|
 | `ADDR` | `--addr` | `:8080` | 리스닝 주소 |
-| `DB_PATH` | `--db` | `data/usage.db` | SQLite 파일 (부모 디렉터리는 자동 생성) |
+| `DB_PATH` | `--db` | `data/usage.db` | SQLite 파일 경로(부모 디렉터리는 자동 생성), 또는 `postgres://` URL |
+| `DATABASE_URL` | (환경변수 전용) | 없음 | `postgres://` URL. `--db`·`DB_PATH` 가 없을 때만 쓴다 |
+| `DB_MAX_CONNS` | (환경변수 전용) | `10` | PostgreSQL 연결 풀 크기(서버 하나당). SQLite 에는 쓰지 않는다 |
 | `PRICING_PATH` | `--pricing` | `pricing.yaml` | 단가 표. 파싱 실패하면 기동하지 않는다 |
 | `DOWNLOADS_DIR` | `--downloads` | `$KO_DATA_PATH/downloads` (없으면 `cmd/server/kodata/downloads`) | `/downloads/` 로 서빙할 에이전트 바이너리 + `manifest.json` |
 | `PUBLIC_URL` | `--public-url` | (없음: 요청의 Host·X-Forwarded-* 헤더로 추정) | 외부에서 접속하는 서버 주소(예: `https://usage.example.com`). 다운로드 페이지와 서버가 생성하는 `install.sh` 의 기본 주소로 씁니다. 헤더는 클라이언트가 바꿀 수 있으므로 외부에 공개하는 서버에서는 설정을 권장합니다. 로컬에서만 쓸 때는 비워 두면 됩니다 |
 | `ADMIN_TOKEN` | (환경변수 전용) | 없음 | 관리/조회 API 토큰. **없으면 관리 API 는 전부 `503`** |
 
 플래그를 주지 않으면 환경변수가, 둘 다 없으면 기본값이 쓰인다. `--version` 은 버전만 출력한다(`version` 은 ldflags 로 주입).
-기동 로그에 설정이 한 줄 찍히지만 토큰 값은 절대 찍지 않는다(`admin_token_set=true/false` 만).
+기동 로그에 설정이 한 줄 찍히지만 토큰 값은 절대 찍지 않는다(`admin_token_set=true/false` 만). DB URL 은 비밀번호를 `xxxxx` 로 가려서 찍고, 어느 설정에서 왔는지(`db_source`)도 함께 남긴다.
 
 ## GHCR 이미지로 실행
 
@@ -55,9 +57,9 @@ docker run -d --name ai-usage-monitor --restart unless-stopped \
 
 GitHub Actions 는 `GITHUB_TOKEN` 으로 이미지를 게시한다. GHCR 패키지를 처음 만들면 패키지 설정에서 공개 여부를 확인하고, 익명으로 내려받으려면 visibility 를 Public 으로 설정한다.
 
-## 볼륨
+## 볼륨 (SQLite)
 
-`DB_PATH` 가 있는 디렉터리 하나만 PVC 로 붙이면 된다. WAL 모드라 `usage.db`, `usage.db-wal`, `usage.db-shm` 세 파일이 같은 디렉터리에 생기므로 파일이 아니라 **디렉터리**를 마운트한다.
+PostgreSQL 을 쓰면 볼륨도, 아래의 `chown` 도 필요 없다. SQLite 는 `DB_PATH` 가 있는 디렉터리 하나만 PVC 로 붙이면 된다. WAL 모드라 `usage.db`, `usage.db-wal`, `usage.db-shm` 세 파일이 같은 디렉터리에 생기므로 파일이 아니라 **디렉터리**를 마운트한다.
 
 ```yaml
 securityContext:                          # Pod
@@ -111,6 +113,84 @@ kubectl scale deploy/ai-usage-monitor --replicas=1
 curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" https://usage.example.com/api/v1/pricing/reload
 ```
 
+## PostgreSQL
+
+`DB_PATH`(또는 `--db`)에 `postgres://` URL 을 주거나, 둘 다 없을 때 `DATABASE_URL` 을 주면 PostgreSQL 을 쓴다. 첫 기동 때 스키마(`devices`, `usage_events`, `schema_migrations`)를 만들고, 이후 버전의 마이그레이션도 기동할 때 적용한다. API 와 대시보드는 SQLite 와 같은 결과를 낸다.
+
+```
+postgres://ai_usage@db.example.com:5432/ai_usage?sslmode=verify-full
+```
+
+- **비밀번호**는 URL 의 사용자 부분(`ai_usage:<비밀번호>@`, `@`·`/`·`?`·`#` 는 퍼센트 인코딩), `PGPASSWORD`, 또는 `PGPASSFILE` 로 준다. `?password=` 매개변수는 거부한다. 명령줄 플래그는 `ps` 에 보이므로 환경변수(k8s 는 Secret)를 쓴다.
+- **암호화**: `sslmode` 를 주지 않으면 pgx 기본값 `prefer` 라 TLS 가 안 되면 평문으로 붙는다. 같은 기기(localhost·유닉스 소켓)가 아닌 호스트에 `require`/`verify-ca`/`verify-full` 없이 붙으면 기동할 때 경고한다. `sslmode=disable` 을 명시하면 일부러 고른 것으로 보고 경고하지 않는다(사설망 안의 compose 등).
+- **권한**: 마이그레이션을 위해 대상 스키마에 `CREATE` 권한이 필요하다. 다른 스키마를 쓰려면 `?search_path=ai_usage` 를 붙인다.
+- **연결 수**: 서버 하나가 최대 `DB_MAX_CONNS`(기본 10) + 2(헬스 체크용) 개를 연다. `서버 수 × (DB_MAX_CONNS + 2)` 가 `max_connections` 보다 넉넉히 작게 잡는다.
+- **긴 쿼리 제한**: 넓은 기간의 집계가 연결을 오래 잡지 않도록 `?options=-c%20statement_timeout%3D60s` 를 권장한다(마이그레이션은 이 제한을 받지 않는다).
+- **PgBouncer**: session pooling 이면 그대로 된다. transaction pooling 이면 `?default_query_exec_mode=exec` 를 붙인다(이름 있는 prepared statement 를 쓰지 않는다). PgBouncer 는 `options`·`search_path` 같은 시작 매개변수를 `ignore_startup_parameters` 에 넣지 않으면 거부하므로, 그때는 `statement_timeout` 을 DB 사용자에 걸어 둔다(`ALTER ROLE ai_usage SET statement_timeout = '60s'`).
+- **기동 순서**: DB 가 아직 뜨지 않았으면 최대 60초 동안 다시 시도한다(연결 시도 하나는 기본 10초 안에 끝나고, SIGTERM 이면 바로 멈춘다). 비밀번호가 틀렸거나 DB 가 없으면 기다리지 않고 바로 종료한다. 그동안은 HTTP 를 열지 않으므로, k8s 에서는 아래처럼 `startupProbe` 를 둬 liveness 가 그 사이에 Pod 를 죽이지 않게 한다.
+- **안전장치**: `DATABASE_URL` 만 있고 기본 SQLite 파일(`data/usage.db`)이 이미 있으면 기동하지 않는다. 빈 PostgreSQL 로 조용히 바뀌어 데이터가 사라진 것처럼 보이는 일을 막기 위해서다. SQLite 를 계속 쓰려면 `DB_PATH` 를 그 파일로, 일부러 바꾸려면 `DB_PATH` 를 PostgreSQL URL 로 준다. `DB_PATH` 와 `DATABASE_URL` 이 둘 다 있으면 `DB_PATH` 를 쓰고 경고만 남긴다.
+
+docker compose 예시:
+
+```yaml
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ai_usage
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ai_usage
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_usage"]
+      interval: 2s
+      retries: 30
+  server:
+    image: ghcr.io/lazyig/ai-usage-monitor:latest
+    depends_on:
+      db: { condition: service_healthy }
+    ports: ["127.0.0.1:8080:8080"]
+    environment:
+      ADMIN_TOKEN: ${ADMIN_TOKEN}
+      PRICING_PATH: /var/run/ko/pricing.yaml
+      # 같은 compose 네트워크 안이라 TLS 없이 붙는다.
+      DATABASE_URL: postgres://ai_usage@db:5432/ai_usage?sslmode=disable
+      PGPASSWORD: ${DB_PASSWORD}
+volumes:
+  pgdata:
+```
+
+Kubernetes 에서는 URL 과 비밀번호를 Secret 으로 넣는다. 위 SQLite 매니페스트의 `DB_PATH` env 는 **지운다**(남아 있으면 `DB_PATH` 가 이겨 SQLite 를 계속 쓰고 경고만 남는다). PVC 와 `fsGroup` 도 빼도 된다.
+
+```yaml
+env:
+  - name: DATABASE_URL
+    valueFrom: { secretKeyRef: { name: ai-usage-monitor, key: database-url } }
+  - name: PGPASSWORD
+    valueFrom: { secretKeyRef: { name: ai-usage-monitor, key: database-password } }
+startupProbe:                      # DB 를 기다리는 최대 60초 + 여유
+  httpGet: { path: /health/ready, port: 8080 }
+  periodSeconds: 5
+  failureThreshold: 20
+livenessProbe:
+  httpGet: { path: /health/live, port: 8080 }
+readinessProbe:
+  httpGet: { path: /health/ready, port: 8080 }
+```
+
+### 서버 여러 대
+
+PostgreSQL 이면 서버를 여러 대 띄울 수 있다(SQLite 는 한 대만). 동시에 기동해도 마이그레이션은 advisory lock 으로 한 번만 적용된다. 주의할 점:
+
+- `POST /api/v1/pricing/reload` 는 요청을 받은 서버만 다시 읽는다. 단가표를 바꾸면 Deployment 를 다시 시작(`kubectl rollout restart`)한다.
+- 기기 토큰은 서버마다 60초 캐시한다. 폐기·재발급은 처리한 서버에서는 바로, 다른 서버에서는 최대 60초 뒤에 적용된다.
+- 롤링 업데이트 중에는 옛 버전과 새 버전이 같은 스키마를 쓴다. 새 마이그레이션은 이전 버전이 계속 동작하도록(열 추가 위주) 작성한다.
+
+## 백업
+
+- **SQLite**: 서버를 멈추고 `usage.db`(·`-wal`·`-shm`)를 복사하거나, 실행 중이면 `sqlite3 /data/usage.db ".backup /backup/usage.db"` 를 쓴다(파일만 복사하면 WAL 에 남은 내용이 빠질 수 있다).
+- **PostgreSQL**: `pg_dump -Fc` 로 백업하고 `pg_restore` 로 복원한다.
+
 ## 첫 기기 토큰 발급
 
 토큰은 발급 응답에만 평문으로 나온다(저장은 sha256 만). 잃어버리면 폐기하고 다시 발급한다.
@@ -136,6 +216,7 @@ curl -fsSL https://usage.example.com/downloads/install.sh | sh -s -- \
 
 ```sh
 ADMIN_TOKEN=dev go run ./cmd/server            # :8080, data/usage.db, pricing.yaml
+# PostgreSQL 로: DB_PATH='postgres://postgres@localhost/ai_usage?sslmode=disable' ADMIN_TOKEN=dev go run ./cmd/server
 curl localhost:8080/health
 curl -H 'Authorization: Bearer dev' 'localhost:8080/api/v1/summary?from=2026-09-01&to=2026-09-03'
 ```

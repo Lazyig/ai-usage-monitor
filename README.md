@@ -23,7 +23,7 @@ Claude Code · Codex CLI · Antigravity CLI 를 여러 기기에서 쓸 때, 각
 
 ```
 [기기 A] ai-usage-agent ─┐
-[기기 B] ai-usage-agent ─┼── POST /api/v1/ingest (기기 토큰) ──> server ──> SQLite
+[기기 B] ai-usage-agent ─┼── POST /api/v1/ingest (기기 토큰) ──> server ──> SQLite / PostgreSQL
 [기기 C] ai-usage-agent ─┘                                         │
                                                브라우저 ──> 대시보드 (관리자 토큰)
 ```
@@ -42,7 +42,7 @@ Claude Code · Codex CLI · Antigravity CLI 를 여러 기기에서 쓸 때, 각
   - 서비스를 멈추거나 SIGTERM/SIGINT 를 받으면 마지막으로 한 번 수집해 보낸 뒤 종료합니다(최대 15초). 마지막 주기 이후에 생긴 기록도 빠지지 않습니다.
   - 서버에 닿지 못하면 보낼 데이터를 로컬 큐에 쌓았다가 다시 보냅니다. 큐는 최대 500 MB 이고 넘치면 **오래된 것부터 버립니다**. 원본 로그가 남아 있다면 `ai-usage-agent rescan` 으로 다시 수집할 수 있습니다.
 
-- **서버** (`cmd/server`)는 cgo 없는 단일 Go 바이너리입니다. SQLite 에 이벤트를 저장하고, JSON API 와 대시보드(React SPA, 바이너리에 내장)를 제공하며, 에이전트 바이너리와 설치 스크립트를 `/downloads/` 로 배포합니다.
+- **서버** (`cmd/server`)는 cgo 없는 단일 Go 바이너리입니다. SQLite(기본) 또는 PostgreSQL 에 이벤트를 저장하고, JSON API 와 대시보드(React SPA, 바이너리에 내장)를 제공하며, 에이전트 바이너리와 설치 스크립트를 `/downloads/` 로 배포합니다.
 
 ## 수집하는 데이터
 
@@ -231,7 +231,7 @@ ai-usage-agent uninstall | start | stop | restart
 - Antigravity 수집은 비공식 로컬 데이터 형식에 의존하므로 CLI 업데이트로 동작이 달라질 수 있습니다.
 - Claude Code · Codex 도 공식 API 가 아닌 로컬 로그 형식에 의존합니다.
 - 관리자는 단일 토큰 하나뿐이며, 사용자·권한 구분이 없습니다. 개인 또는 소규모 기기군을 전제로 합니다.
-- 서버는 SQLite 단일 인스턴스입니다. 수평 확장을 고려하지 않았습니다.
+- SQLite 로는 서버를 한 대만 띄웁니다. 여러 대가 필요하면 PostgreSQL 을 씁니다([docs/DEPLOY.md](docs/DEPLOY.md#서버-여러-대)의 주의사항 참고).
 - 대시보드의 날짜 경계와 시각 표시는 `Asia/Seoul` 시간대로 고정되어 있습니다(API 는 `tz` 파라미터로 바꿀 수 있음).
 
 ## 개발
