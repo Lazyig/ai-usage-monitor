@@ -228,3 +228,55 @@ func TestUnixInstallerUpdate(t *testing.T) {
 		}
 	})
 }
+
+// Re-running the installer without --token or --update still stops a running
+// service to swap the binary; it must start it again instead of leaving
+// collection off.
+func TestUnixInstallerRestartsAServiceItStopped(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix installer; PowerShell has a separate test")
+	}
+	// Every call of the new binary is logged; the old one reports a running service.
+	binary := []byte("#!/bin/sh\necho \"$1\" >> \"$CALLS\"\nexit 0\n")
+	sha := fmt.Sprintf("%x", sha256.Sum256(binary))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/downloads/manifest.json" {
+			fmt.Fprintf(w, `{"files":[{"name":"ai-usage-agent_%s_%s","sha256":"%s"}]}`, runtime.GOOS, runtime.GOARCH, sha)
+			return
+		}
+		w.Write(binary)
+	}))
+	defer srv.Close()
+	for _, running := range []bool{true, false} {
+		t.Run(fmt.Sprintf("running=%v", running), func(t *testing.T) {
+			dir := t.TempDir()
+			script := filepath.Join(dir, "install.sh")
+			if err := os.WriteFile(script, []byte(unixInstaller), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			prefix := filepath.Join(dir, "bin")
+			if err := os.MkdirAll(prefix, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			state := "stopped"
+			if running {
+				state = "running"
+			}
+			old := "#!/bin/sh\n[ \"$1\" = status ] && printf 'service    " + state + "\\n'\nexit 0\n"
+			if err := os.WriteFile(filepath.Join(prefix, "ai-usage-agent"), []byte(old), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			calls := filepath.Join(dir, "calls")
+			cmd := exec.Command("sh", script, "--server", srv.URL, "--prefix", prefix)
+			cmd.Env = append(os.Environ(), "CALLS="+calls)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("install failed: %v %s", err, out)
+			}
+			got, _ := os.ReadFile(calls)
+			started := strings.Contains(string(got), "start\n")
+			if started != running {
+				t.Errorf("start called = %v, want %v (calls: %q)", started, running, got)
+			}
+		})
+	}
+}

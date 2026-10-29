@@ -162,6 +162,7 @@ type aggRow struct {
 	source string
 	model  string
 	bucket int64 // (ts + offset) / bucketMs, or 0 when unbucketed
+	day    int64 // ts / dayMs: the UTC day prices are looked up for
 	tokens
 	first, last int64
 	// promptHint is a prompt size representative of this row's long-context
@@ -198,13 +199,15 @@ func (s *Store) aggregate(ctx context.Context, f Filter, keyCol string, bucketMs
 		tierExpr = b.String()
 	}
 	q := newQueryBuilder(fmt.Sprintf(`
-		SELECT %s AS k, source, model, %s AS b, %s AS tier,
+		SELECT %s AS k, source, model, %s AS b, ts / %d AS d, %s AS tier,
 		       SUM(input), SUM(output), SUM(cache_read),
 		       SUM(cache_write_5m), SUM(cache_write_1h), SUM(cache_write), SUM(reasoning),
 		       COUNT(*), MIN(ts), MAX(ts)
-		FROM usage_events`, keyExpr, bucketExpr, tierExpr))
+		FROM usage_events`, keyExpr, bucketExpr, dayMs, tierExpr))
 	f.apply(q)
-	q.tail("GROUP BY k, source, model, b, tier")
+	// Rows are also split per UTC day, because a price applies by the event's
+	// UTC day: a local day or hour bucket can straddle a UTC midnight.
+	q.tail("GROUP BY k, source, model, b, d, tier")
 
 	rows, err := s.rdb.QueryContext(ctx, q.sql(), q.args...)
 	if err != nil {
@@ -215,7 +218,7 @@ func (s *Store) aggregate(ctx context.Context, f Filter, keyCol string, bucketMs
 	for rows.Next() {
 		var r aggRow
 		var tier int
-		if err := rows.Scan(&r.key, &r.source, &r.model, &r.bucket, &tier,
+		if err := rows.Scan(&r.key, &r.source, &r.model, &r.bucket, &r.day, &tier,
 			&r.input, &r.output, &r.cacheRead, &r.w5m, &r.w1h, &r.wGen, &r.reasoning,
 			&r.events, &r.first, &r.last); err != nil {
 			return nil, err
@@ -366,12 +369,12 @@ func round6(f float64) float64 { return math.Round(f*1e6) / 1e6 }
 // roundUSD keeps more digits for a single event, whose cost can be tiny.
 func roundUSD(f float64) float64 { return math.Round(f*1e9) / 1e9 }
 
-// priceRow prices one aggregate row at the row's bucket time.
-func priceRow(p Pricer, r aggRow, at time.Time) (usd float64, known, estimated bool) {
+// priceRow prices one aggregate row at its UTC day.
+func priceRow(p Pricer, r aggRow) (usd float64, known, estimated bool) {
 	if p == nil {
 		return 0, false, false
 	}
-	c := p.CostFor(r.tokens.asEvent(r.model, at), r.promptHint)
+	c := p.CostFor(r.tokens.asEvent(r.model, fromMillis(r.day*dayMs)), r.promptHint)
 	return c.USD, c.Known, c.Estimated
 }
 

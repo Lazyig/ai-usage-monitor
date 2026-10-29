@@ -92,6 +92,9 @@ func (a *api) handleDownloadFile(w http.ResponseWriter, r *http.Request) {
 	}
 	if name == "manifest.json" {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		// Revalidate every time: the dashboard compares agent versions with it,
+		// and a cached copy would outlive a release.
+		w.Header().Set("Cache-Control", "no-cache")
 		http.ServeFileFS(w, r, os.DirFS(a.opt.DownloadsDir), "manifest.json")
 		return
 	}

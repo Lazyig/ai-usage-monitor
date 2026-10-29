@@ -259,7 +259,7 @@ export function Devices() {
       render: (d) => (
         <span title={formatDateTime(d.last_seen)}>{formatRelative(d.last_seen)}</span>
       ),
-      sortValue: (d) => d.last_seen,
+      sortValue: (d) => d.last_seen ?? '',
     },
     countColumn('events_total', '누적 이벤트', (d) => d.events_total),
     dateTimeColumn('token_created_at', '토큰 발급일', (d) => d.token_created_at),

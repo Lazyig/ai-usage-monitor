@@ -5,6 +5,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -40,20 +41,26 @@ type Timeseries struct {
 type tzSegment struct {
 	startMs, endMs int64
 	offsetSec      int64
+	// firstMs is the start of the segment's first bucket, before startMs is
+	// clipped to the query range.
+	firstMs int64
 }
 
 // bucketSegments splits [from,to) into maximal runs of buckets that share one
 // UTC offset, using the offset in effect at each bucket's *start*. Inside a
 // segment, (ts+offset)/bucketMs assigns every event to the right local bucket,
 // including across a DST change (the transition simply ends the segment).
-func bucketSegments(loc *time.Location, from, to time.Time, bucket string) []tzSegment {
+func bucketSegments(loc *time.Location, from, to time.Time, bucket string) ([]tzSegment, error) {
 	if !from.Before(to) {
-		return nil
+		return nil, nil
 	}
 	var segs []tzSegment
 	cur := bucketStart(from.In(loc), bucket)
 	fromMs, toMs := toMillis(from), toMillis(to)
-	for i := 0; cur.Before(to) && i < 1_000_000; i++ {
+	for i := 0; cur.Before(to); i++ {
+		if i == maxBuckets {
+			return nil, ErrTooManyBuckets
+		}
 		_, off := cur.Zone()
 		next := nextBucket(cur, bucket)
 		if !next.After(cur) { // paranoia: never loop forever
@@ -62,7 +69,7 @@ func bucketSegments(loc *time.Location, from, to time.Time, bucket string) []tzS
 		if n := len(segs); n > 0 && segs[n-1].offsetSec == int64(off) && segs[n-1].endMs == cur.UnixMilli() {
 			segs[n-1].endMs = next.UnixMilli()
 		} else {
-			segs = append(segs, tzSegment{startMs: cur.UnixMilli(), endMs: next.UnixMilli(), offsetSec: int64(off)})
+			segs = append(segs, tzSegment{startMs: cur.UnixMilli(), endMs: next.UnixMilli(), offsetSec: int64(off), firstMs: cur.UnixMilli()})
 		}
 		cur = next
 	}
@@ -74,8 +81,15 @@ func bucketSegments(loc *time.Location, from, to time.Time, bucket string) []tzS
 			segs[i].endMs = toMs
 		}
 	}
-	return segs
+	return segs, nil
 }
+
+// maxBuckets bounds one timeseries (about 114 years of hours).
+const maxBuckets = 1_000_000
+
+// ErrTooManyBuckets rejects a range too long for its bucket size instead of
+// silently answering for only part of it.
+var ErrTooManyBuckets = errors.New("store: range has too many buckets")
 
 func bucketStart(t time.Time, bucket string) time.Time {
 	y, m, d := t.Date()
@@ -87,7 +101,10 @@ func bucketStart(t time.Time, bucket string) time.Time {
 
 func nextBucket(t time.Time, bucket string) time.Time {
 	if bucket == "hour" {
-		return bucketStart(t.Add(time.Hour), "hour")
+		// Elapsed time, not the calendar: on a fall-back day local 01:00
+		// happens twice, and rebuilding it from the clock fields would land
+		// on the first one again and never get past it.
+		return t.Add(time.Hour)
 	}
 	y, m, d := t.Date()
 	// Noon on the next calendar day, then back to that day's start: immune to
@@ -121,7 +138,11 @@ func (s *Store) Timeseries(ctx context.Context, f Filter, bucket, groupBy string
 	series := map[string]map[int64]*acc{}
 	var keyOrd []string
 
-	for _, seg := range bucketSegments(loc, f.From, f.To, bucket) {
+	segs, err := bucketSegments(loc, f.From, f.To, bucket)
+	if err != nil {
+		return Timeseries{}, err
+	}
+	for _, seg := range segs {
 		if seg.startMs >= seg.endMs {
 			continue
 		}
@@ -134,8 +155,21 @@ func (s *Store) Timeseries(ctx context.Context, f Filter, bucket, groupBy string
 		}
 		for _, r := range rows {
 			startMs := r.bucket*bucketMs - seg.offsetSec*1000
-			at := fromMillis(startMs)
-			usd, known, est := priceRow(p, r, at)
+			if startMs < seg.firstMs {
+				// A 30-minute DST shift (Australia/Lord_Howe) starts the
+				// segment mid-hour; its first bucket starts there, not at the
+				// earlier whole hour under the new offset.
+				startMs = seg.firstMs
+			}
+			if bucket == "day" {
+				// The segment's offset is the one at its days' start. On a
+				// fall-back day its last local hour still maps one day on, so
+				// the day is taken from the local calendar. (Hours never
+				// straddle an offset change, and both 01:00s of a fall-back
+				// night must stay apart, so they keep the arithmetic.)
+				startMs = bucketStart(fromMillis(startMs).In(loc), bucket).UnixMilli()
+			}
+			usd, known, est := priceRow(p, r)
 			m, ok := series[r.key]
 			if !ok {
 				m = map[int64]*acc{}

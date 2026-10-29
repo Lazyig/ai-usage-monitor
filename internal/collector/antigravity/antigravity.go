@@ -115,7 +115,15 @@ type fileCursor struct {
 	StepIdx int64 `json:"step_idx"` // highest steps.idx already emitted
 	Size    int64 `json:"size"`
 	ModTime int64 `json:"mtime"` // unix nanoseconds
+	// PendingGen are gen rows at or below GenIdx that could not be placed in
+	// time yet: their step row was not written (or not checkpointed) when we
+	// read. They are retried on every scan until their step shows up.
+	PendingGen []int64 `json:"pending_gen,omitempty"`
 }
+
+// maxPendingGen bounds PendingGen: a gen row whose step never appears would
+// otherwise be carried forever.
+const maxPendingGen = 256
 
 type cursorState struct {
 	Files map[string]fileCursor `json:"files"`
@@ -366,11 +374,15 @@ func (c *Collector) scanConversation(ctx context.Context, deviceID, path, convID
 	var events []event.UsageEvent
 
 	// (1) gen_metadata rows: the primary source, they carry the model id.
+	retry := make(map[int64]bool, len(prev.PendingGen))
+	for _, idx := range prev.PendingGen {
+		retry[idx] = true
+	}
 	for _, g := range gens {
 		if g.Idx > next.GenIdx {
 			next.GenIdx = g.Idx
 		}
-		if g.Idx <= prev.GenIdx {
+		if g.Idx <= prev.GenIdx && !retry[g.Idx] {
 			continue
 		}
 		if g.Model == "" && !g.Usage.Present {
@@ -379,7 +391,12 @@ func (c *Collector) scanConversation(ctx context.Context, deviceID, path, convID
 		ts, ok := stepTime[g.StepUUID]
 		if !ok {
 			if !g.HasReqTime {
-				continue // no timestamp at all: cannot place the event
+				// No timestamp yet: the step row may simply not be written.
+				// Look again next scan instead of moving past it for good.
+				if len(next.PendingGen) < maxPendingGen {
+					next.PendingGen = append(next.PendingGen, g.Idx)
+				}
+				continue
 			}
 			ts = g.ReqTime // fallback: gen 1.9.4
 		}

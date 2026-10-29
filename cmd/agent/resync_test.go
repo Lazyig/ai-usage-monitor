@@ -42,7 +42,7 @@ func TestResyncFromPartialQueueFlushIsNotLost(t *testing.T) {
 			return
 		}
 		received.Add(int32(len(body.Events)))
-		fmt.Fprintf(w, `{"accepted":%d,"duplicates":0,"resync":%t}`, len(body.Events), n == 2)
+		fmt.Fprintf(w, `{"accepted":%d,"duplicates":0,"device_id":"dev","resync":%t}`, len(body.Events), n == 2)
 	}))
 	defer srv.Close()
 	cfg, _, err := agentcfg.Load(dir)
@@ -122,7 +122,7 @@ func newIngestServer(t *testing.T) *ingestServer {
 		s.mu.Unlock()
 
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"accepted":%d,"duplicates":0,"resync":%t}`, len(body.Events), resync)
+		fmt.Fprintf(w, `{"accepted":%d,"duplicates":0,"device_id":"dev","resync":%t}`, len(body.Events), resync)
 	}))
 	t.Cleanup(s.Close)
 	return s

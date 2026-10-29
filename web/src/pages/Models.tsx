@@ -106,7 +106,9 @@ export function Models() {
   // Same model set/order as the token chart's "top by usage" ranking — the
   // per-day trend line is only useful for the handful of models that
   // actually dominate the range.
-  const topModelKeys = useMemo(() => tokenRows.slice(0, TOP_TIMESERIES_MODELS).map((r) => r.key), [tokenRows])
+  // The series are per model name (across tools), the rows per (model, tool):
+  // a name used by two tools counts once.
+  const topModelKeys = useMemo(() => [...new Set(tokenRows.map((r) => r.key))].slice(0, TOP_TIMESERIES_MODELS), [tokenRows])
   const timeseriesSeries = useMemo(() => {
     if (timeseriesState.status !== 'success') return []
     const rank = new Map(topModelKeys.map((k, i) => [k, i]))
@@ -230,11 +232,31 @@ export function Models() {
   )
 }
 
+/** A model row is one (model, source) pair: Antigravity reports claude-*
+ * models under the same names as Claude Code. */
+const modelRowId = (r: BreakdownRow) => `${r.source ?? ''}:${r.key}`
+
+/** Short tool tags for phone-width bar labels. */
+const SOURCE_TAGS: Record<string, string> = { claude_code: 'CC', codex: 'CX', antigravity: 'AG' }
+
+/** Bar rows: the model name, plus the tool where two rows share a name. */
+function modelChartRows(rows: BreakdownRow[]): Map<string, Pick<CompositionRow, 'label' | 'axis'>> {
+  const seen = new Map<string, number>()
+  for (const r of rows) seen.set(r.key, (seen.get(r.key) ?? 0) + 1)
+  return new Map(
+    rows.map((r) => {
+      if ((seen.get(r.key) ?? 0) < 2 || !r.source) return [modelRowId(r), { label: r.key }]
+      return [modelRowId(r), { label: `${r.key} (${labelForKey(r.source)})`, axis: { name: r.key, tag: SOURCE_TAGS[r.source] ?? r.source } }]
+    }),
+  )
+}
+
 function ModelCostBarChart({ rows }: { rows: BreakdownRow[] }) {
-  const costByKey = new Map(rows.map((r) => [r.key, r.cost_usd ?? 0]))
+  const costByKey = new Map(rows.map((r) => [modelRowId(r), r.cost_usd ?? 0]))
+  const chartRows = modelChartRows(rows)
   return (
     <CompositionChart
-      rows={rows.map((r) => ({ key: r.key, label: r.key }))}
+      rows={rows.map((r) => ({ key: modelRowId(r), label: r.key, ...chartRows.get(modelRowId(r)) }))}
       segments={COST_SEGMENT}
       value={(rowKey) => costByKey.get(rowKey) ?? 0}
       formatValue={formatUsd}
@@ -261,10 +283,12 @@ interface TokenDatum {
 }
 
 function ModelTokenBarChart({ rows, grandTotal }: { rows: BreakdownRow[]; grandTotal: number }) {
-  const byKey = new Map(rows.map((r) => [r.key, r]))
+  const byKey = new Map(rows.map((r) => [modelRowId(r), r]))
+  const chartRows = modelChartRows(rows)
   const compositionRows: CompositionRow[] = rows.map((r) => ({
-    key: r.key,
+    key: modelRowId(r),
     label: r.key,
+    ...chartRows.get(modelRowId(r)),
     extra: { reasoning: r.reasoning, share: grandTotal > 0 ? tokensOf(r) / grandTotal : 0 },
   }))
   return (

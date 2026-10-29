@@ -95,6 +95,19 @@ func (e *PermanentError) Error() string {
 	return fmt.Sprintf("server rejected the batch (HTTP %d): %s", e.StatusCode, e.Body)
 }
 
+// ForeignRejectionError is a 4xx that did not come from the server (a proxy's
+// error page, a WAF, a body limit in front of it): the batch was never judged.
+// It is kept, but not retried in a loop, and a queue flush moves on past it so
+// one batch a proxy keeps refusing cannot hold back the ones behind it.
+type ForeignRejectionError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *ForeignRejectionError) Error() string {
+	return fmt.Sprintf("transport: ingest: HTTP %d not from the server: %s", e.StatusCode, e.Body)
+}
+
 // QueuedError means delivery failed but every undelivered event was written to
 // the offline queue. The caller may advance its cursor: the events are safe on
 // disk and will be retried on the next tick.
@@ -276,7 +289,10 @@ func (c *Client) queueRemaining(events []event.UsageEvent) (int, error) {
 
 // Flush replays queued batches, oldest first, deleting each one the server
 // accepts. It stops at the first failure so ordering is preserved and a server
-// that is still down is not hammered with the whole backlog.
+// that is still down is not hammered with the whole backlog. The one exception
+// is a batch refused before reaching the server (ForeignRejectionError): the
+// next one is tried, so a single batch a proxy keeps refusing cannot hold the
+// rest back, but two refusals in a row mean everything is refused and it stops.
 func (c *Client) Flush(ctx context.Context) (Stats, error) {
 	var total Stats
 	if c.Queue == nil {
@@ -286,6 +302,10 @@ func (c *Client) Flush(ctx context.Context) (Stats, error) {
 	if err != nil {
 		return total, err
 	}
+	var (
+		kept        error
+		lastForeign bool
+	)
 	for _, it := range items {
 		if err := ctx.Err(); err != nil {
 			return total, err
@@ -310,13 +330,26 @@ func (c *Client) Flush(ctx context.Context) (Stats, error) {
 				}
 				continue
 			}
+			var foreign *ForeignRejectionError
+			if errors.As(err, &foreign) {
+				c.logf("queue: keeping %s, refused before reaching the server: %v", it.Name, err)
+				if lastForeign {
+					return total, err
+				}
+				lastForeign = true
+				if kept == nil {
+					kept = err
+				}
+				continue
+			}
 			return total, err
 		}
+		lastForeign = false
 		if err := c.Queue.Remove(it); err != nil {
 			return total, err
 		}
 	}
-	return total, nil
+	return total, kept
 }
 
 // rewriteDevice replaces the device block of a stored payload with the current
@@ -467,8 +500,13 @@ func (c *Client) sendOnce(ctx context.Context, payload []byte, count int) (Stats
 		return Stats{}, &AuthError{StatusCode: resp.StatusCode, Body: snippet(body)}, false
 	case resp.StatusCode == http.StatusRequestTimeout, resp.StatusCode == http.StatusTooManyRequests:
 		return Stats{}, fmt.Errorf("transport: ingest: temporary HTTP %d: %s", resp.StatusCode, snippet(body)), true
-	case resp.StatusCode/100 == 4:
+	case resp.StatusCode/100 == 4 && serverRejection(body):
 		return Stats{}, &PermanentError{StatusCode: resp.StatusCode, Body: snippet(body)}, false
+	case resp.StatusCode/100 == 4:
+		// Not the server's own answer: a proxy's 404/413 page, a changed path
+		// prefix. The batch was never judged, so keep it (queued data would
+		// otherwise be deleted with its cursors already past it).
+		return Stats{}, &ForeignRejectionError{StatusCode: resp.StatusCode, Body: snippet(body)}, false
 	case resp.StatusCode/100 != 2:
 		return Stats{}, fmt.Errorf("transport: ingest: HTTP %d: %s", resp.StatusCode, snippet(body)), true
 	}
@@ -486,6 +524,11 @@ func (c *Client) sendOnce(ctx context.Context, payload []byte, count int) (Stats
 		// offline queue. Replaying an already-stored event is idempotent.
 		return Stats{}, fmt.Errorf("transport: ingest acknowledgement: %w", err), true
 	}
+	if out.DeviceID == "" {
+		// The server always names the device. Any other JSON (a portal's
+		// {"status":"ok"}, null) is not an acknowledgement.
+		return Stats{}, errors.New("transport: ingest acknowledgement without device_id"), true
+	}
 	st := Stats{Accepted: out.Accepted, Duplicates: out.Duplicates, Updated: out.Updated, Requests: 1, Resync: out.Resync}
 	if count >= 0 {
 		if r := count - out.Accepted - out.Duplicates - out.Updated; r > 0 {
@@ -493,6 +536,15 @@ func (c *Client) sendOnce(ctx context.Context, payload []byte, count int) (Stats
 		}
 	}
 	return st, nil, false
+}
+
+// serverRejection reports whether a 4xx body is the server's own error reply
+// ({"error": "..."}), i.e. it read the batch and refused it.
+func serverRejection(body []byte) bool {
+	var e struct {
+		Error string `json:"error"`
+	}
+	return json.Unmarshal(body, &e) == nil && e.Error != ""
 }
 
 // backoff is base * 2^(attempt-1) with full jitter, capped at MaxDelay.

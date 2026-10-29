@@ -47,3 +47,19 @@ func TestNewEventIDSeparatesItsParts(t *testing.T) {
 		t.Errorf("one part and two parts both hash to %s", x)
 	}
 }
+
+// A token count no model call can produce would overflow the server's sums.
+func TestValidRejectsAbsurdTokenCounts(t *testing.T) {
+	e := UsageEvent{EventID: "x", DeviceID: "d", Source: SourceCodex, Model: "m", Timestamp: time.Now(), Output: MaxTokens}
+	if !e.Valid() {
+		t.Fatal("MaxTokens itself must be accepted")
+	}
+	e.Output = MaxTokens + 1
+	if e.Valid() {
+		t.Error("an output above MaxTokens was accepted")
+	}
+	e.Output, e.CacheRead = 1, 9_000_000_000_000_000_000
+	if e.Valid() {
+		t.Error("a huge cache_read was accepted")
+	}
+}

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -81,9 +82,22 @@ func syncDeviceID(dir string, cfg *agentcfg.Config, logf func(format string, arg
 	}
 	logf("device id: adopting server-issued %s (was local %s)", who.DeviceID, cfg.DeviceID)
 	cfg.DeviceID = who.DeviceID
-	if err := agentcfg.Save(dir, *cfg); err != nil {
+	id := who.DeviceID
+	if err := updateStored(dir, func(c *agentcfg.Config) { c.DeviceID = id }); err != nil {
 		logf("save config: %v", err)
 	}
+}
+
+// updateStored changes one field of config.json as stored on disk. cfg in
+// memory carries the environment and flag overrides (a test server, a token
+// from a secret), which must never be written back.
+func updateStored(dir string, change func(*agentcfg.Config)) error {
+	stored, _, err := agentcfg.LoadFile(dir)
+	if err != nil {
+		return err
+	}
+	change(&stored)
+	return agentcfg.Save(dir, stored)
 }
 
 // migrateIDScheme makes an upgraded agent rescan its logs once after the EventID
@@ -102,8 +116,14 @@ func migrateIDScheme(dir string, cfg *agentcfg.Config, logf func(format string, 
 		logf("warn: %v (will retry on the next start)", err)
 		return
 	}
+	// Queued batches carry the old ids: replayed after the rescan they would
+	// be stored a second time. The rescan re-sends what they held.
+	if err := os.RemoveAll(agentcfg.QueueDir(dir)); err != nil {
+		logf("warn: clear queue: %v (will retry on the next start)", err)
+		return
+	}
 	cfg.IDScheme = event.IDScheme
-	if err := agentcfg.Save(dir, *cfg); err != nil {
+	if err := updateStored(dir, func(c *agentcfg.Config) { c.IDScheme = event.IDScheme }); err != nil {
 		logf("save config: %v", err)
 	}
 }

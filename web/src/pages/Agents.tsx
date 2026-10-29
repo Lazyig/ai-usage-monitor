@@ -103,6 +103,14 @@ export function Agents() {
             options={[{ value: '', label: '전체 기기' }, ...deviceOptions.map((d) => ({ value: d.id, label: d.name }))]}
           />
         </RowField>
+        {devicesState.status === 'error' && (
+          <p className="m-0 text-200 text-danger" role="alert">
+            기기 목록을 불러오지 못했습니다: {devicesState.message}{' '}
+            <Button touch size="small" appearance="subtle" onClick={devicesState.reload}>
+              다시 시도
+            </Button>
+          </p>
+        )}
         {device && (
           <Button touch size="small" appearance="subtle" onClick={() => setDevice('')}>
             필터 해제

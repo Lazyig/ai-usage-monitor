@@ -238,6 +238,10 @@ func (a *api) handleTimeseries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ts, err := a.store.Timeseries(r.Context(), p.filter, bucket, group, p.loc, a.pricing.Table())
+	if errors.Is(err, store.ErrTooManyBuckets) {
+		writeError(w, http.StatusBadRequest, "range too long for this bucket")
+		return
+	}
 	if err != nil {
 		a.fail(w, "timeseries", err)
 		return

@@ -358,7 +358,7 @@ func TestRunOncePushesAndSavesCursors(t *testing.T) {
 		}
 		events += len(body.Events)
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"accepted":%d,"duplicates":0}`, len(body.Events))
+		fmt.Fprintf(w, `{"accepted":%d,"duplicates":0,"device_id":"dev"}`, len(body.Events))
 	}))
 	defer srv.Close()
 
@@ -450,5 +450,44 @@ func TestStatusRedactsTheToken(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("status output is missing %q:\n%s", want, out)
 		}
+	}
+}
+
+// A run pointed at another server through flags or the environment (a debug
+// run, a token from a secret) must not rewrite config.json with those values,
+// even when it does persist something: the server-issued id, a new id scheme.
+func TestRunDoesNotPersistOverrides(t *testing.T) {
+	dir := setupState(t)
+	stored, _, err := agentcfg.LoadFile(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored.ServerURL, stored.DeviceToken, stored.IDScheme = "https://prod.example", "aum_prod", 0
+	if err := agentcfg.Save(dir, stored); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/agent/whoami" {
+			fmt.Fprint(w, `{"device_id":"server-issued-id"}`)
+			return
+		}
+		fmt.Fprint(w, `{"accepted":0,"duplicates":0,"device_id":"server-issued-id"}`)
+	}))
+	defer srv.Close()
+	t.Setenv(agentcfg.EnvToken, "aum_from_env")
+
+	if out, code := runCLI(t, "run", "--once", "--server", srv.URL, "--interval", "5"); code != 0 {
+		t.Fatalf("exit %d\n%s", code, out)
+	}
+	got, _, err := agentcfg.LoadFile(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ServerURL != "https://prod.example" || got.DeviceToken != "aum_prod" || got.IntervalSeconds == 5 {
+		t.Errorf("overrides leaked into config.json: server %q token %q interval %d", got.ServerURL, got.DeviceToken, got.IntervalSeconds)
+	}
+	if got.DeviceID != "server-issued-id" || got.IDScheme != event.IDScheme {
+		t.Errorf("device id %q / id scheme %d were not persisted", got.DeviceID, got.IDScheme)
 	}
 }

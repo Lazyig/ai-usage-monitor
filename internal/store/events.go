@@ -126,8 +126,11 @@ type EventPage struct {
 // Events returns raw events matching f, newest first, using keyset pagination on
 // (ts, event_id). cursor is the opaque NextCursor of the previous page.
 func (s *Store) Events(ctx context.Context, f Filter, limit int, cursor string, p Pricer) (EventPage, error) {
-	if limit <= 0 || limit > 1000 {
+	switch {
+	case limit <= 0:
 		limit = 200
+	case limit > 1000:
+		limit = 1000
 	}
 	q := newQueryBuilder(`
 		SELECT event_id, device_id, source, ts, model, session_id, project,

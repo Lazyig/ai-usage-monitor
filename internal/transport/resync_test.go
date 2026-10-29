@@ -60,7 +60,7 @@ func TestResyncFromAnySingleBatchWins(t *testing.T) {
 		n++
 		w.Header().Set("Content-Type", "application/json")
 		// Only the second of the three batches carries the flag.
-		fmt.Fprintf(w, `{"accepted":%d,"duplicates":0,"resync":%t}`, len(req.Events), n == 2)
+		fmt.Fprintf(w, `{"accepted":%d,"duplicates":0,"device_id":"dev","resync":%t}`, len(req.Events), n == 2)
 	}))
 	defer srv.Close()
 
@@ -91,7 +91,7 @@ func TestFlushReportsResync(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"accepted":0,"duplicates":2,"resync":true}`)
+		fmt.Fprint(w, `{"accepted":0,"duplicates":2,"device_id":"dev","resync":true}`)
 	}))
 	defer up.Close()
 	c.BaseURL = up.URL

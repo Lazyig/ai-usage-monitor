@@ -179,8 +179,9 @@ export interface Device {
   os: string
   arch: string
   agent_version: string
-  last_seen: string
-  last_ingest: string
+  /** null until the agent first reaches the server. */
+  last_seen: string | null
+  last_ingest: string | null
   events_total: number
   token_created_at: string
   /** Only present once the device's token has been revoked. */

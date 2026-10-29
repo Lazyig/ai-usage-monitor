@@ -183,6 +183,15 @@ func (c *Collector) Scan(ctx context.Context, deviceID string, cur collector.Cur
 		found = true
 		next[root] = st
 	}
+	// A folder a pattern matched last time but not now (renamed, unmounted)
+	// keeps its progress like a missing plain root does, so it is not re-read
+	// from the start when it comes back. Folders no longer covered by any
+	// configured root are dropped.
+	for key, old := range prev {
+		if _, ok := next[key]; !ok && c.matchesPattern(key) {
+			next[key] = old
+		}
+	}
 	if !found && len(errs) == 0 && len(next) == 0 {
 		return nil, cur, nil // tool not installed on this device
 	}
@@ -197,6 +206,18 @@ func (c *Collector) Scan(ctx context.Context, deviceID string, cur collector.Cur
 		return events, encoded, errors.Join(errs...)
 	}
 	return events, encoded, nil
+}
+
+// matchesPattern reports whether dir is one a configured glob pattern can match.
+func (c *Collector) matchesPattern(dir string) bool {
+	for _, r := range c.roots {
+		if collector.IsGlob(r) {
+			if ok, _ := filepath.Match(filepath.Clean(r), dir); ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // decodeLine converts one transcript line into an event. ok is false for every
