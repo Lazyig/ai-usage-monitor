@@ -13,33 +13,98 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// machineDACL grants full control to SYSTEM and Administrators only, with
-// inheritance from the parent cut: %ProgramData% lets every user create and
-// write inside new folders, and the LocalSystem service reads its config, and
-// writes its log, here.
-const machineDACL = "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+// machineSD makes Administrators the owner and grants full control to SYSTEM
+// and Administrators only, with inheritance from the parent cut: %ProgramData%
+// lets every user create and write inside new folders, and the LocalSystem
+// service reads its config, and writes its log, here. The owner matters as much
+// as the DACL: an owner may rewrite the DACL whatever it says.
+const machineSD = "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+
+// trustedInstallerSID is NT SERVICE\TrustedInstaller, which owns folders
+// Windows itself creates.
+const trustedInstallerSID = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"
 
 // SecureStateDir locks the default (machine-wide) state directory down to
 // SYSTEM and Administrators. A directory chosen with --state-dir or
 // AI_USAGE_STATE_DIR is left as its owner set it up.
+//
+// It refuses a directory another account could have prepared before the
+// install: a junction or symlink would send the service's writes elsewhere, and
+// a folder owned by an ordinary user stays under that user's control.
 func SecureStateDir(dir string) error {
-	if !strings.EqualFold(filepath.Clean(dir), filepath.Clean(defaultMachineStateDir())) {
+	if !isMachineStateDir(dir) {
 		return nil
 	}
-	sd, err := windows.SecurityDescriptorFromString(machineDACL)
+	if err := checkPrepared(dir); err != nil {
+		return err
+	}
+	sd, err := windows.SecurityDescriptorFromString(machineSD)
 	if err != nil {
 		return fmt.Errorf("agentcfg: state dir ACL: %w", err)
+	}
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return fmt.Errorf("agentcfg: state dir owner: %w", err)
 	}
 	dacl, _, err := sd.DACL()
 	if err != nil {
 		return fmt.Errorf("agentcfg: state dir ACL: %w", err)
 	}
 	err = windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil)
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		owner, nil, dacl, nil)
 	if err != nil {
-		return fmt.Errorf("agentcfg: restrict %s to SYSTEM and Administrators: %w", dir, err)
+		return fmt.Errorf("agentcfg: restrict %s to SYSTEM and Administrators (run as administrator): %w", dir, err)
 	}
 	return nil
+}
+
+func isMachineStateDir(dir string) bool {
+	return strings.EqualFold(filepath.Clean(dir), filepath.Clean(defaultMachineStateDir()))
+}
+
+// checkPrepared rejects a state directory that is a reparse point or is owned
+// by anyone but SYSTEM, Administrators, TrustedInstaller or the current user.
+func checkPrepared(dir string) error {
+	if isReparsePoint(dir) {
+		return fmt.Errorf("agentcfg: %s is a junction or symlink; delete it and install again", dir)
+	}
+	sd, err := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		return fmt.Errorf("agentcfg: read the owner of %s: %w", dir, err)
+	}
+	owner, _, err := sd.Owner()
+	if err != nil || owner == nil {
+		return fmt.Errorf("agentcfg: read the owner of %s: %v", dir, err)
+	}
+	if trustedOwner(owner) {
+		return nil
+	}
+	name, domain, _, _ := owner.LookupAccount("")
+	return fmt.Errorf("agentcfg: %s is owned by %s\\%s, not by SYSTEM or Administrators; another account may have prepared it, so delete it and install again", dir, domain, name)
+}
+
+func trustedOwner(owner *windows.SID) bool {
+	if owner.IsWellKnown(windows.WinLocalSystemSid) || owner.IsWellKnown(windows.WinBuiltinAdministratorsSid) {
+		return true
+	}
+	if ti, err := windows.StringToSid(trustedInstallerSID); err == nil && owner.Equals(ti) {
+		return true
+	}
+	// An administrator whose objects default to "object creator" ownership.
+	if u, err := windows.GetCurrentProcessToken().GetTokenUser(); err == nil && owner.Equals(u.User.Sid) {
+		return true
+	}
+	return false
+}
+
+func isReparsePoint(path string) bool {
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return false
+	}
+	attrs, err := windows.GetFileAttributes(p)
+	return err == nil && attrs&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0
 }
 
 func defaultMachineStateDir() string {
@@ -63,7 +128,7 @@ func LegacyWindowsStateDir() string {
 // config yet. It reports what it moved from, or "" when there was nothing to
 // do. The old directory is removed once everything is across.
 func MigrateLegacyState(dir string) (string, error) {
-	if !strings.EqualFold(filepath.Clean(dir), filepath.Clean(defaultMachineStateDir())) {
+	if !isMachineStateDir(dir) {
 		return "", nil
 	}
 	old := LegacyWindowsStateDir()
@@ -79,10 +144,12 @@ func MigrateLegacyState(dir string) (string, error) {
 	if err := SecureStateDir(dir); err != nil {
 		return "", err
 	}
-	// Config last: its presence marks the migration done, so an interrupted
-	// one is simply repeated.
+	// Copied, not renamed: a rename on the same volume keeps the old per-user
+	// permissions (the user as owner, with full control), while a copy inherits
+	// the locked-down ones above. Config last: its presence marks the migration
+	// done, so an interrupted one is simply repeated.
 	for _, name := range []string{"cursors.json", "queue", "config.json"} {
-		if err := moveTree(filepath.Join(old, name), filepath.Join(dir, name)); err != nil {
+		if err := copyTree(filepath.Join(old, name), filepath.Join(dir, name)); err != nil {
 			return "", fmt.Errorf("agentcfg: migrate %s: %w", name, err)
 		}
 	}
@@ -90,20 +157,21 @@ func MigrateLegacyState(dir string) (string, error) {
 	return old, nil
 }
 
-// moveTree renames src to dst, copying when the rename crosses volumes. A
-// missing src is fine.
-func moveTree(src, dst string) error {
-	fi, err := os.Stat(src)
+// copyTree copies src to dst; the new files take their permissions from dst's
+// parent. A missing src is fine, and reparse points are skipped rather than
+// followed: the old folder was writable by the user.
+func copyTree(src, dst string) error {
+	fi, err := os.Lstat(src)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	_ = os.RemoveAll(dst)
-	if err := os.Rename(src, dst); err == nil {
+	if isReparsePoint(src) || fi.Mode()&os.ModeSymlink != 0 {
 		return nil
 	}
+	_ = os.RemoveAll(dst)
 	if fi.IsDir() {
 		if err := os.MkdirAll(dst, 0o700); err != nil {
 			return err
@@ -113,11 +181,14 @@ func moveTree(src, dst string) error {
 			return err
 		}
 		for _, e := range entries {
-			if err := moveTree(filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())); err != nil {
+			if err := copyTree(filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())); err != nil {
 				return err
 			}
 		}
-		return os.RemoveAll(src)
+		return nil
+	}
+	if !fi.Mode().IsRegular() {
+		return nil
 	}
 	in, err := os.Open(src)
 	if err != nil {
@@ -132,9 +203,5 @@ func moveTree(src, dst string) error {
 		out.Close()
 		return err
 	}
-	if err := out.Close(); err != nil {
-		return err
-	}
-	in.Close()
-	return os.Remove(src)
+	return out.Close()
 }

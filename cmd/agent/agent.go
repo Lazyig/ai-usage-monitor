@@ -32,6 +32,7 @@ type agent struct {
 
 	lastContact time.Time // last successful request of any kind
 	authWarned  bool      // so an invalid token is not logged every single tick
+	rescanDue   bool      // cursors were reset for a resync that has not finished
 }
 
 func newAgent(cfg agentcfg.Config, dir string, sel selected) (*agent, error) {
@@ -183,6 +184,7 @@ func (a *agent) handleResync(ctx context.Context, requested, resyncOK bool) erro
 		return a.resync(ctx)
 	}
 	a.log.Printf("server requested a full resync: resetting cursors for the next run")
+	a.rescanDue = true
 	return a.cursors.Reset()
 }
 
@@ -196,12 +198,17 @@ func (a *agent) resync(ctx context.Context) error {
 	if err := a.cursors.Reset(); err != nil {
 		return fmt.Errorf("resync: %w", err)
 	}
+	a.rescanDue = true
 	if err := a.client.Queue.Reset(); err != nil {
 		// Not fatal: a stale batch replays as duplicates, it does not corrupt
 		// anything. The rescan below is what actually restores the history.
 		a.log.Printf("warn: resync: clear queue: %v", err)
 	}
-	return a.pass(ctx, false)
+	if err := a.pass(ctx, false); err != nil {
+		return err
+	}
+	a.rescanDue = ctx.Err() != nil
+	return nil
 }
 
 // ignoreHandled drops errors the tick already dealt with (queued batches) so a
@@ -288,6 +295,12 @@ func (a *agent) loop(ctx context.Context) error {
 // never follows a resync: a full rescan does not belong in a shutdown deadline,
 // and resetting cursors preserves the request for the next start.
 func (a *agent) finalPass() {
+	if a.rescanDue {
+		// The cursors are at zero for a resync this stop interrupted: the
+		// rescan belongs to the next start, not to the shutdown deadline.
+		a.log.Printf("stopping: skipping the final pass, the resync restarts on the next run")
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), finalPassTimeout)
 	defer cancel()
 	if err := a.pass(ctx, false); err != nil {

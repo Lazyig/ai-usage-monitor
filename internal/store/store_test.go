@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -314,6 +315,9 @@ func TestEventsPagination(t *testing.T) {
 }
 
 func TestOpenPermissionErrorHint(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a read-only mode on a Windows directory does not stop file creation")
+	}
 	if os.Getuid() == 0 {
 		t.Skip("root bypasses file permissions")
 	}
@@ -322,8 +326,9 @@ func TestOpenPermissionErrorHint(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(dir, 0o700) })
-	_, err := Open(filepath.Join(dir, "usage.db"))
+	db, err := Open(filepath.Join(dir, "usage.db"))
 	if err == nil {
+		db.Close()
 		t.Fatal("Open in a read-only directory succeeded")
 	}
 	if !errors.Is(err, fs.ErrPermission) || !strings.Contains(err.Error(), "chown") {

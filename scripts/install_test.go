@@ -213,8 +213,10 @@ func TestUnixInstallerUpdate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("update failed: %v %s", err, out)
 		}
-		if want := "install\n--server\n" + srv.URL + "\n"; args != want {
-			t.Errorf("agent got %q, want %q (no --token)", args, want)
+		// Neither --server nor --token: the agent keeps both from config.json,
+		// whatever address the update was downloaded through.
+		if want := "install\n"; args != want {
+			t.Errorf("agent got %q, want %q", args, want)
 		}
 	})
 	t.Run("not installed", func(t *testing.T) {
@@ -299,6 +301,10 @@ func TestUnixInstallerRefusesPlainHTTP(t *testing.T) {
 	}
 	if out, err := run("--server", "http://192.0.2.10:8080"); err == nil || !strings.Contains(out, "refusing plain") {
 		t.Fatalf("plain http was accepted: %v %s", err, out)
+	}
+	// The host is what follows the user info, so this is not this machine.
+	if out, err := run("--server", "http://localhost:80@192.0.2.10"); err == nil || !strings.Contains(out, "user info") {
+		t.Fatalf("a loopback-looking user info was accepted: %v %s", err, out)
 	}
 	for _, args := range [][]string{
 		{"--server", "http://192.0.2.10:9", "--allow-http"},

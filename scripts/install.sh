@@ -32,6 +32,9 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$SERVER" ] || { echo "--server required" >&2; exit 2; }
 SERVER="${SERVER%/}"
+# No user info: in http://localhost:80@host the real host is the part after @,
+# which the loopback patterns below would wrongly accept.
+case "$SERVER" in *@*) echo "--server must not contain user info (@)" >&2; exit 2;; esac
 # Plain http would carry the binary, its checksum and the device token in the
 # clear, so anyone on the path could swap the agent. Only this machine itself
 # (localhost, 127.0.0.1, [::1]) is exempt; anything else needs --allow-http.
@@ -93,14 +96,16 @@ install -m 0755 "$tmp/$name" "$PREFIX/ai-usage-agent"
 echo "installed $PREFIX/ai-usage-agent ($("$PREFIX/ai-usage-agent" version 2>/dev/null || echo unknown))"
 
 # One --claude-dir per directory. Globbing is off while splitting, so a quoted
-# pattern such as '~/.claude-*' reaches the agent as typed. An update passes no
-# token: `install` keeps the one in config.json and re-registers the service.
-set -- install --server "$SERVER"
-[ -n "$TOKEN" ] && set -- "$@" --token "$TOKEN"
+# pattern such as '~/.claude-*' reaches the agent as typed. An update passes
+# neither token nor server: `install` keeps both from config.json and
+# re-registers the service; --server only says where to download from (the
+# dashboard may be open through a tunnel or a LAN address).
+set -- install
+[ -n "$TOKEN" ] && set -- "$@" --server "$SERVER" --token "$TOKEN"
 [ "$ALLOW_HTTP" = 1 ] && set -- "$@" --allow-http
-hint=""
+hint=""; dirs=""
 set -f; old_ifs=$IFS; IFS=$nl
-for d in $CLAUDE_DIRS; do set -- "$@" --claude-dir "$d"; hint="$hint --claude-dir '$d'"; done
+for d in $CLAUDE_DIRS; do set -- "$@" --claude-dir "$d"; hint="$hint --claude-dir '$d'"; dirs="$dirs '$d'"; done
 IFS=$old_ifs; set +f
 if [ "$NO_SERVICE" = 0 ] && { [ -n "$TOKEN" ] || [ "$UPDATE" = 1 ]; }; then
   "$PREFIX/ai-usage-agent" "$@"
@@ -111,5 +116,7 @@ else
   elif [ "$UPDATE" = 1 ]; then
     echo "updated; restart the agent you run yourself to use the new version"
   fi
+  # --no-service leaves config.json alone, so folders given here are not saved.
+  if [ "$UPDATE" = 1 ] && [ -n "$dirs" ]; then echo "next: $PREFIX/ai-usage-agent roots add$dirs"; fi
   [ "$UPDATE" = 1 ] || echo "next: $PREFIX/ai-usage-agent install --server $SERVER --token <device token>$hint"
 fi

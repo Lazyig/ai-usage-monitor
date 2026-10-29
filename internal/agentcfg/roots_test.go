@@ -82,6 +82,9 @@ func TestNormalizeRoot(t *testing.T) {
 		{event.SourceClaudeCode, "~/.claude-work/projects/", filepath.Join(home, ".claude-work", "projects")},
 		{event.SourceClaudeCode, "~/.claude-*", filepath.Join(home, ".claude-*", "projects")},
 		{event.SourceClaudeCode, "$AUM_TEST_DIR/cfg", filepath.Join(home, "env", "cfg", "projects")},
+		// An unset name is part of the path, not an empty variable: "$" is an
+		// ordinary character in Windows folder and share names.
+		{event.SourceClaudeCode, "~/svc$/aum_unset_$AUM_UNSET_X", filepath.Join(home, "svc$", "aum_unset_$AUM_UNSET_X", "projects")},
 		{event.SourceClaudeCode, "rel", filepath.Join(cwd, "rel", "projects")},
 		{event.SourceAntigravity, "~/ag", filepath.Join(home, "ag")},
 	}

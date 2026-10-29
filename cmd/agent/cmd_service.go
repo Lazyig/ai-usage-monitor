@@ -85,10 +85,13 @@ func install(dir, server, token, name string, interval int, claudeDirs []string,
 	}
 	cfg, _, err := agentcfg.Load(dir)
 	if err != nil {
-		return err
+		return stateAccessError(dir, err)
 	}
 	if server != "" {
 		cfg.ServerURL = server
+		// A new address is judged on its own: an http allowance kept for the
+		// previous one must not carry over to it.
+		cfg.AllowHTTP = false
 	}
 	if token != "" {
 		cfg.DeviceToken = token

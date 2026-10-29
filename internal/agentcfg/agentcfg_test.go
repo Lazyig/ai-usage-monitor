@@ -32,8 +32,8 @@ func TestStateDirPerOS(t *testing.T) {
 	var want string
 	switch runtime.GOOS {
 	case "windows":
-		// No APPDATA in the environment: the documented fallback applies.
-		want = filepath.Join(home, "AppData", "Roaming", AppName)
+		// The LocalSystem service's state is machine wide, never in a profile.
+		want = filepath.Join(os.Getenv("ProgramData"), AppName)
 	case "darwin":
 		want = filepath.Join(home, "Library", "Application Support", AppName)
 	default:
@@ -63,9 +63,10 @@ func TestStateDirOverrides(t *testing.T) {
 		})
 	}
 	if runtime.GOOS == "windows" {
-		t.Run("APPDATA", func(t *testing.T) {
+		t.Run("ProgramData, not APPDATA", func(t *testing.T) {
 			t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
-			if got, want := StateDir(), filepath.Join(home, "AppData", "Roaming", AppName); got != want {
+			t.Setenv("ProgramData", filepath.Join(home, "ProgramData"))
+			if got, want := StateDir(), filepath.Join(home, "ProgramData", AppName); got != want {
 				t.Errorf("StateDir() = %q, want %q", got, want)
 			}
 		})

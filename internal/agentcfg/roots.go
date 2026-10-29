@@ -50,7 +50,7 @@ func NormalizeRoot(s event.Source, input string) (string, error) {
 	if runtime.GOOS == "windows" {
 		p = expandPercentVars(p)
 	}
-	p = os.ExpandEnv(p)
+	p = expandSetVars(p)
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", input, err)
@@ -70,6 +70,18 @@ func expandHome(p string) string {
 		return filepath.Join(homeDir(), p[2:])
 	}
 	return p
+}
+
+// expandSetVars expands $VAR and ${VAR} for variables that are set and leaves
+// any other "$" as typed: it is an ordinary character in folder and share names
+// (C:\Users\svc$, \\host\c$), which os.ExpandEnv would silently drop.
+func expandSetVars(p string) string {
+	return os.Expand(p, func(name string) string {
+		if v, ok := os.LookupEnv(name); ok {
+			return v
+		}
+		return "$" + name
+	})
 }
 
 // expandPercentVars expands cmd.exe style %VAR% references. Unknown variables

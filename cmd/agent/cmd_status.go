@@ -36,7 +36,7 @@ func cmdStatus(args []string) error {
 	dir := resolveStateDir(*stateDir)
 	cfg, existed, err := agentcfg.Load(dir)
 	if err != nil {
-		return err
+		return stateAccessError(dir, err)
 	}
 	out := stdout
 

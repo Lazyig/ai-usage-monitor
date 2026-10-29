@@ -77,7 +77,7 @@ func cmdRoots(args []string) error {
 	}
 	cfg, _, err := agentcfg.LoadFile(dir)
 	if err != nil {
-		return err
+		return stateAccessError(dir, err)
 	}
 
 	if action == "list" {
@@ -181,6 +181,11 @@ func printRoots(w io.Writer, s event.Source, sc agentcfg.SourceConfig) {
 		state = " (disabled)"
 	}
 	fmt.Fprintf(w, "%s%s\n", s, state)
+	if !sc.Enabled {
+		// A source whose last folder was removed keeps that path as Root only
+		// so the default does not refill it; it is not a configured folder.
+		return
+	}
 	for _, r := range usedRoots(s, sc) {
 		if !collector.IsGlob(r) {
 			fmt.Fprintf(w, "  %s  %s\n", r, describeDir(s, r))

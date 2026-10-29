@@ -83,6 +83,22 @@ jobs:
             /tmp/ai-usage-review/browser-results
             /tmp/review-server.log
 
+  # The agent's Windows code (service state in %ProgramData%, ACLs, migration,
+  # paths) only builds and runs here; the Linux job cannot catch it.
+  go-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+      - run: go vet ./...
+      - run: go test ./...
+
   windows-installer:
     runs-on: windows-latest
     steps:

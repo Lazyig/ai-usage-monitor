@@ -69,14 +69,17 @@ for ($i = 0; $i -lt 10 -and -not $moved; $i++) {
 }
 if (-not $moved) { throw "could not replace $dst (still in use). Stop the ai-usage-agent service and retry." }
 Write-Host "installed $dst"
-# An update passes no token: `install` keeps the one in config.json and re-registers the service.
-$agentArgs = @('install', '--server', $Server)
-if ($Token) { $agentArgs += @('--token', $Token) }
+# An update passes neither token nor server: `install` keeps both from config.json and re-registers
+# the service. -Server only says where to download from (the dashboard may be open through a tunnel).
+$agentArgs = @('install')
+if ($Token) { $agentArgs += @('--server', $Server, '--token', $Token) }
 if ($AllowHttp) { $agentArgs += @('--allow-http') }
 foreach ($d in $ClaudeDir) { $agentArgs += @('--claude-dir', $d) }
 # Moving an old install must re-register the service (it points at the old binary and state), so it
-# always runs install; the agent carries config.json, cursors and the queue over to %ProgramData%.
-if ($Token -or $Update -or $migrate) {
+# runs install when there is a config to carry; the agent moves config.json, cursors and the queue
+# over to %ProgramData%. An old download that was never configured has nothing to re-register.
+$configured = (Test-Path (Join-Path $env:ProgramData 'ai-usage-agent\config.json')) -or (Test-Path (Join-Path $env:APPDATA 'ai-usage-agent\config.json'))
+if ($Token -or (($Update -or $migrate) -and $configured)) {
   & $dst @agentArgs
   # A native command's failure does not trip $ErrorActionPreference.
   if ($LASTEXITCODE -ne 0) { throw "ai-usage-agent install failed (exit code $LASTEXITCODE)" }
@@ -85,6 +88,10 @@ if ($Token -or $Update -or $migrate) {
     Write-Host "moved the agent from $legacyPrefix to $Prefix"
   }
 } else {
+  if ($migrate) {
+    Remove-Item -Recurse -Force $legacyPrefix -ErrorAction SilentlyContinue
+    Write-Host "moved the agent from $legacyPrefix to $Prefix"
+  }
   if ($wasRunning) {
     Start-Service -Name ai-usage-agent
     Write-Host "restarted the ai-usage-agent service with the new binary"

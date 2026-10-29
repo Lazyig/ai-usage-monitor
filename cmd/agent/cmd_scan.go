@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"sort"
 	"strconv"
@@ -50,8 +52,13 @@ func cmdScan(args []string) error {
 
 	dir := resolveStateDir(*stateDir)
 	cfg, _, err := agentcfg.Load(dir)
-	if err != nil {
-		return err
+	if errors.Is(err, fs.ErrPermission) && strings.TrimSpace(*stateDir) == "" {
+		// The service's settings are for administrators only; scan only reads
+		// local logs, so it can still run with the default folders.
+		fmt.Fprintf(os.Stderr, "note: %s is readable by administrators only; scanning the default folders (run as administrator to use the service's folders)\n", dir)
+		cfg = agentcfg.Defaults()
+	} else if err != nil {
+		return stateAccessError(dir, err)
 	}
 	if len(roots) > 0 {
 		if sel != nil && !sel[event.SourceClaudeCode] {

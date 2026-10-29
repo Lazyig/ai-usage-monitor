@@ -31,6 +31,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/signal"
 	"strings"
@@ -174,6 +175,16 @@ func resolveStateDir(flagValue string) string {
 		return flagValue
 	}
 	return agentcfg.StateDir()
+}
+
+// stateAccessError explains a state directory the current user may not read:
+// on Windows the service's settings are readable by SYSTEM and Administrators
+// only, so a command run from an ordinary terminal is refused.
+func stateAccessError(dir string, err error) error {
+	if err == nil || !errors.Is(err, fs.ErrPermission) {
+		return err
+	}
+	return fmt.Errorf("%w\n%s holds the service's settings and only administrators may read it: run this in an administrator terminal, or pass --state-dir", err, dir)
 }
 
 // signalContext cancels on SIGINT/SIGTERM so a run in a terminal, a systemd

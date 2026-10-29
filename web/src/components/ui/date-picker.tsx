@@ -177,7 +177,12 @@ function Calendar({ value, min, max, onSelect }: CalendarProps) {
               aria-current={isToday ? 'date' : undefined}
               aria-label={`${Number(d.slice(5, 7))}월 ${Number(d.slice(8))}일`}
               onClick={() => onSelect(d)}
-              onFocus={() => setFocused(d)}
+              // A press on a day of the previous or next month focuses it before the
+              // click lands; switching months then would move the grid under the
+              // pointer and lose the click. Arrow keys change month through move().
+              onFocus={() => {
+                if (inMonth) setFocused(d)
+              }}
               className={cn(
                 'mx-auto box-border inline-flex size-7 cursor-pointer items-center justify-center rounded-sm tabular-nums',
                 'hover:bg-(--colorNeutralBackground1Hover) active:bg-(--colorNeutralBackground1Pressed) focus-visible:outline-2 focus-visible:outline-(--colorStrokeFocus2)',

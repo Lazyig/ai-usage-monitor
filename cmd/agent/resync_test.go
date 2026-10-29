@@ -405,3 +405,31 @@ func TestFinalPassDefersResyncUntilNextRun(t *testing.T) {
 		t.Fatalf("next run sent %d events, want %d", total-first, first)
 	}
 }
+
+// A stop that interrupts a resync leaves the cursors at zero. The final pass
+// must not turn that into a full rescan inside the shutdown deadline.
+func TestFinalPassSkippedAfterAnInterruptedResync(t *testing.T) {
+	dir := setupState(t)
+	srv := newIngestServer(t)
+	ag, err := bootstrap(dir, nil, runOverrides{server: srv.URL, token: "tok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ag.tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	_, first, _ := srv.counts()
+	if first == 0 {
+		t.Fatal("the first pass sent nothing")
+	}
+	stopped, cancel := context.WithCancel(context.Background())
+	cancel()
+	_ = ag.handleResync(stopped, true, true)
+	if !ag.rescanDue {
+		t.Fatal("an interrupted resync did not leave the rescan due")
+	}
+	ag.finalPass()
+	if _, events, _ := srv.counts(); events != first {
+		t.Fatalf("final pass after an interrupted resync sent %d events, want none", events-first)
+	}
+}

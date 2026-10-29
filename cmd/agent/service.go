@@ -17,6 +17,8 @@ import (
 	"sync"
 
 	"github.com/kardianos/service"
+
+	"ai-usage-monitor/internal/agentcfg"
 )
 
 // serviceName is the systemd unit / launchd label / Windows service name.
@@ -148,7 +150,13 @@ func runAsService(dir string, sel selected, ov runOverrides) error {
 // Writes to a dead stdout are ignored so they cannot break file logging.
 func setupLogFile(dir string) (closeFn func()) {
 	_ = os.MkdirAll(dir, 0o700)
-	f, err := openLog(filepath.Join(dir, "agent.log"))
+	// The service may be the first to create the machine state dir: lock it
+	// down here too, and never write into one another account prepared.
+	err := agentcfg.SecureStateDir(dir)
+	var f *os.File
+	if err == nil {
+		f, err = openLog(filepath.Join(dir, "agent.log"))
+	}
 	if err != nil {
 		log.SetOutput(oneLine{os.Stderr})
 		log.Printf("warn: not logging to a file: %v", err)

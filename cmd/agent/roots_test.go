@@ -154,3 +154,13 @@ func TestShellQuote(t *testing.T) {
 		}
 	}
 }
+
+// A source whose last folder was removed keeps that path only as a placeholder:
+// listing it as a folder would contradict "no folders left".
+func TestPrintRootsHidesADisabledPlaceholder(t *testing.T) {
+	var b strings.Builder
+	printRoots(&b, event.SourceAntigravity, agentcfg.SourceConfig{Enabled: false, Root: filepath.Join("x", "removed")})
+	if out := b.String(); strings.Contains(out, "removed") || !strings.Contains(out, "(disabled)") {
+		t.Fatalf("printRoots = %q, want only the disabled source", out)
+	}
+}
