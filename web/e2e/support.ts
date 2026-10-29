@@ -18,12 +18,15 @@ export async function prepare(page: Page, authenticated = true, resetPreferences
   }, { authenticated })
 }
 
-/** Picks a date preset whether it is a tab or, on a narrow bar, in the "⋯" menu. */
-export async function selectPreset(page: Page, label: string) {
+/** Picks a date preset: its tab when it shows one, else from its group's ▾
+ * menu (named by menu), else from the "⋯" menu of a narrow bar. */
+export async function selectPreset(page: Page, label: string, menu?: string) {
   const tab = page.getByRole('tab', { name: label, exact: true })
   if (await tab.isVisible()) return tab.click()
-  await page.getByRole('button', { name: '기간 더 보기' }).click()
-  await page.getByRole('menuitem', { name: label, exact: true }).click()
+  const opener = menu ? page.getByRole('button', { name: menu, exact: true }) : null
+  if (opener && (await opener.isVisible())) await opener.click()
+  else await page.getByRole('button', { name: '기간 더 보기' }).click()
+  await page.getByRole('menuitem', { name: label }).first().click()
 }
 
 /** Turns automatic refresh on or off, from the switch or, on narrow screens, the "⋯" menu. */

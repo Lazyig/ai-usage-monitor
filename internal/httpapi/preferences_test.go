@@ -23,10 +23,10 @@ func TestPreferences(t *testing.T) {
 	}
 
 	// Relative presets drop any dates; custom keeps them.
-	if w := h.do(http.MethodPut, "/api/v1/preferences", adminToken, `{"range":{"preset":"yesterday","from":"2026-01-01","to":"2026-01-02"},"auto_refresh":true}`); w.Code != http.StatusOK {
+	if w := h.do(http.MethodPut, "/api/v1/preferences", adminToken, `{"range":{"preset":"day-1","from":"2026-01-01","to":"2026-01-02"},"auto_refresh":true}`); w.Code != http.StatusOK {
 		t.Fatalf("PUT = %d %s", w.Code, w.Body)
 	}
-	if got := get(); got != `{"range":{"preset":"yesterday"},"auto_refresh":true}` {
+	if got := get(); got != `{"range":{"preset":"day-1"},"auto_refresh":true}` {
 		t.Errorf("after save: %s", got)
 	}
 	if w := h.do(http.MethodPut, "/api/v1/preferences", adminToken, `{"range":{"preset":"custom","from":"2026-10-01","to":"2026-10-11"},"auto_refresh":false}`); w.Code != http.StatusOK {
@@ -38,12 +38,16 @@ func TestPreferences(t *testing.T) {
 
 	for _, bad := range []string{
 		`{"range":{"preset":"tomorrow"}}`,
+		`{"range":{"preset":"day-7"}}`,
+		`{"range":{"preset":"month-13"}}`,
+		`{"range":{"preset":"last-14"}}`,
+		`{"range":{"preset":"30d"}}`,
 		`{"range":{"preset":"custom","from":"2026-10-11","to":"2026-10-01"}}`,
 		`{"range":{"preset":"custom","from":"yesterday","to":"2026-10-01"}}`,
 		`{"auto_refresh":"yes"}`,
 		`{"theme":"dark"}`,
 		`not json`,
-		`{"range":{"preset":"7d"},"pad":"` + strings.Repeat("x", maxPrefsBytes) + `"}`,
+		`{"range":{"preset":"last-7"},"pad":"` + strings.Repeat("x", maxPrefsBytes) + `"}`,
 	} {
 		if w := h.do(http.MethodPut, "/api/v1/preferences", adminToken, bad); w.Code != http.StatusBadRequest {
 			t.Errorf("PUT %.60s = %d, want 400", bad, w.Code)

@@ -1,20 +1,16 @@
 // The dashboard's selections (date range, auto refresh) as stored on the
 // server, and the conversions to and from the app's state.
 import type { DashboardPreferences } from '../api/types'
-import { type DateRange, type RangePreset, PRESET_LABELS, rangeForPreset } from './dateRange'
+import { type DateRange, DEFAULT_PRESET, isPreset, rangeForPreset } from './dateRange'
 
 export interface DashboardSettings {
   range: DateRange
   autoRefresh: boolean
 }
 
-export const DEFAULT_SETTINGS: DashboardSettings = { range: rangeForPreset('30d'), autoRefresh: false }
+export const DEFAULT_SETTINGS: DashboardSettings = { range: rangeForPreset(DEFAULT_PRESET), autoRefresh: false }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/
-
-function isPreset(v: unknown): v is RangePreset {
-  return typeof v === 'string' && v in PRESET_LABELS
-}
 
 /** Settings from a stored document. Anything missing or unusable falls back
  * to the default; relative presets are recomputed for today. */

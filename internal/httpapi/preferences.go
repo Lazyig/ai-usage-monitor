@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 	"time"
 )
 
@@ -28,17 +29,17 @@ const dashboardPrefsName = "dashboard"
 // maxPrefsBytes bounds the stored document; the real one is under 100 bytes.
 const maxPrefsBytes = 4 << 10
 
-var rangePresets = map[string]bool{
-	"today": true, "yesterday": true, "7d": true, "30d": true,
-	"thisMonth": true, "lastMonth": true, "all": true, "custom": true,
-}
+// rangePreset matches the presets the dashboard offers: a calendar period
+// counted back from today (day-0 today … day-6, week-0 … week-4, month-0 …
+// month-12), a rolling window (last-7, last-30, last-90), all or custom.
+var rangePreset = regexp.MustCompile(`^(day-[0-6]|week-[0-4]|month-([0-9]|1[0-2])|last-(7|30|90)|all|custom)$`)
 
 func (p *dashboardPrefs) validate() error {
 	if p.Range == nil {
 		return nil
 	}
 	r := p.Range
-	if !rangePresets[r.Preset] {
+	if !rangePreset.MatchString(r.Preset) {
 		return errors.New("unknown range preset")
 	}
 	if r.Preset != "custom" {

@@ -48,7 +48,7 @@ afterEach(() => {
 })
 
 describe('date range refresh across Seoul midnight', () => {
-  it.each(['today', '7d', '30d', 'thisMonth', 'all'] as const)(
+  it.each(['day-0', 'week-0', 'last-7', 'last-30', 'month-0', 'all'] as const)(
     'recalculates %s on manual refresh and refetches data',
     (preset) => {
       act(() => filters.setPreset(preset))
@@ -61,9 +61,9 @@ describe('date range refresh across Seoul midnight', () => {
   )
 
   it('advances today while the page stays open with auto-refresh disabled', () => {
-    act(() => filters.setPreset('today'))
+    act(() => filters.setPreset('day-0'))
     act(() => vi.advanceTimersByTime(60_000))
-    expect(filters.range).toEqual({ preset: 'today', from: '2026-10-16', to: '2026-10-17' })
+    expect(filters.range).toEqual({ preset: 'day-0', from: '2026-10-16', to: '2026-10-17' })
     expect(filters.refreshKey).toBe(0)
   })
 
@@ -85,11 +85,11 @@ describe('date range refresh across Seoul midnight', () => {
 
   it('recalculates last month across a month and year boundary', () => {
     vi.setSystemTime(new Date('2026-12-31T14:59:30Z'))
-    act(() => filters.setPreset('lastMonth'))
-    expect(filters.range).toEqual({ preset: 'lastMonth', from: '2026-11-01', to: '2026-12-01' })
+    act(() => filters.setPreset('month-1'))
+    expect(filters.range).toEqual({ preset: 'month-1', from: '2026-11-01', to: '2026-12-01' })
     vi.setSystemTime(new Date('2026-12-31T15:00:01Z'))
     act(() => filters.refresh())
-    expect(filters.range).toEqual({ preset: 'lastMonth', from: '2026-12-01', to: '2027-01-01' })
+    expect(filters.range).toEqual({ preset: 'month-1', from: '2026-12-01', to: '2027-01-01' })
   })
 
   it('preserves custom dates during manual, timed, and focus refreshes', () => {
@@ -120,12 +120,12 @@ describe('selections kept on the server', () => {
   }
 
   it('saves what the user picks, once the picking settles', () => {
-    act(() => filters.setPreset('yesterday'))
-    act(() => filters.setPreset('7d'))
+    act(() => filters.setPreset('day-1'))
+    act(() => filters.setPreset('last-7'))
     act(() => filters.toggleAutoRefresh())
     expect(api.saved).toEqual([])
     act(() => vi.advanceTimersByTime(400))
-    expect(api.saved).toEqual([{ range: { preset: '7d' }, auto_refresh: true }])
+    expect(api.saved).toEqual([{ range: { preset: 'last-7' }, auto_refresh: true }])
   })
 
   it('keeps the dates of a custom range only', () => {
@@ -135,9 +135,9 @@ describe('selections kept on the server', () => {
   })
 
   it('starts from the server copy, with relative presets recomputed for today', async () => {
-    api.serverPrefs = { range: { preset: 'yesterday' }, auto_refresh: true }
+    api.serverPrefs = { range: { preset: 'day-1' }, auto_refresh: true }
     await remount()
-    expect(filters.range).toEqual({ preset: 'yesterday', from: '2026-10-14', to: '2026-10-15' })
+    expect(filters.range).toEqual({ preset: 'day-1', from: '2026-10-14', to: '2026-10-15' })
     expect(filters.autoRefresh).toBe(true)
     // Loading is not a change: nothing is written back.
     act(() => vi.advanceTimersByTime(400))
@@ -145,16 +145,16 @@ describe('selections kept on the server', () => {
   })
 
   it('starts from this browser\'s copy before the server answers, and ignores bad documents', async () => {
-    localStorage.setItem('aum_dashboard_prefs', JSON.stringify({ range: { preset: 'thisMonth' }, auto_refresh: true }))
+    localStorage.setItem('aum_dashboard_prefs', JSON.stringify({ range: { preset: 'month-0' }, auto_refresh: true }))
     api.serverPrefs = { range: { preset: 'nonsense' }, auto_refresh: 'yes' as unknown as boolean }
     act(() => root.unmount())
     root = createRoot(container)
     act(() => root.render(<FiltersProvider><Probe /></FiltersProvider>))
-    expect(filters.range.preset).toBe('thisMonth')
+    expect(filters.range.preset).toBe('month-0')
     expect(filters.autoRefresh).toBe(true)
     // The server's (unusable) document then means the defaults.
     await act(async () => {})
-    expect(filters.range.preset).toBe('30d')
+    expect(filters.range.preset).toBe('last-30')
     expect(filters.autoRefresh).toBe(false)
   })
 
@@ -163,8 +163,8 @@ describe('selections kept on the server', () => {
     act(() => root.unmount())
     root = createRoot(container)
     act(() => root.render(<FiltersProvider><Probe /></FiltersProvider>))
-    act(() => filters.setPreset('today'))
+    act(() => filters.setPreset('day-0'))
     await act(async () => {})
-    expect(filters.range.preset).toBe('today')
+    expect(filters.range.preset).toBe('day-0')
   })
 })

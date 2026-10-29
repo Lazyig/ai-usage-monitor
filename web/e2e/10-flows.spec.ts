@@ -20,7 +20,7 @@ test('login rejects an invalid token, accepts the test token, and logs out', asy
 test('date presets, custom dates, refresh and automatic refresh remain usable', async ({ page }) => {
   await prepare(page)
   await page.goto('/')
-  await selectPreset(page, '최근 7일')
+  await selectPreset(page, '최근 7일', '최근 기간')
   await expect(page.getByRole('tab', { name: '최근 7일', exact: true })).toHaveAttribute('aria-selected', 'true')
   await selectPreset(page, '직접 선택')
   await page.getByLabel('시작일', { exact: true }).fill('2026-10-22')
@@ -194,7 +194,7 @@ test('the selected period and auto refresh come back from the server in a fresh 
   await prepare(page)
   await page.goto('/')
   const saved = page.waitForRequest((r) => r.url().endsWith('/api/v1/preferences') && r.method() === 'PUT')
-  await selectPreset(page, '어제')
+  await selectPreset(page, '어제', '지난 날짜')
   await saved
   await setAutoRefresh(page, true)
   await page.waitForRequest((r) => r.url().endsWith('/api/v1/preferences') && r.method() === 'PUT')
@@ -229,4 +229,19 @@ test('a narrow bar moves the least used periods into a menu', async ({ page }) =
   await expect(page.getByRole('tab', { name: '전체', exact: true })).toHaveAttribute('aria-selected', 'true')
   // Nothing overflows the page sideways.
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})
+
+test('a group menu picks an earlier period and the tab takes its name', async ({ page }) => {
+  await prepare(page) // today is Friday 2026-10-23 in Seoul
+  await page.goto('/')
+  const lastWeek = page.waitForResponse((r) => r.url().includes('/api/v1/summary?') && r.url().includes('from=2026-10-12') && r.url().includes('to=2026-10-19'))
+  await page.getByRole('button', { name: '지난 주', exact: true }).click()
+  await expect(page.getByRole('menuitem', { name: '지난주' })).toContainText('10/12–10/18')
+  await page.getByRole('menuitem', { name: '지난주' }).click()
+  expect((await lastWeek).ok()).toBe(true)
+  await expect(page.getByRole('tab', { name: '지난주', exact: true })).toHaveAttribute('aria-selected', 'true')
+  // Back to the current week from the same menu.
+  await page.getByRole('button', { name: '지난 주', exact: true }).click()
+  await page.getByRole('menuitem', { name: '이번 주' }).click()
+  await expect(page.getByRole('tab', { name: '이번 주', exact: true })).toHaveAttribute('aria-selected', 'true')
 })

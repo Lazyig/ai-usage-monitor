@@ -140,9 +140,9 @@
 {"range":{"preset":"custom","from":"2026-10-01","to":"2026-10-11"},"auto_refresh":true}
 ```
 
-- `range.preset`: `today`, `yesterday`, `7d`, `30d`, `thisMonth`, `lastMonth`, `all`, `custom` 중 하나.
+- `range.preset`: 오늘부터 거슬러 센 달력 기간 `day-0`(오늘)…`day-6`, `week-0`(이번 주, 월요일 시작)…`week-4`, `month-0`(이번 달)…`month-12`, 오늘까지의 `last-7`·`last-30`·`last-90`, 또는 `all`, `custom`.
 - `range.from`·`range.to`(`YYYY-MM-DD`, `to` 는 포함하지 않음): `custom` 일 때만 저장한다. 다른 값은 오늘 기준이라 불러올 때 다시 계산한다.
-- 모르는 필드, 잘못된 값, 4 KiB 를 넘는 본문은 `400`. 필드를 빼면 기본값(최근 30일, 자동 새로고침 끔)을 쓴다.
+- 모르는 필드, 잘못된 값, 4 KiB 를 넘는 본문은 `400`. 필드를 빼면 기본값(`last-30`, 자동 새로고침 끔)을 쓴다.
 
 ## 헬스 체크 (토큰 불필요)
 

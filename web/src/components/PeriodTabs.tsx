@@ -1,53 +1,134 @@
 import { Checkmark20Regular } from '@fluentui/react-icons/headless/svg/checkmark'
+import { ChevronDown12Regular } from '@fluentui/react-icons/headless/svg/chevron-down'
 import { MoreHorizontal20Regular } from '@fluentui/react-icons/headless/svg/more-horizontal'
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { PRESET_LABELS, type RangePreset } from '../lib/dateRange'
+import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { BACK, LAST_DAYS, type PeriodUnit, type RangePreset, parsePreset, presetDetail, presetLabel } from '../lib/dateRange'
 import { Button } from './ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu'
 import { Tab, TabList } from './ui/tabs'
 
-/** Display order of the presets. */
-export const PRESETS: RangePreset[] = ['today', 'yesterday', '7d', '30d', 'thisMonth', 'lastMonth', 'all', 'custom']
+/** One entry of the bar: a tab, and for a group a ▾ menu of its other periods. */
+export interface PeriodItem {
+  key: PeriodUnit | 'last' | 'all' | 'custom'
+  /** The tab's preset when nothing of the group is selected. */
+  base: RangePreset
+  /** The group's choices, in menu order; empty for a plain tab. */
+  options: RangePreset[]
+  /** Accessible name of the ▾ button. */
+  menuLabel?: string
+}
 
-/** When the bar is too narrow, presets move into the "⋯" menu in this order:
- * the least used first. 오늘 always stays, and so does the selected preset. */
-const HIDE_ORDER: RangePreset[] = ['all', 'lastMonth', 'custom', 'thisMonth', 'yesterday', '30d', '7d']
+const back = (unit: PeriodUnit): RangePreset[] => Array.from({ length: BACK[unit] + 1 }, (_, n) => `${unit}-${n}` as RangePreset)
 
-/** Tailwind gap-1.5 between tabs and before the menu button. */
+export const PERIOD_ITEMS: PeriodItem[] = [
+  { key: 'day', base: 'day-0', options: back('day'), menuLabel: '지난 날짜' },
+  { key: 'week', base: 'week-0', options: back('week'), menuLabel: '지난 주' },
+  { key: 'month', base: 'month-0', options: back('month'), menuLabel: '지난 달' },
+  { key: 'last', base: 'last-30', options: LAST_DAYS.map((n) => `last-${n}` as RangePreset), menuLabel: '최근 기간' },
+  { key: 'all', base: 'all', options: [] },
+  { key: 'custom', base: 'custom', options: [] },
+]
+
+/** A control the bar shows after the periods (the time zone, the auto
+ * refresh switch) that can also move into the "⋯" menu. */
+export interface BarExtra {
+  key: string
+  node: ReactNode
+  menu: ReactNode
+}
+
+type Key = PeriodItem['key'] | string
+
+/** When the bar is too narrow, entries move into the "⋯" menu in this order,
+ * the least used first: the extras, then 전체, 최근 N일, 직접 선택, 이번 달.
+ * 오늘 and 이번 주 always stay, as does the item that holds the selected preset. */
+const PERIOD_HIDE_ORDER: PeriodItem['key'][] = ['all', 'last', 'custom', 'month']
+
+/** Tailwind gap-1.5 between items and before the menu button. */
 const GAP = 6
 
-/** Which presets fit in width, given each tab's width and the menu button's. */
-export function visiblePresets(width: number, tabWidths: Record<RangePreset, number>, moreWidth: number, selected: RangePreset, alwaysMenu = false): RangePreset[] {
-  const hidden = new Set<RangePreset>()
+/** The item a preset belongs to. */
+export function itemOf(preset: RangePreset): PeriodItem['key'] {
+  return parsePreset(preset)?.kind ?? 'last'
+}
+
+/** Which entries fit in width, given each one's measured width (periods and
+ * extras, extras in the order shown) and the "⋯" button's. */
+export function visibleItems(width: number, widths: Record<Key, number>, moreWidth: number, selected: RangePreset, extras: string[] = []): Key[] {
+  const all: Key[] = [...PERIOD_ITEMS.map((i) => i.key), ...extras]
+  const hidden = new Set<Key>()
   const fits = () => {
-    const shown = PRESETS.filter((p) => !hidden.has(p))
-    const tabs = shown.reduce((sum, p) => sum + tabWidths[p], 0) + GAP * (shown.length - 1)
-    return tabs + (hidden.size > 0 || alwaysMenu ? GAP + moreWidth : 0) <= width
+    const shown = all.filter((k) => !hidden.has(k))
+    const total = shown.reduce((sum, k) => sum + (widths[k] ?? 0), 0) + GAP * (shown.length - 1)
+    return total + (hidden.size > 0 ? GAP + moreWidth : 0) <= width
   }
-  for (const p of HIDE_ORDER) {
+  for (const k of [...[...extras].reverse(), ...PERIOD_HIDE_ORDER]) {
     if (fits()) break
-    if (p !== selected) hidden.add(p)
+    if (k !== itemOf(selected)) hidden.add(k)
   }
-  return PRESETS.filter((p) => !hidden.has(p))
+  return all.filter((k) => !hidden.has(k))
 }
 
 interface PeriodTabsProps {
   value: RangePreset
   onSelect: (preset: RangePreset) => void
-  /** Extra entries for the "⋯" menu (controls the bar has no room for); when
-   * given, the menu is always shown. */
-  extraMenu?: ReactNode
+  /** Controls shown at the end of the bar while there is room, in the "⋯"
+   * menu otherwise. The first one is kept longest. */
+  extras?: BarExtra[]
+}
+
+function MenuEntry({ preset, value, onSelect }: { preset: RangePreset; value: RangePreset; onSelect: (p: RangePreset) => void }) {
+  const detail = presetDetail(preset)
+  return (
+    <DropdownMenuItem icon={preset === value ? <Checkmark20Regular /> : <span />} onSelect={() => onSelect(preset)}>
+      {presetLabel(preset)}
+      {detail && <span className="ml-2 text-fg3">{detail}</span>}
+    </DropdownMenuItem>
+  )
+}
+
+/** A tab, plus the ▾ menu of a group. The tab shows the group's selected
+ * period (어제, 지난주, 8월 …) or its base one. */
+function Item({ item, value, onSelect, measuring }: { item: PeriodItem; value: RangePreset; onSelect: (p: RangePreset) => void; measuring?: boolean }) {
+  const current = item.options.includes(value) ? value : item.base
+  const tab = (
+    <Tab value={current} data-item={measuring && item.options.length === 0 ? item.key : undefined} tabIndex={measuring ? -1 : undefined}>
+      {presetLabel(current)}
+    </Tab>
+  )
+  if (item.options.length === 0) return tab
+  return (
+    <span className="flex items-center" data-item={measuring ? item.key : undefined}>
+      {tab}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button size="small" appearance="subtle" icon={<ChevronDown12Regular />} aria-label={item.menuLabel} tabIndex={measuring ? -1 : undefined} className="min-w-0 px-0.5" />
+        </DropdownMenuTrigger>
+        {!measuring && (
+          <DropdownMenuContent side="bottom" align="start">
+            {item.options.map((p) => (
+              <MenuEntry key={p} preset={p} value={value} onSelect={onSelect} />
+            ))}
+          </DropdownMenuContent>
+        )}
+      </DropdownMenu>
+    </span>
+  )
 }
 
 /**
- * The date range presets as tabs, showing as many as fit the space the bar
- * leaves them and moving the rest into a "⋯" menu. Widths are measured from a
- * hidden copy of every tab, so the split follows the real font and labels.
+ * The date range selector: 오늘·이번 주·이번 달·최근 N일 with a ▾ menu each
+ * for the periods before (어제, 지난주, 지난달 …), then 전체 and 직접 선택,
+ * and the bar's extras at the end. When the bar is narrow, the entries that do
+ * not fit move into a "⋯" menu;
+ * widths are measured from a hidden copy showing the same labels, so the
+ * split follows the real font and is redone when the selection renames a tab.
  */
-export function PeriodTabs({ value, onSelect, extraMenu }: PeriodTabsProps) {
+export function PeriodTabs({ value, onSelect, extras = [] }: PeriodTabsProps) {
   const slot = useRef<HTMLDivElement>(null)
   const measure = useRef<HTMLDivElement>(null)
-  const [shown, setShown] = useState<RangePreset[]>(PRESETS)
+  const extraKeys = extras.map((e) => e.key)
+  const [shown, setShown] = useState<Key[]>(() => [...PERIOD_ITEMS.map((i) => i.key), ...extraKeys])
 
   useLayoutEffect(() => {
     const el = slot.current
@@ -55,15 +136,15 @@ export function PeriodTabs({ value, onSelect, extraMenu }: PeriodTabsProps) {
     if (!el || !m) return
     m.setAttribute('inert', '')
     const update = () => {
-      const widths = {} as Record<RangePreset, number>
-      m.querySelectorAll<HTMLElement>('[data-preset]').forEach((t) => {
-        widths[t.dataset.preset as RangePreset] = t.getBoundingClientRect().width
+      const widths: Record<Key, number> = {}
+      m.querySelectorAll<HTMLElement>('[data-item]').forEach((t) => {
+        widths[t.dataset.item as Key] = t.getBoundingClientRect().width
       })
       const more = m.querySelector<HTMLElement>('[data-more]')?.getBoundingClientRect().width ?? 32
-      // Nothing laid out (no layout engine, or the bar is hidden): show everything.
       const width = el.getBoundingClientRect().width
-      if (width <= 0) return setShown(PRESETS)
-      setShown(visiblePresets(width, widths, more, value, extraMenu != null))
+      // Nothing laid out (no layout engine, or the bar is hidden): show everything.
+      if (width <= 0) return setShown([...PERIOD_ITEMS.map((i) => i.key), ...extraKeys])
+      setShown(visibleItems(width, widths, more, value, extraKeys))
     }
     update()
     if (typeof ResizeObserver === 'undefined') return
@@ -71,49 +152,64 @@ export function PeriodTabs({ value, onSelect, extraMenu }: PeriodTabsProps) {
     ro.observe(el)
     ro.observe(m)
     return () => ro.disconnect()
-  }, [value, extraMenu != null])
+    // extraKeys is derived from extras; its joined form is the stable dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, extraKeys.join()])
 
-  const hidden = PRESETS.filter((p) => !shown.includes(p))
-  const menu = hidden.length > 0 || extraMenu != null
+  // Single entries (전체, 직접 선택) before the groups' longer lists.
+  const hidden = PERIOD_ITEMS.filter((i) => !shown.includes(i.key)).sort((x, y) => Number(x.options.length > 0) - Number(y.options.length > 0))
+  const hiddenExtras = extras.filter((e) => !shown.includes(e.key))
 
   return (
-    <div ref={slot} className="relative min-w-[140px] flex-1 basis-0">
+    <div ref={slot} className="relative min-w-[150px] flex-1 basis-0">
       <div className="flex items-center gap-1.5">
         <TabList aria-label="기간 선택" value={value} onValueChange={(v) => onSelect(v as RangePreset)}>
-          {shown.map((p) => (
-            <Tab key={p} value={p}>
-              {PRESET_LABELS[p]}
-            </Tab>
+          {PERIOD_ITEMS.filter((i) => shown.includes(i.key)).map((item) => (
+            <Item key={item.key} item={item} value={value} onSelect={onSelect} />
           ))}
         </TabList>
-        {menu && (
+        {(hidden.length > 0 || hiddenExtras.length > 0) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="small" appearance="subtle" icon={<MoreHorizontal20Regular />} aria-label="기간 더 보기" data-testid="period-more" />
+              <Button size="small" appearance="subtle" icon={<MoreHorizontal20Regular />} aria-label="기간 더 보기" />
             </DropdownMenuTrigger>
             <DropdownMenuContent side="bottom" align="start">
-              {hidden.map((p) => (
-                <DropdownMenuItem key={p} icon={p === value ? <Checkmark20Regular /> : <span />} onSelect={() => onSelect(p)}>
-                  {PRESET_LABELS[p]}
-                </DropdownMenuItem>
+              {hidden.map((item, i) => (
+                <Fragment key={item.key}>
+                  {i > 0 && item.options.length > 0 && <DropdownMenuSeparator />}
+                  {(item.options.length > 0 ? item.options : [item.base]).map((p) => (
+                    <MenuEntry key={p} preset={p} value={value} onSelect={onSelect} />
+                  ))}
+                </Fragment>
               ))}
-              {hidden.length > 0 && extraMenu != null && <DropdownMenuSeparator />}
-              {extraMenu}
+              {hidden.length > 0 && hiddenExtras.length > 0 && <DropdownMenuSeparator />}
+              {hiddenExtras.map((e) => (
+                <Fragment key={e.key}>{e.menu}</Fragment>
+              ))}
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+        <div className="flex-1" />
+        {extras
+          .filter((e) => shown.includes(e.key))
+          .map((e) => (
+            <Fragment key={e.key}>{e.node}</Fragment>
+          ))}
       </div>
-      {/* Every tab and the menu button at their natural width, for measuring;
-          the zero-size box keeps the copy from widening the page. */}
+      {/* Every item and the menu button, for measuring; the zero-size box keeps
+          the copy from widening the page. */}
       <div aria-hidden className="pointer-events-none invisible absolute top-0 left-0 size-0 overflow-hidden">
         <div ref={measure} className="flex w-max items-center gap-1.5">
-        <TabList value={value} onValueChange={() => {}}>
-          {PRESETS.map((p) => (
-            <Tab key={p} value={p} data-preset={p} tabIndex={-1}>
-              {PRESET_LABELS[p]}
-            </Tab>
+          <TabList value={value} onValueChange={() => {}}>
+            {PERIOD_ITEMS.map((item) => (
+              <Item key={item.key} item={item} value={value} onSelect={() => {}} measuring />
+            ))}
+          </TabList>
+          {extras.map((e) => (
+            <span key={e.key} data-item={e.key} className="flex">
+              {e.node}
+            </span>
           ))}
-        </TabList>
           <Button size="small" appearance="subtle" icon={<MoreHorizontal20Regular />} tabIndex={-1} data-more />
         </div>
       </div>
