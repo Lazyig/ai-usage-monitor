@@ -37,10 +37,10 @@ func RedactDSN(dsn string) string {
 		return dsn
 	}
 	u, err := url.Parse(dsn)
-	// Opaque (jdbc:postgresql://...) keeps the user part out of u.User, and an
-	// @ in the path is a password with an unencoded / in it: neither can be
+	// Opaque (jdbc:postgresql://...) keeps the user part out of u.User, and a
+	// misparsed user part leaves the password after the host: neither can be
 	// shown safely.
-	if err != nil || u.Opaque != "" || strings.Contains(u.Path, "@") {
+	if err != nil || u.Opaque != "" || misparsedUser(u) {
 		return "(invalid database URL)"
 	}
 	if u.User != nil {
@@ -58,11 +58,20 @@ func RedactDSN(dsn string) string {
 	return u.String()
 }
 
+// misparsedUser reports an @ after the host: a password with an unencoded /, ?
+// or # in it. url.Parse then takes the user name for the host (a password
+// starting with digits, or nothing, before the ? or # reads as its port) and
+// leaves the password in the path, query or fragment. A database URL has no
+// fragment, so any fragment counts.
+func misparsedUser(u *url.URL) bool {
+	return u.Fragment != "" || strings.Contains(u.Path, "@") || strings.Contains(u.RawQuery, "@")
+}
+
 // parsePostgres validates dsn and turns it into a pgx config. Its errors never
 // quote pgx's message: that can repeat the query string, password included.
 func parsePostgres(dsn string) (*pgx.ConnConfig, error) {
 	u, err := url.Parse(dsn)
-	if err != nil || strings.Contains(u.Path, "@") {
+	if err != nil || misparsedUser(u) {
 		return nil, fmt.Errorf("%w: the database URL does not parse (percent-encode @, /, # and question marks in the password)", ErrConfig)
 	}
 	for _, k := range []string{"password", "sslpassword"} {

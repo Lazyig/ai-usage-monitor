@@ -38,6 +38,13 @@ func TestRedactDSN(t *testing.T) {
 		"jdbc:postgresql://u:secret@db/aum":            "(invalid database URL)",
 		"postgres://u:123/secret@db/aum":               "(invalid database URL)",
 		"postgres://u:secret@db/aum?options=-c%20x%3D": "postgres://u:xxxxx@db/aum?options=-c+x%3D",
+		// An unencoded # or ? turns the user into the host and the password
+		// into the fragment or query.
+		"postgres://u:#secret@db/aum":     "(invalid database URL)",
+		"postgres://u:2024#secret@db/aum": "(invalid database URL)",
+		"postgres://u:?secret@db/aum":     "(invalid database URL)",
+		"postgres://u:12?secret@db/aum":   "(invalid database URL)",
+		"mysql://u:#secret@db/aum":        "(invalid database URL)",
 	} {
 		got := RedactDSN(in)
 		if got != want {
@@ -63,6 +70,8 @@ func TestOpenRefusesBadSettings(t *testing.T) {
 		"postgres://u:secret@db/aum?sslmode=bogus",
 		"postgres://u:bad%zzsecret@db/aum",
 		"postgres://u:123/secret@db/aum", // unencoded / in the password
+		"postgres://u:#secret@db/aum",    // unencoded # in the password
+		"postgres://u:12?secret@db/aum",  // unencoded ? in the password
 		"jdbc:postgresql://u:secret@db/aum",
 	} {
 		_, err := OpenContext(context.Background(), dsn, Options{})

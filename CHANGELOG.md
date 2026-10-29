@@ -11,7 +11,7 @@
 - **PostgreSQL 지원**: `DB_PATH`(`--db`)에 `postgres://` URL 을 주거나, 둘 다 없을 때 `DATABASE_URL` 을 주면 PostgreSQL 에 저장합니다. SQLite 가 여전히 기본이며 API 결과는 같습니다. 설정 방법·주의사항은 [docs/DEPLOY.md](docs/DEPLOY.md#postgresql)에 있습니다.
   - 서버 여러 대가 같은 DB 를 쓸 수 있습니다. 마이그레이션은 advisory lock 으로 한 번만 적용됩니다.
   - `DB_MAX_CONNS` 로 연결 풀 크기를 정합니다(기본 10). DB 가 아직 뜨지 않았으면 최대 60초 동안 다시 시도합니다.
-  - 로그와 오류의 DB URL 은 비밀번호를 가립니다. URL 의 `password=` 매개변수는 거부합니다.
+  - 로그와 오류의 DB URL 은 비밀번호를 가립니다. URL 의 `password=` 매개변수는 거부합니다. 비밀번호의 `@`·`/`·`?`·`#` 는 퍼센트 인코딩해야 하며, 인코딩하지 않은 URL 은 거부하고 로그에도 보이지 않습니다.
   - `DATABASE_URL` 만 있는데 기본 SQLite 파일이 이미 있으면 기동하지 않습니다(빈 DB 로 조용히 바뀌는 것을 막습니다).
   - `ai-usage-server copy-db` 로 기존 SQLite 데이터(기기 토큰 포함)를 PostgreSQL 로, 또는 그 반대로 옮깁니다. 에이전트는 다시 설치하지 않아도 됩니다.
 
