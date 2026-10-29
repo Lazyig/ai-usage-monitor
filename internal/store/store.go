@@ -52,7 +52,7 @@ func Open(path string) (*Store, error) {
 	if path != ":memory:" {
 		if dir := filepath.Dir(path); dir != "" && dir != "." {
 			if err := os.MkdirAll(dir, 0o700); err != nil {
-				return nil, fmt.Errorf("store: create db dir: %w", err)
+				return nil, fmt.Errorf("store: create db dir: %w%s", err, permHint(err))
 			}
 		}
 		// A new database is created owner-only (it holds project paths and
@@ -60,7 +60,7 @@ func Open(path string) (*Store, error) {
 		// existing file keeps the mode its operator chose.
 		f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
 		if err != nil {
-			return nil, fmt.Errorf("store: create db: %w", err)
+			return nil, fmt.Errorf("store: create db: %w%s", err, permHint(err))
 		}
 		f.Close()
 	}
@@ -105,6 +105,17 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// permHint explains the usual cause of a permission error: the image runs as
+// uid 65532, but a data volume created by an older (root) image is root-owned.
+func permHint(err error) string {
+	if !errors.Is(err, fs.ErrPermission) {
+		return ""
+	}
+	return fmt.Sprintf(" (running as uid %d: the DB directory and files must be writable by this user; "+
+		"a volume created by an older root-run image needs a one-time chown -R 65532:65532, see docs/DEPLOY.md)",
+		os.Getuid())
 }
 
 // DB exposes the handle to the tests, which check the schema directly.

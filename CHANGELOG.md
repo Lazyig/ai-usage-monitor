@@ -26,6 +26,10 @@
 - 평문 `http://` 서버를 기본으로 거부합니다(같은 기기는 예외, `--allow-http`·`-AllowHttp` 로 허용). 이전에 http 로 설치된 기기는 계속 동작합니다(`config_version` 2).
 - `PUBLIC_URL`(`--public-url`) 설정: 설치 스크립트의 기본 주소를 클라이언트가 바꿀 수 있는 요청 헤더 대신 이 값으로 정합니다.
 - 새 DB 파일은 0600, 폴더는 0700 으로 만듭니다.
+- 서버 이미지가 root 가 아닌 uid/gid 65532 로 실행됩니다(베이스 이미지 `distroless/static:nonroot`, 다이제스트 고정). **기존 배포는 업그레이드 전에 한 번** 데이터 볼륨의 소유자를 바꿔야 합니다. 이전 이미지가 만든 `usage.db` 는 root 소유라 새 이미지가 열지 못합니다.
+  - Docker: `docker run --rm -v ai-usage-data:/data busybox chown -R 65532:65532 /data`
+  - Kubernetes: `securityContext` 에 `fsGroup: 65532` 를 주면 대부분의 스토리지에서 그대로 열립니다. 예시와 그 밖의 경우는 [docs/DEPLOY.md](docs/DEPLOY.md) 를 봅니다.
+  - 권한 문제로 DB 를 열지 못하면 실행 중인 uid 와 해결 방법을 오류 메시지에 함께 남깁니다.
 - 로그인 후 돌아갈 경로를 앱 안의 경로로만 제한합니다(react-router 권고 GHSA-wrjc-x8rr-h8h6).
 
 ### 수정

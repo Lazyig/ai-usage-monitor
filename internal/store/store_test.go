@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"ai-usage-monitor/internal/event"
@@ -308,5 +310,32 @@ func TestEventsPagination(t *testing.T) {
 	}
 	if _, err := s.Events(ctx, f, 200, "!!not-base64!!", nil); err == nil {
 		t.Error("bad cursor accepted")
+	}
+}
+
+func TestOpenPermissionErrorHint(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses file permissions")
+	}
+	dir := filepath.Join(t.TempDir(), "data")
+	if err := os.Mkdir(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o700) })
+	_, err := Open(filepath.Join(dir, "usage.db"))
+	if err == nil {
+		t.Fatal("Open in a read-only directory succeeded")
+	}
+	if !errors.Is(err, fs.ErrPermission) || !strings.Contains(err.Error(), "chown") {
+		t.Fatalf("err = %v, want a permission error with an ownership hint", err)
+	}
+}
+
+func TestPermHintOnlyForPermissionErrors(t *testing.T) {
+	if got := permHint(fs.ErrNotExist); got != "" {
+		t.Fatalf("permHint(ErrNotExist) = %q, want empty", got)
+	}
+	if got := permHint(fs.ErrPermission); !strings.Contains(got, "65532") {
+		t.Fatalf("permHint(ErrPermission) = %q, want an ownership hint", got)
 	}
 }
