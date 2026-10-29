@@ -643,3 +643,20 @@ func TestReadinessGates(t *testing.T) {
 		t.Fatalf("/health/nope = %d %s", w.Code, w.Body)
 	}
 }
+
+// GET /api/v1/server tells the dashboard which build runs; it is admin only.
+func TestServerInfo(t *testing.T) {
+	h := newHarness(t, Options{AdminToken: adminToken, Version: "1.2.3", Build: Build{Version: "1.2.3", Commit: "abc123", GoVersion: "go1.27.1"}})
+	if w := h.do(http.MethodGet, "/api/v1/server", "", nil); w.Code != http.StatusUnauthorized {
+		t.Errorf("without a token: %d, want 401", w.Code)
+	}
+	w := h.do(http.MethodGet, "/api/v1/server", adminToken, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d", w.Code)
+	}
+	var b Build
+	h.decode(w, &b)
+	if b.Version != "1.2.3" || b.Commit != "abc123" {
+		t.Errorf("server info = %+v", b)
+	}
+}

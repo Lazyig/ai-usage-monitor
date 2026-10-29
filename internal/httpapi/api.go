@@ -28,6 +28,7 @@ const DefaultTZ = "Asia/Seoul"
 type Options struct {
 	AdminToken   string // empty => admin routes answer 503
 	Version      string // reported by /health
+	Build        Build  // reported to the dashboard by GET /api/v1/server
 	DownloadsDir string // directory holding agent binaries + manifest.json
 	// PublicURL, when set, is the server's external base URL (https://usage.example.com).
 	// The downloads page and the generated install.sh use it instead of the
@@ -86,6 +87,7 @@ func New(st *store.Store, pr *Pricing, opt Options) http.Handler {
 	mux.Handle("POST /api/v1/devices/{id}/rotate", a.admin(http.HandlerFunc(a.handleRotateDevice)))
 	mux.Handle("DELETE /api/v1/devices/{id}/events", a.admin(http.HandlerFunc(a.handlePurgeDeviceEvents)))
 	mux.Handle("POST /api/v1/devices/{id}/resync", a.admin(http.HandlerFunc(a.handleResyncDevice)))
+	mux.Handle("GET /api/v1/server", a.admin(http.HandlerFunc(a.handleServerInfo)))
 	mux.Handle("GET /api/v1/pricing", a.admin(http.HandlerFunc(a.handlePricing)))
 	mux.Handle("POST /api/v1/pricing/reload", a.admin(http.HandlerFunc(a.handlePricingReload)))
 

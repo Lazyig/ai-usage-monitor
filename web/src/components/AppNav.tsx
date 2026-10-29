@@ -14,6 +14,7 @@ import type { ComponentProps, ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { cn } from '../lib/utils'
 import { useAuth } from '../state/AuthContext'
+import { ServerBuild } from './ServerBuild'
 import { Sheet, SheetContent } from './ui/sheet'
 
 // Two groups: usage analytics and administration. 기기 usage and 기기 관리 share
@@ -96,6 +97,7 @@ function NavPane({ onNavigate }: { onNavigate: () => void }) {
           </span>
           로그아웃
         </button>
+        <ServerBuild />
       </div>
     </>
   )

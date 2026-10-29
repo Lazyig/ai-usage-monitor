@@ -19,6 +19,7 @@ import type {
   ThroughputResponse,
   TimeseriesBucket,
   TimeseriesResponse,
+  ServerBuild,
 } from './types'
 import { readStored, removeStored, writeStored } from '../lib/storage'
 
@@ -182,6 +183,10 @@ export function getEvents(
   params: RangeParams & FilterParams & { model?: string; limit?: number; cursor?: string },
 ): Promise<EventsResponse> {
   return request('/api/v1/events', { params: toParams(params) })
+}
+
+export function getServerBuild(): Promise<ServerBuild> {
+  return request('/api/v1/server')
 }
 
 export function getDevices(): Promise<DevicesResponse> {

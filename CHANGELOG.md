@@ -6,6 +6,8 @@
 
 ### 추가
 
+- 대시보드 왼쪽 메뉴 아래에 서버의 릴리스 버전과 커밋 해시를 표시합니다(마우스를 올리면 전체 해시·커밋 시각·Go 버전). 관리자 API `GET /api/v1/server` 로도 볼 수 있고, `ai-usage-server -version` 도 커밋을 함께 출력합니다.
+
 - Claude Code 설정 폴더를 여러 개 읽습니다. `CLAUDE_CONFIG_DIR` 로 `~/.claude` 가 아닌 곳을 쓰거나 한 기기에서 설정을 여러 개 쓰는 경우를 위한 기능입니다.
   - 기본으로 `~/.config/claude/projects` 와 `~/.claude-*/projects` 도 읽습니다. 기존 설치도 업그레이드하면 이 폴더들이 추가됩니다(`config_version` 1).
   - 설치할 때 `--claude-dir`(Windows `-ClaudeDir`)로 폴더를 지정합니다. 지정하지 않으면 설치하는 셸의 `$CLAUDE_CONFIG_DIR` 을 씁니다.

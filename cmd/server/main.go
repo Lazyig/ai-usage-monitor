@@ -36,8 +36,9 @@ func main() {
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
+	build := httpapi.ReadBuild(version)
 	if *showVersion {
-		fmt.Println(version)
+		fmt.Println(version, orDash(build.Commit))
 		return
 	}
 
@@ -73,6 +74,7 @@ func main() {
 	spa, spaBuilt := web.Dist()
 	log.Info("ai-usage-server starting",
 		"version", version,
+		"commit", build.Commit,
 		"addr", *addr,
 		"db", *dbPath,
 		"pricing", *pricingPath,
@@ -88,6 +90,7 @@ func main() {
 		Draining:     &draining,
 		AdminToken:   adminToken,
 		Version:      version,
+		Build:        build,
 		DownloadsDir: *downloadsDir,
 		PublicURL:    publicURL,
 		SPA:          spa,
@@ -164,4 +167,11 @@ func shutdownDelay() time.Duration {
 		}
 	}
 	return 8 * time.Second
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }
