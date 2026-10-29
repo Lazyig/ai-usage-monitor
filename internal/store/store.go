@@ -15,7 +15,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -155,7 +155,7 @@ func (s *Store) migrate(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	sort.Strings(entries)
+	slices.Sort(entries)
 	for _, name := range entries {
 		version := filepath.Base(name)
 		if applied[version] {

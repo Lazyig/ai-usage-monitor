@@ -7,6 +7,42 @@ import (
 	"ai-usage-monitor/internal/event"
 )
 
+func TestInsertDedupe(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	d1, _ := seed(t, s)
+
+	again := []event.UsageEvent{
+		ev(t, "e1", d1, event.SourceClaudeCode, "2026-09-01T10:00:00Z", "claude-opus-5", 999, 999, 0, 0),
+		ev(t, "e9", d1, event.SourceClaudeCode, "2026-09-03T10:00:00Z", "claude-opus-5", 10, 10, 0, 0),
+	}
+	acc, dup, _, err := s.InsertEvents(ctx, again)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acc != 1 || dup != 1 {
+		t.Fatalf("re-insert = %d accepted / %d duplicates, want 1/1", acc, dup)
+	}
+	// The duplicate must not have overwritten the original values.
+	var in int64
+	if err := s.DB().QueryRow(`SELECT input FROM usage_events WHERE event_id='e1'`).Scan(&in); err != nil {
+		t.Fatal(err)
+	}
+	if in != 1_000_000 {
+		t.Fatalf("duplicate overwrote the first value: input=%d", in)
+	}
+	c, err := s.Counts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Events != 6 || c.Devices != 2 {
+		t.Fatalf("counts = %+v", c)
+	}
+	if n, d, u, err := s.InsertEvents(ctx, nil); n != 0 || d != 0 || u != 0 || err != nil {
+		t.Fatalf("empty batch = %d/%d/%v", n, d, err)
+	}
+}
+
 // A streamed response reaches the server twice: first the nearly empty line the
 // agent caught mid-stream, later the finished one under the same event id. The
 // finished copy must replace the stored tokens; anything smaller must not.

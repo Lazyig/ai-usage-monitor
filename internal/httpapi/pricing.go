@@ -1,11 +1,7 @@
 package httpapi
 
 import (
-	"fmt"
-	"os"
 	"sync/atomic"
-
-	"gopkg.in/yaml.v3"
 
 	"ai-usage-monitor/internal/pricing"
 )
@@ -54,21 +50,11 @@ func (p *Pricing) Rates() []pricing.Rate {
 // Reload re-reads the file and swaps the table in on success. A parse failure
 // leaves the previous table in place.
 func (p *Pricing) Reload() error {
-	b, err := os.ReadFile(p.path)
-	if err != nil {
-		return fmt.Errorf("pricing: read %s: %w", p.path, err)
-	}
-	table, err := pricing.Parse(b)
+	table, err := pricing.Load(p.path)
 	if err != nil {
 		return err
 	}
-	// Same bytes, decoded again just for the /pricing listing: pricing.Table
-	// keeps its entries private and the listing must show them.
-	var rates []pricing.Rate
-	if err := yaml.Unmarshal(b, &rates); err != nil {
-		return fmt.Errorf("pricing: %w", err)
-	}
-	p.cur.Store(&loaded{table: table, rates: rates})
+	p.cur.Store(&loaded{table: table, rates: table.Rates()})
 	return nil
 }
 

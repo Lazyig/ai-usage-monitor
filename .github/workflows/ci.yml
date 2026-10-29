@@ -23,6 +23,8 @@ jobs:
           go-version-file: go.mod
           cache: true
           cache-dependency-path: go.sum
+      - name: gofmt
+        run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test -race ./...
 
@@ -54,6 +56,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+          cache-dependency-path: go.sum
       - uses: actions/setup-node@v6
         with:
           node-version: '22'

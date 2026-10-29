@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -62,7 +62,7 @@ type Table struct {
 func Load(file string) (*Table, error) {
 	b, err := os.ReadFile(file)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("pricing: read %s: %w", file, err)
 	}
 	return Parse(b)
 }
@@ -105,6 +105,14 @@ func Parse(b []byte) (*Table, error) {
 	return &Table{rates: rates}, nil
 }
 
+// Rates returns a copy of the entries in file order.
+func (t *Table) Rates() []Rate {
+	if t == nil {
+		return nil
+	}
+	return slices.Clone(t.rates)
+}
+
 // Thresholds lists every distinct long_context threshold in the table, ascending.
 // The store groups events by these boundaries so aggregated rows can still be
 // priced per tier (a tier rule is not linear, so summing first would be wrong).
@@ -120,7 +128,7 @@ func (t *Table) Thresholds() []int64 {
 			out = append(out, r.LongContext.Threshold)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	slices.Sort(out)
 	return out
 }
 

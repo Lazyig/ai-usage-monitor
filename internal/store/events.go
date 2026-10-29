@@ -2,6 +2,9 @@ package store
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,7 +13,8 @@ import (
 
 // InsertEvents stores a batch idempotently. A new event_id is inserted; a known
 // one is left alone unless the incoming copy reports more output tokens, in
-// which case its token counts (and timestamp) replace the stored ones. That
+// which case its token counts, timestamp, confidence and tool version replace
+// the stored ones. That
 // second case is a streamed response: Claude Code appends one line per content
 // block, all under the same message id, and an agent that scanned mid-stream
 // has already shipped the first, nearly empty line. Output only grows while a
@@ -191,4 +195,31 @@ func (s *Store) Events(ctx context.Context, f Filter, limit int, cursor string, 
 		page.NextCursor = encodeCursor(toMillis(last.Timestamp), last.EventID)
 	}
 	return page, nil
+}
+
+// --- cursors ---------------------------------------------------------------
+
+type cursorV1 struct {
+	TS      int64  `json:"ts"`
+	EventID string `json:"e"`
+}
+
+func encodeCursor(ts int64, eventID string) string {
+	b, _ := json.Marshal(cursorV1{TS: ts, EventID: eventID})
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+// ErrBadCursor is returned by Events for a cursor it did not issue.
+var ErrBadCursor = errors.New("store: bad cursor")
+
+func decodeCursor(s string) (cursorV1, error) {
+	b, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		return cursorV1{}, ErrBadCursor
+	}
+	var c cursorV1
+	if err := json.Unmarshal(b, &c); err != nil || c.EventID == "" {
+		return cursorV1{}, ErrBadCursor
+	}
+	return c, nil
 }

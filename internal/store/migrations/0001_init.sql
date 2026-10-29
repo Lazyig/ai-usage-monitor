@@ -5,8 +5,8 @@
 --
 -- No daily rollup table in v1: SQLite aggregates a few hundred thousand rows in
 -- single-digit milliseconds, and every query in query.go groups by
--- (dimension, source, model, bucket). A rollup can be added later as migration
--- 0002 (same grouping, pre-summed) without changing any query shape.
+-- (dimension, source, model, bucket). A rollup can be added later as a new
+-- migration (same grouping, pre-summed) without changing any query shape.
 
 CREATE TABLE devices (
     id               TEXT PRIMARY KEY,

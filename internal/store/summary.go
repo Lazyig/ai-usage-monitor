@@ -57,8 +57,9 @@ func (s *Store) Summary(ctx context.Context, f Filter, p Pricer) (Summary, error
 		ByDevice: byDevice.groups(),
 		ByModel:  byModel.groups(),
 	}
-	// by_source rows carry no separate source field; by_device rows keep the
-	// device name instead of a source when several sources contributed.
+	// by_source rows carry no separate source field (the key is the source).
+	// by_device and by_model rows report a source only when a single source
+	// contributed; acc.add clears it otherwise.
 	for i := range out.BySource {
 		out.BySource[i].Source = ""
 	}

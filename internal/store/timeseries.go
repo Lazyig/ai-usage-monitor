@@ -7,7 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"time"
 )
 
@@ -186,14 +186,14 @@ func (s *Store) Timeseries(ctx context.Context, f Filter, bucket, groupBy string
 	}
 
 	out := Timeseries{Bucket: bucket, GroupBy: groupBy, TZ: loc.String(), Series: []Series{}}
-	sort.Strings(keyOrd)
+	slices.Sort(keyOrd)
 	for _, key := range keyOrd {
 		cells := series[key]
 		starts := make([]int64, 0, len(cells))
 		for k := range cells {
 			starts = append(starts, k)
 		}
-		sort.Slice(starts, func(i, j int) bool { return starts[i] < starts[j] })
+		slices.Sort(starts)
 		ser := Series{Key: key, Points: make([]Point, 0, len(starts))}
 		if groupBy == "device" {
 			ser.Name = names[key]

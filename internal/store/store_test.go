@@ -4,58 +4,11 @@ import (
 	"context"
 	"errors"
 	"io/fs"
-	"math"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"ai-usage-monitor/internal/event"
-	"ai-usage-monitor/internal/pricing"
 )
-
-const testPricing = `
-- match: "claude-opus-5"
-  input: 5
-  output: 25
-  cache_read: 0.5
-  cache_write_5m: 6.25
-- match: "gpt-5.6-*"
-  input: 2
-  output: 8
-- match: "gemini-3.7-flash"
-  input: 1
-  output: 4
-- match: "gemini-default"
-  alias_of: "gemini-3.7-flash"
-`
-
-func testTable(t *testing.T) *pricing.Table {
-	t.Helper()
-	tb, err := pricing.Parse([]byte(testPricing))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return tb
-}
-
-func openTest(t *testing.T) *Store {
-	t.Helper()
-	s, err := Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { s.Close() })
-	return s
-}
-
-func mustTime(t *testing.T, s string) time.Time {
-	t.Helper()
-	ts, err := time.Parse(time.RFC3339, s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return ts.UTC()
-}
 
 func TestMigrationsIdempotent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "m.db")
@@ -97,6 +50,36 @@ func TestMigrationsIdempotent(t *testing.T) {
 	}
 	if n != len(files) {
 		t.Fatalf("schema_migrations rows = %d, want %d (one per migrations/*.sql)", n, len(files))
+	}
+}
+
+// An event stored before the token cap would overflow every SUM over it; the
+// migration removes it.
+func TestMigrationDropsOversizedEvents(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	d, _, err := s.CreateDevice(ctx, "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := s.InsertEvents(ctx, []event.UsageEvent{
+		ev(t, "ok", d.ID, event.SourceCodex, "2026-10-01T01:00:00Z", "gpt-5.6-terra", 10, 0, 0, 0),
+		ev(t, "huge", d.ID, event.SourceCodex, "2026-10-01T02:00:00Z", "gpt-5.6-terra", 9_000_000_000_000_000_000, 0, 0, 0),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version = '0004_drop_oversized_events.sql'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM usage_events`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("%d events left, want only the sane one", n)
 	}
 }
 
@@ -143,102 +126,6 @@ func TestDeviceLifecycle(t *testing.T) {
 	// Events survive revocation.
 	if _, err := s.Device(ctx, d.ID); err != nil {
 		t.Fatalf("device row removed: %v", err)
-	}
-}
-
-func ev(t *testing.T, id, device string, src event.Source, ts, model string, in, out, cr, cw5 int64) event.UsageEvent {
-	t.Helper()
-	return event.UsageEvent{
-		EventID:      id,
-		DeviceID:     device,
-		Source:       src,
-		Timestamp:    mustTime(t, ts),
-		Model:        model,
-		Project:      "/work/" + model,
-		SessionID:    "sess-" + id,
-		Input:        in,
-		Output:       out,
-		CacheRead:    cr,
-		CacheWrite5m: cw5,
-		Confidence:   event.ConfidenceExact,
-	}
-}
-
-// seed builds the fixture every aggregate test asserts against:
-//
-//	e1 d1 claude_code claude-opus-5   2026-09-01T10:00Z  in 1M  out 100k  cr 2M  cw5 500k -> $11.625
-//	e2 d1 claude_code claude-opus-5   2026-09-01T15:30Z  in 500k                          -> $2.50
-//	e3 d1 codex       gpt-5.6-terra   2026-09-02T01:00Z  in 1M  out 200k                  -> $3.60
-//	e4 d2 antigravity gemini-default  2026-09-02T02:00Z  in 2M  out 100k                  -> $2.40 (estimated)
-//	e5 d2 antigravity unpriced-model  2026-09-02T03:00Z  in 1M                            -> unknown
-func seed(t *testing.T, s *Store) (d1, d2 string) {
-	t.Helper()
-	ctx := context.Background()
-	a, _, err := s.CreateDevice(ctx, "mac")
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, _, err := s.CreateDevice(ctx, "linux")
-	if err != nil {
-		t.Fatal(err)
-	}
-	evs := []event.UsageEvent{
-		ev(t, "e1", a.ID, event.SourceClaudeCode, "2026-09-01T10:00:00Z", "claude-opus-5", 1_000_000, 100_000, 2_000_000, 500_000),
-		ev(t, "e2", a.ID, event.SourceClaudeCode, "2026-09-01T15:30:00Z", "claude-opus-5", 500_000, 0, 0, 0),
-		ev(t, "e3", a.ID, event.SourceCodex, "2026-09-02T01:00:00Z", "gpt-5.6-terra", 1_000_000, 200_000, 0, 0),
-		ev(t, "e4", b.ID, event.SourceAntigravity, "2026-09-02T02:00:00Z", "gemini-default", 2_000_000, 100_000, 0, 0),
-		ev(t, "e5", b.ID, event.SourceAntigravity, "2026-09-02T03:00:00Z", "unpriced-model", 1_000_000, 0, 0, 0),
-	}
-	acc, dup, _, err := s.InsertEvents(ctx, evs)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if acc != 5 || dup != 0 {
-		t.Fatalf("seed insert = %d/%d, want 5/0", acc, dup)
-	}
-	return a.ID, b.ID
-}
-
-func TestInsertDedupe(t *testing.T) {
-	ctx := context.Background()
-	s := openTest(t)
-	d1, _ := seed(t, s)
-
-	again := []event.UsageEvent{
-		ev(t, "e1", d1, event.SourceClaudeCode, "2026-09-01T10:00:00Z", "claude-opus-5", 999, 999, 0, 0),
-		ev(t, "e9", d1, event.SourceClaudeCode, "2026-09-03T10:00:00Z", "claude-opus-5", 10, 10, 0, 0),
-	}
-	acc, dup, _, err := s.InsertEvents(ctx, again)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if acc != 1 || dup != 1 {
-		t.Fatalf("re-insert = %d accepted / %d duplicates, want 1/1", acc, dup)
-	}
-	// The duplicate must not have overwritten the original values.
-	var in int64
-	if err := s.DB().QueryRow(`SELECT input FROM usage_events WHERE event_id='e1'`).Scan(&in); err != nil {
-		t.Fatal(err)
-	}
-	if in != 1_000_000 {
-		t.Fatalf("duplicate overwrote the first value: input=%d", in)
-	}
-	c, err := s.Counts(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.Events != 6 || c.Devices != 2 {
-		t.Fatalf("counts = %+v", c)
-	}
-	if n, d, u, err := s.InsertEvents(ctx, nil); n != 0 || d != 0 || u != 0 || err != nil {
-		t.Fatalf("empty batch = %d/%d/%v", n, d, err)
-	}
-}
-
-func approx(t *testing.T, what string, got, want float64) {
-	t.Helper()
-	if math.Abs(got-want) > 1e-6 {
-		t.Errorf("%s = %v, want %v", what, got, want)
 	}
 }
 
@@ -366,112 +253,6 @@ func TestBreakdown(t *testing.T) {
 	}
 	if _, err := s.Breakdown(ctx, f, "bogus", 50, nil); err == nil {
 		t.Error("bogus group_by accepted")
-	}
-}
-
-func TestTimeseriesKSTDayBoundary(t *testing.T) {
-	ctx := context.Background()
-	s := openTest(t)
-	seed(t, s)
-	kst, err := time.LoadLocation("Asia/Seoul")
-	if err != nil {
-		t.Skipf("tzdata unavailable: %v", err)
-	}
-	// KST 2026-09-01 00:00 .. 2026-09-04 00:00
-	f := Filter{From: mustTime(t, "2026-08-31T15:00:00Z"), To: mustTime(t, "2026-09-03T15:00:00Z")}
-
-	ts, err := s.Timeseries(ctx, f, "day", "source", kst, testTable(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	series := map[string]Series{}
-	for _, ser := range ts.Series {
-		series[ser.Key] = ser
-	}
-	cc := series["claude_code"]
-	if len(cc.Points) != 2 {
-		t.Fatalf("claude_code points = %+v", cc.Points)
-	}
-	// 2026-09-01T15:30Z is 2026-09-02 00:30 KST: it must land on the *next* day.
-	if cc.Points[0].T != "2026-09-01" || cc.Points[1].T != "2026-09-02" {
-		t.Fatalf("day labels = %q, %q", cc.Points[0].T, cc.Points[1].T)
-	}
-	if cc.Points[0].Input != 1_000_000 || cc.Points[1].Input != 500_000 {
-		t.Fatalf("tokens on the wrong side of KST midnight: %+v", cc.Points)
-	}
-	approx(t, "kst day 1 cost", cc.Points[0].CostUSD, 11.625)
-	approx(t, "kst day 2 cost", cc.Points[1].CostUSD, 2.5)
-
-	// The same range bucketed in UTC keeps both events on 2026-09-01.
-	utc, err := s.Timeseries(ctx, f, "day", "source", time.UTC, testTable(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, ser := range utc.Series {
-		if ser.Key == "claude_code" {
-			if len(ser.Points) != 1 || ser.Points[0].T != "2026-09-01" || ser.Points[0].Events != 2 {
-				t.Fatalf("utc bucketing = %+v", ser.Points)
-			}
-		}
-	}
-
-	hourly, err := s.Timeseries(ctx, f, "hour", "model", kst, testTable(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, ser := range hourly.Series {
-		if ser.Key == "claude-opus-5" && len(ser.Points) != 2 {
-			t.Fatalf("hourly points = %+v", ser.Points)
-		}
-	}
-	if _, err := s.Timeseries(ctx, f, "week", "source", kst, nil); err == nil {
-		t.Error("bogus bucket accepted")
-	}
-}
-
-// A zone with DST must still bucket by local day: the spring-forward day is only
-// 23 hours long in UTC and the segment logic has to follow the offset change.
-func TestTimeseriesDSTDayBoundary(t *testing.T) {
-	ctx := context.Background()
-	s := openTest(t)
-	ny, err := time.LoadLocation("America/New_York")
-	if err != nil {
-		t.Skipf("tzdata unavailable: %v", err)
-	}
-	d, _, err := s.CreateDevice(ctx, "ny")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// 2026-03-08 is the US spring-forward date (02:00 EST -> 03:00 EDT).
-	evs := []event.UsageEvent{
-		ev(t, "n1", d.ID, event.SourceCodex, "2026-03-08T06:30:00Z", "gpt-5.6-terra", 10, 0, 0, 0), // 01:30 EST, Mar 8
-		ev(t, "n2", d.ID, event.SourceCodex, "2026-03-08T20:00:00Z", "gpt-5.6-terra", 20, 0, 0, 0), // 16:00 EDT, Mar 8
-		ev(t, "n3", d.ID, event.SourceCodex, "2026-03-09T03:30:00Z", "gpt-5.6-terra", 30, 0, 0, 0), // 23:30 EDT, Mar 8
-		ev(t, "n4", d.ID, event.SourceCodex, "2026-03-09T06:00:00Z", "gpt-5.6-terra", 40, 0, 0, 0), // 02:00 EDT, Mar 9
-	}
-	if _, _, _, err := s.InsertEvents(ctx, evs); err != nil {
-		t.Fatal(err)
-	}
-	f := Filter{From: mustTime(t, "2026-03-07T00:00:00Z"), To: mustTime(t, "2026-03-10T12:00:00Z")}
-	ts, err := s.Timeseries(ctx, f, "day", "source", ny, testTable(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(ts.Series) != 1 {
-		t.Fatalf("series = %+v", ts.Series)
-	}
-	got := map[string]int64{}
-	for _, p := range ts.Series[0].Points {
-		got[p.T] = p.Input
-	}
-	want := map[string]int64{"2026-03-08": 60, "2026-03-09": 40}
-	if len(got) != len(want) {
-		t.Fatalf("points = %+v, want %+v", got, want)
-	}
-	for k, v := range want {
-		if got[k] != v {
-			t.Fatalf("points = %+v, want %+v", got, want)
-		}
 	}
 }
 

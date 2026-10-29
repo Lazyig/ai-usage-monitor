@@ -21,12 +21,12 @@
 {"device":{"id":"<uuid>","name":"macbook","os":"darwin","arch":"arm64","agent_version":"0.1.0"},
  "events":[{ ...UsageEvent JSON (internal/event) ... }]}
 ```
-→ `200 {"accepted":12,"duplicates":3,"updated":1,"rejected":0,"device_id":"<uuid>"}`
+→ `200 {"accepted":12,"duplicates":3,"updated":1,"rejected":0,"device_id":"<uuid>"}`. `updated` 는 0 이면 생략된다.
 
-- `Content-Encoding: gzip` 본문 허용. 배치 최대 5,000건(초과 시 `400`). 빈 배치는 하트비트로 쓰인다(유휴 에이전트는 5분마다).
+- `Content-Encoding: gzip` 본문 허용. 압축을 푼 본문은 16 MiB 까지(초과 시 `413`). 배치 최대 5,000건(초과 시 `400 {"error":"batch too large: at most 5000 events"}`, 5,001번째 이벤트에서 읽기를 멈춘다). 빈 배치는 하트비트로 쓰인다(유휴 에이전트는 5분마다).
 - `device.id` 는 토큰에 묶인 기기와 일치해야 한다(불일치 `403`).
 - `rejected` 는 `event.Valid()` 실패 또는 `device_id` 불일치로 버려진 이벤트 수. 나머지는 그대로 저장한다.
-- `event_id = sha256(source|native key...)` 로 **기기와 무관**하므로 같은 호출은 어느 기기·설치에서 올려도 한 번만 저장된다. 이미 있는 `event_id` 는 무시(`duplicates`)하되, 들어온 사본의 `output` 이 저장된 값보다 **크면** 토큰 수·`ts`·`reasoning`·`tool_version` 을 그 사본으로 갱신하고 `updated` 로 센다(기기·소스·모델·세션·`received_at` 은 유지). 스트리밍 응답의 첫 줄이 먼저 전송되고 완성된 줄이 뒤따라오는 경우를 위한 것이다.
+- `event_id = sha256(source|native key...)` 로 **기기와 무관**하므로 같은 호출은 어느 기기·설치에서 올려도 한 번만 저장된다. 이미 있는 `event_id` 는 무시(`duplicates`)하되, 들어온 사본의 `output` 이 저장된 값보다 **크면** 토큰 수·`ts`·`reasoning`·`confidence`·`tool_version` 을 그 사본으로 갱신하고 `updated` 로 센다(기기·소스·모델·세션·`received_at` 은 유지). 스트리밍 응답의 첫 줄이 먼저 전송되고 완성된 줄이 뒤따라오는 경우를 위한 것이다.
 - 운영자가 재수집을 요청한 기기(`DELETE /devices/{id}/events`, `POST /devices/{id}/resync`)에는 다음 응답 한 번에만 `"resync":true` 가 붙는다. 에이전트는 이를 받으면 커서와 오프라인 큐를 버리고 처음부터 다시 수집한다.
 
 ## 조회 (관리자 토큰)
@@ -51,7 +51,7 @@
  "by_model":[{"key":"claude-opus-5","source":"claude_code","estimated":false, ...}]}
 ```
 
-### GET /timeseries?from&to&tz&bucket=day|hour&group_by=source|device|model|project
+### GET /timeseries?from&to&tz&bucket=day|hour&group_by=source|device|model|project|session
 ```json
 {"bucket":"day","group_by":"source","tz":"Asia/Seoul",
  "series":[{"key":"claude_code","points":[{"t":"2026-09-01","input":0,"output":0,"cache_read":0,"cache_write":0,"reasoning":0,"cost_usd":0.0,"events":0}]}]}
