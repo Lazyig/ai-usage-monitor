@@ -1,7 +1,7 @@
 // Date range presets, computed against Asia/Seoul calendar days (matching the
 // API's default tz). `to` is exclusive, per docs/API.md.
 
-export type RangePreset = 'today' | '7d' | '30d' | 'thisMonth' | 'lastMonth' | 'all' | 'custom'
+export type RangePreset = 'today' | 'yesterday' | '7d' | '30d' | 'thisMonth' | 'lastMonth' | 'all' | 'custom'
 
 /** Earliest supported `from` for the "전체" (all-time) preset. The API
  * defaults `from` to "last 30 days" when the param is omitted, so this
@@ -37,6 +37,8 @@ export function rangeForPreset(preset: RangePreset, today = kstToday()): DateRan
   switch (preset) {
     case 'today':
       return { preset, from: today, to: addDays(today, 1) }
+    case 'yesterday':
+      return { preset, from: addDays(today, -1), to: today }
     case '7d':
       return { preset, from: addDays(today, -6), to: addDays(today, 1) }
     case '30d':
@@ -75,6 +77,7 @@ export function hourlyAllowed(range: DateRange): boolean {
 
 export const PRESET_LABELS: Record<RangePreset, string> = {
   today: '오늘',
+  yesterday: '어제',
   '7d': '최근 7일',
   '30d': '최근 30일',
   thisMonth: '이번 달',

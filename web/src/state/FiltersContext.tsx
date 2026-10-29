@@ -1,5 +1,9 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { getPreferences, putPreferences } from '../api/client'
+import type { DashboardPreferences } from '../api/types'
 import { type DateRange, type RangePreset, customRange, rangeForPreset } from '../lib/dateRange'
+import { fromPreferences, toPreferences } from '../lib/preferences'
+import { readStored, writeStored } from '../lib/storage'
 
 interface FiltersContextValue {
   range: DateRange
@@ -16,10 +20,60 @@ const FiltersContext = createContext<FiltersContextValue | null>(null)
 
 const AUTO_REFRESH_MS = 60_000
 
+/** This browser's copy of the server's document, so a reload starts with the
+ * last selection instead of flashing the default until the server answers. */
+const CACHE_KEY = 'aum_dashboard_prefs'
+/** Selections are saved this long after the last change, so clicking through
+ * presets sends one request. */
+const SAVE_DELAY_MS = 400
+
+function cached(): DashboardPreferences | null {
+  try {
+    return JSON.parse(readStored(CACHE_KEY) ?? 'null')
+  } catch {
+    return null
+  }
+}
+
 export function FiltersProvider({ children }: { children: ReactNode }) {
-  const [range, setRange] = useState<DateRange>(() => rangeForPreset('30d'))
-  const [autoRefresh, setAutoRefresh] = useState(false)
+  const [initial] = useState(() => fromPreferences(cached()))
+  const [range, setRange] = useState<DateRange>(initial.range)
+  const [autoRefresh, setAutoRefresh] = useState(initial.autoRefresh)
   const [refreshKey, setRefreshKey] = useState(0)
+  // Set by the user's own changes: from then on they are saved, and a late
+  // answer from the server no longer overrides them.
+  const touched = useRef(false)
+
+  // The server's copy wins over this browser's cache: it is what the operator
+  // last chose on any browser.
+  useEffect(() => {
+    let cancelled = false
+    getPreferences()
+      .then((p) => {
+        if (cancelled || touched.current) return
+        const s = fromPreferences(p)
+        setRange((current) => (current.preset === s.range.preset && current.from === s.range.from && current.to === s.range.to ? current : s.range))
+        setAutoRefresh(s.autoRefresh)
+      })
+      .catch(() => {
+        // Offline or an older server: keep the cached or default selection.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const stored = JSON.stringify(toPreferences({ range, autoRefresh }))
+  useEffect(() => {
+    writeStored(CACHE_KEY, stored)
+    if (!touched.current) return
+    const id = setTimeout(() => {
+      putPreferences(JSON.parse(stored)).catch(() => {
+        // Not saved on the server; this browser still remembers it.
+      })
+    }, SAVE_DELAY_MS)
+    return () => clearTimeout(id)
+  }, [stored])
 
   const syncRange = useCallback(() => {
     setRange((current) => {
@@ -70,10 +124,19 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
   const value = useMemo<FiltersContextValue>(
     () => ({
       range,
-      setPreset: (preset) => setRange(rangeForPreset(preset)),
-      setCustomRange: (fromDate, toDateInclusive) => setRange(customRange(fromDate, toDateInclusive)),
+      setPreset: (preset) => {
+        touched.current = true
+        setRange(rangeForPreset(preset))
+      },
+      setCustomRange: (fromDate, toDateInclusive) => {
+        touched.current = true
+        setRange(customRange(fromDate, toDateInclusive))
+      },
       autoRefresh,
-      toggleAutoRefresh: () => setAutoRefresh((v) => !v),
+      toggleAutoRefresh: () => {
+        touched.current = true
+        setAutoRefresh((v) => !v)
+      },
       refreshKey,
       refresh,
     }),

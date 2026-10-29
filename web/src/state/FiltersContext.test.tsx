@@ -2,7 +2,21 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { DashboardPreferences } from '../api/types'
 import { FiltersProvider, useFilters } from './FiltersContext'
+
+const api = vi.hoisted(() => ({
+  serverPrefs: {} as DashboardPreferences,
+  saved: [] as DashboardPreferences[],
+}))
+
+vi.mock('../api/client', () => ({
+  getPreferences: () => Promise.resolve(api.serverPrefs),
+  putPreferences: (p: DashboardPreferences) => {
+    api.saved.push(p)
+    return Promise.resolve(p)
+  },
+}))
 
 let filters: ReturnType<typeof useFilters>
 let root: Root
@@ -14,6 +28,9 @@ function Probe() {
 }
 
 beforeEach(() => {
+  localStorage.clear()
+  api.serverPrefs = {}
+  api.saved = []
   vi.useFakeTimers()
   // Immediately before midnight in Seoul (UTC+9).
   vi.setSystemTime(new Date('2026-10-15T14:59:30Z'))
@@ -88,8 +105,66 @@ describe('date range refresh across Seoul midnight', () => {
 
   it('removes timers when unmounted', () => {
     act(() => filters.toggleAutoRefresh())
+    act(() => vi.advanceTimersByTime(400)) // the save
     expect(vi.getTimerCount()).toBe(2)
     act(() => root.unmount())
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe('selections kept on the server', () => {
+  async function remount() {
+    act(() => root.unmount())
+    root = createRoot(container)
+    await act(async () => root.render(<FiltersProvider><Probe /></FiltersProvider>))
+  }
+
+  it('saves what the user picks, once the picking settles', () => {
+    act(() => filters.setPreset('yesterday'))
+    act(() => filters.setPreset('7d'))
+    act(() => filters.toggleAutoRefresh())
+    expect(api.saved).toEqual([])
+    act(() => vi.advanceTimersByTime(400))
+    expect(api.saved).toEqual([{ range: { preset: '7d' }, auto_refresh: true }])
+  })
+
+  it('keeps the dates of a custom range only', () => {
+    act(() => filters.setCustomRange('2026-10-01', '2026-10-10'))
+    act(() => vi.advanceTimersByTime(400))
+    expect(api.saved).toEqual([{ range: { preset: 'custom', from: '2026-10-01', to: '2026-10-11' }, auto_refresh: false }])
+  })
+
+  it('starts from the server copy, with relative presets recomputed for today', async () => {
+    api.serverPrefs = { range: { preset: 'yesterday' }, auto_refresh: true }
+    await remount()
+    expect(filters.range).toEqual({ preset: 'yesterday', from: '2026-10-14', to: '2026-10-15' })
+    expect(filters.autoRefresh).toBe(true)
+    // Loading is not a change: nothing is written back.
+    act(() => vi.advanceTimersByTime(400))
+    expect(api.saved).toEqual([])
+  })
+
+  it('starts from this browser\'s copy before the server answers, and ignores bad documents', async () => {
+    localStorage.setItem('aum_dashboard_prefs', JSON.stringify({ range: { preset: 'thisMonth' }, auto_refresh: true }))
+    api.serverPrefs = { range: { preset: 'nonsense' }, auto_refresh: 'yes' as unknown as boolean }
+    act(() => root.unmount())
+    root = createRoot(container)
+    act(() => root.render(<FiltersProvider><Probe /></FiltersProvider>))
+    expect(filters.range.preset).toBe('thisMonth')
+    expect(filters.autoRefresh).toBe(true)
+    // The server's (unusable) document then means the defaults.
+    await act(async () => {})
+    expect(filters.range.preset).toBe('30d')
+    expect(filters.autoRefresh).toBe(false)
+  })
+
+  it('does not let a late server answer undo a change the user already made', async () => {
+    api.serverPrefs = { range: { preset: 'all' } }
+    act(() => root.unmount())
+    root = createRoot(container)
+    act(() => root.render(<FiltersProvider><Probe /></FiltersProvider>))
+    act(() => filters.setPreset('today'))
+    await act(async () => {})
+    expect(filters.range.preset).toBe('today')
   })
 })

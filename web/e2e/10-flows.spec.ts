@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { prepare } from './support'
+import { prepare, selectPreset, setAutoRefresh } from './support'
 
 test('login rejects an invalid token, accepts the test token, and logs out', async ({ page }) => {
   await prepare(page, false)
@@ -20,18 +20,16 @@ test('login rejects an invalid token, accepts the test token, and logs out', asy
 test('date presets, custom dates, refresh and automatic refresh remain usable', async ({ page }) => {
   await prepare(page)
   await page.goto('/')
-  await page.getByRole('tab', { name: '최근 7일', exact: true }).click()
+  await selectPreset(page, '최근 7일')
   await expect(page.getByRole('tab', { name: '최근 7일', exact: true })).toHaveAttribute('aria-selected', 'true')
-  await page.getByRole('tab', { name: '직접 선택', exact: true }).click()
+  await selectPreset(page, '직접 선택')
   await page.getByLabel('시작일', { exact: true }).fill('2026-10-22')
   await page.getByLabel('종료일', { exact: true }).fill('2026-10-23')
   const response = page.waitForResponse((r) => r.url().includes('/api/v1/summary?') && r.url().includes('from=2026-10-22') && r.url().includes('to=2026-10-24'))
   await page.getByRole('button', { name: '적용', exact: true }).click()
   expect((await response).ok()).toBe(true)
-  const automatic = page.getByRole('switch', { name: '자동 새로고침 (60초)' })
-  await automatic.check()
-  await expect(automatic).toBeChecked()
-  await automatic.uncheck()
+  await setAutoRefresh(page, true)
+  await setAutoRefresh(page, false)
   await page.getByRole('button', { name: '새로고침', exact: true }).click()
   await expect(page.locator('h1')).toHaveText('개요')
 })
@@ -190,4 +188,45 @@ test('the navigation names the server build', async ({ page }) => {
   const build = page.getByTestId('server-build')
   await expect(build).toContainText('서버 ')
   await expect(build).toHaveAttribute('title', /버전 .+/)
+})
+
+test('the selected period and auto refresh come back from the server in a fresh browser', async ({ page, browser }, testInfo) => {
+  await prepare(page)
+  await page.goto('/')
+  const saved = page.waitForRequest((r) => r.url().endsWith('/api/v1/preferences') && r.method() === 'PUT')
+  await selectPreset(page, '어제')
+  await saved
+  await setAutoRefresh(page, true)
+  await page.waitForRequest((r) => r.url().endsWith('/api/v1/preferences') && r.method() === 'PUT')
+
+  // Another browser: nothing in its storage but the token.
+  const other = await browser.newContext({ ...testInfo.project.use, baseURL: testInfo.project.use.baseURL })
+  const page2 = await other.newPage()
+  await prepare(page2, true, false)
+  const summary = page2.waitForRequest((r) => r.url().includes('/api/v1/summary?') && r.url().includes('to=2026-10-23'))
+  await page2.goto('/')
+  await summary
+  await expect(page2.getByRole('tab', { name: '어제', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await other.close()
+})
+
+test('a narrow bar moves the least used periods into a menu', async ({ page }) => {
+  await prepare(page)
+  await page.goto('/')
+  const width = page.viewportSize()?.width ?? 0
+  const more = page.getByRole('button', { name: '기간 더 보기' })
+  if (width >= 1200) {
+    await expect(more).toHaveCount(0)
+    await expect(page.getByRole('tab', { name: '전체', exact: true })).toBeVisible()
+    return
+  }
+  await expect(more).toBeVisible()
+  await expect(page.getByRole('tab', { name: '오늘', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: '전체', exact: true })).toHaveCount(0)
+  await more.click()
+  await page.getByRole('menuitem', { name: '전체', exact: true }).click()
+  // The selected preset is always shown as a tab.
+  await expect(page.getByRole('tab', { name: '전체', exact: true })).toHaveAttribute('aria-selected', 'true')
+  // Nothing overflows the page sideways.
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })

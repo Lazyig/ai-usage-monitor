@@ -4,6 +4,7 @@ import type {
   BreakdownGroupBy,
   BreakdownResponse,
   CreateDeviceResponse,
+  DashboardPreferences,
   DeleteDeviceResponse,
   Device,
   DevicesResponse,
@@ -67,7 +68,7 @@ function toParams(params: object): Params {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   params?: Params
   body?: unknown
   /** Override the stored token, used only by the login screen to verify a token before storing it. */
@@ -187,6 +188,14 @@ export function getEvents(
 
 export function getServerBuild(): Promise<ServerBuild> {
   return request('/api/v1/server')
+}
+
+export function getPreferences(): Promise<DashboardPreferences> {
+  return request('/api/v1/preferences')
+}
+
+export function putPreferences(prefs: DashboardPreferences): Promise<DashboardPreferences> {
+  return request('/api/v1/preferences', { method: 'PUT', body: prefs })
 }
 
 export function getDevices(): Promise<DevicesResponse> {
