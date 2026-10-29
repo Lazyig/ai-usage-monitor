@@ -89,6 +89,11 @@ func cmdStatus(args []string) error {
 			shown += fmt.Sprintf(" (+%d more)", len(roots)-1)
 			more = true
 		}
+		if !sc.Enabled {
+			// A disabled source's Root may be the placeholder left by removing
+			// its last folder (see RemoveRoot), not a folder it reads.
+			shown, present = "-", "-"
+		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", s, enabled, shown, present, state)
 	}
 	tw.Flush()
