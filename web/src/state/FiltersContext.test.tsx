@@ -9,12 +9,15 @@ const api = vi.hoisted(() => ({
   serverPrefs: {} as DashboardPreferences,
   saved: [] as DashboardPreferences[],
   fail: false,
+  token: 'token' as string | null,
+  load: (): Promise<DashboardPreferences> => Promise.resolve(api.serverPrefs),
 }))
 
 vi.mock('../api/client', () => ({
-  getStoredToken: () => 'token',
-  getPreferences: () => Promise.resolve(api.serverPrefs),
-  putPreferences: (p: DashboardPreferences) => {
+  getStoredToken: () => api.token,
+  getPreferences: () => api.load(),
+  putPreferences: (p: DashboardPreferences, opts?: { token?: string | null }) => {
+    if (!opts?.token) throw new Error('sent without a token')
     api.saved.push(p)
     return api.fail ? Promise.reject(new Error('offline')) : Promise.resolve(p)
   },
@@ -34,6 +37,8 @@ beforeEach(() => {
   api.serverPrefs = {}
   api.saved = []
   api.fail = false
+  api.token = 'token'
+  api.load = () => Promise.resolve(api.serverPrefs)
   vi.useFakeTimers()
   // Immediately before midnight in Seoul (UTC+9).
   vi.setSystemTime(new Date('2026-10-15T14:59:30Z'))
@@ -211,5 +216,28 @@ describe('selections kept on the server', () => {
     expect(filters.autoRefresh).toBe(true)
     act(() => vi.advanceTimersByTime(400))
     expect(api.saved).toEqual([])
+  })
+
+  it('sends a pending change with its token when logging out clears the stored one', () => {
+    act(() => filters.setPreset('day-3'))
+    api.token = null // logout clears the token, then the provider unmounts
+    act(() => root.unmount())
+    expect(api.saved).toEqual([{ range: { preset: 'day-3' }, auto_refresh: false }])
+    root = createRoot(container) // for afterEach
+  })
+
+  it('ignores its own late load once it followed another tab', async () => {
+    let answer!: (p: DashboardPreferences) => void
+    api.load = () => new Promise((resolve) => (answer = resolve))
+    act(() => root.unmount())
+    root = createRoot(container)
+    act(() => root.render(<FiltersProvider><Probe /></FiltersProvider>))
+    const doc = { prefs: { range: { preset: 'all' }, auto_refresh: false }, synced: false }
+    localStorage.setItem('aum_dashboard_prefs', JSON.stringify(doc))
+    act(() => window.dispatchEvent(new StorageEvent('storage', { key: 'aum_dashboard_prefs', newValue: JSON.stringify(doc) })))
+    await act(async () => answer({ range: { preset: 'last-30' } }))
+    expect(filters.range.preset).toBe('all')
+    // The other tab's unsynced change is left for that tab to save.
+    expect(JSON.parse(localStorage.getItem('aum_dashboard_prefs')!)).toEqual(doc)
   })
 })

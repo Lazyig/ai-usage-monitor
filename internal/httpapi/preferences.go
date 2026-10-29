@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"regexp"
 	"time"
@@ -77,7 +78,7 @@ func (a *api) handlePutPreferences(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid preferences: "+err.Error())
 		return
 	}
-	if dec.More() {
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
 		writeError(w, http.StatusBadRequest, "invalid preferences: data after the JSON object")
 		return
 	}

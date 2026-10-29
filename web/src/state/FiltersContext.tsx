@@ -54,8 +54,14 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
   // Set by the user's own changes: a late answer from the server no longer
   // overrides them.
   const touched = useRef(false)
+  // Set once another tab's change was followed: the server's answer to this
+  // tab's own load is older than that.
+  const followed = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const latest = useRef('')
+  // The token a pending save goes out with: logout clears the stored one
+  // before this provider unmounts and flushes.
+  const latestToken = useRef<string | null>(null)
 
   const apply = useCallback((prefs: DashboardPreferences | undefined) => {
     const s = fromPreferences(prefs)
@@ -64,9 +70,9 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
   }, [])
 
   /** Sends doc to the server; the cache is marked synced once it lands. */
-  const save = useCallback((doc: string, keepalive = false) => {
-    if (!getStoredToken()) return // logged out: the unsynced cache is sent after the next login
-    putPreferences(JSON.parse(doc), { keepalive })
+  const save = useCallback((doc: string, keepalive = false, token = getStoredToken()) => {
+    if (!token) return // no session: the unsynced cache is sent after the next login
+    putPreferences(JSON.parse(doc), { keepalive, token })
       .then(() => {
         if (docOf(parseCache(readStored(CACHE_KEY))) === doc) writeCache(doc, true)
       })
@@ -80,7 +86,7 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
     if (!timer.current) return
     clearTimeout(timer.current)
     timer.current = null
-    save(latest.current, true)
+    save(latest.current, true, latestToken.current)
   }, [save])
 
   useEffect(() => {
@@ -95,7 +101,7 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
     let cancelled = false
     getPreferences()
       .then((p) => {
-        if (!cancelled && !touched.current) apply(p)
+        if (!cancelled && !touched.current && !followed.current) apply(p)
       })
       .catch(() => {
         // Offline or an older server: keep the cached or default selection.
@@ -108,7 +114,14 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
   // Another tab changed the selection: follow it (that tab saves it).
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === CACHE_KEY) apply(parseCache(e.newValue)?.prefs)
+      if (e.key !== CACHE_KEY) return
+      followed.current = true
+      // The other tab's change is newer than one this tab still meant to save.
+      if (timer.current) {
+        clearTimeout(timer.current)
+        timer.current = null
+      }
+      apply(parseCache(e.newValue)?.prefs)
     }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
@@ -116,14 +129,18 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
 
   const stored = JSON.stringify(toPreferences({ range, autoRefresh }))
   useEffect(() => {
+    const cache = parseCache(readStored(CACHE_KEY))
     // Equal to the cache: loaded from it, or another tab's change.
-    if (stored === docOf(parseCache(readStored(CACHE_KEY)))) return
+    if (stored === docOf(cache)) return
     if (!touched.current) {
-      writeCache(stored, true) // the server's copy (or the default) just applied
+      // The server's copy (or the default) just applied. A change another tab
+      // has not saved yet is newer: leave it.
+      if (!cache || cache.synced) writeCache(stored, true)
       return
     }
     writeCache(stored, false)
     latest.current = stored
+    latestToken.current = getStoredToken()
     if (timer.current) clearTimeout(timer.current)
     timer.current = setTimeout(() => {
       timer.current = null

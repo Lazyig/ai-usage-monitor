@@ -17,9 +17,12 @@ describe('visibleItems', () => {
     expect(visibleItems(296, widths, 32, 'day-0')).toEqual(['day', 'week', 'month', 'custom'])
   })
 
-  it('keeps 오늘, 이번 주 and the selected item however narrow', () => {
-    expect(visibleItems(10, widths, 32, 'all')).toEqual(['day', 'week', 'all'])
-    expect(visibleItems(10, widths, 32, 'month-3')).toEqual(['day', 'week', 'month'])
+  it('keeps 오늘 and 이번 주 while they fit, and the selected item always', () => {
+    // 3 items and the menu: 3*60 + 2*6 + 6 + 32 = 230.
+    expect(visibleItems(230, widths, 32, 'all')).toEqual(['day', 'week', 'all'])
+    expect(visibleItems(230, widths, 32, 'month-3')).toEqual(['day', 'week', 'month'])
+    expect(visibleItems(164, widths, 32, 'month-3')).toEqual(['day', 'month']) // 2*60 + 6 + 6 + 32
+    expect(visibleItems(10, widths, 32, 'month-3')).toEqual(['month'])
   })
 
   it('gives up the extras first, the last one first', () => {

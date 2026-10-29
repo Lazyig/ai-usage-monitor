@@ -39,9 +39,10 @@ export interface BarExtra {
 type Key = PeriodItem['key'] | string
 
 /** When the bar is too narrow, entries move into the "⋯" menu in this order,
- * the least used first: the extras, then 전체, 최근 N일, 직접 선택, 이번 달.
- * 오늘 and 이번 주 always stay, as does the item that holds the selected preset. */
-const PERIOD_HIDE_ORDER: PeriodItem['key'][] = ['all', 'last', 'custom', 'month']
+ * the least used first: the extras, then 전체, 최근 N일, 직접 선택, 이번 달,
+ * and on the narrowest screens 이번 주 and 오늘. The item holding the selected
+ * preset always stays. */
+const PERIOD_HIDE_ORDER: PeriodItem['key'][] = ['all', 'last', 'custom', 'month', 'week', 'day']
 
 /** Tailwind gap-1.5 between items and before the menu button. */
 const GAP = 6

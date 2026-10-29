@@ -197,8 +197,8 @@ export function getPreferences(): Promise<DashboardPreferences> {
   return request('/api/v1/preferences')
 }
 
-export function putPreferences(prefs: DashboardPreferences, opts: { keepalive?: boolean } = {}): Promise<DashboardPreferences> {
-  return request('/api/v1/preferences', { method: 'PUT', body: prefs, keepalive: opts.keepalive })
+export function putPreferences(prefs: DashboardPreferences, opts: { keepalive?: boolean; token?: string } = {}): Promise<DashboardPreferences> {
+  return request('/api/v1/preferences', { method: 'PUT', body: prefs, keepalive: opts.keepalive, token: opts.token })
 }
 
 export function getDevices(): Promise<DevicesResponse> {
