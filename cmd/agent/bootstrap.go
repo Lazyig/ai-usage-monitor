@@ -17,6 +17,7 @@ import (
 type runOverrides struct {
 	server, token string
 	interval      int
+	allowHTTP     bool
 }
 
 // loadRunConfig reads config.json (creating defaults) and applies flag overrides.
@@ -34,8 +35,14 @@ func loadRunConfig(dir string, ov runOverrides) (agentcfg.Config, error) {
 	if ov.interval > 0 {
 		cfg.IntervalSeconds = ov.interval
 	}
+	if ov.allowHTTP {
+		cfg.AllowHTTP = true
+	}
 	if strings.TrimSpace(cfg.ServerURL) == "" {
 		return cfg, usagef("no server configured: run `ai-usage-agent install --server URL --token TOKEN` or set %s", agentcfg.EnvServer)
+	}
+	if err := agentcfg.CheckServerURL(cfg.ServerURL, cfg.AllowHTTP); err != nil {
+		return cfg, &usageError{err: err}
 	}
 	return cfg, nil
 }

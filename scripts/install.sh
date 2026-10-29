@@ -9,7 +9,7 @@
 # Downloads the binary matching this machine from SERVER/downloads/, verifies its
 # sha256 against manifest.json, installs it and registers the OS service.
 set -eu
-SERVER=""; TOKEN=""; PREFIX=""; NO_SERVICE=0; UPDATE=0
+SERVER=""; TOKEN=""; PREFIX=""; NO_SERVICE=0; UPDATE=0; ALLOW_HTTP=0
 # Newline separated: POSIX sh has no arrays, and a path never holds a newline.
 CLAUDE_DIRS=""
 nl='
@@ -25,12 +25,27 @@ while [ $# -gt 0 ]; do
     --claude-dir=*) CLAUDE_DIRS="$CLAUDE_DIRS$nl${1#*=}"; shift;;
     --no-service) NO_SERVICE=1; shift;;
     --update) UPDATE=1; shift;;
-    -h|--help) echo "usage: install.sh --server <url> [--token <token> | --update] [--claude-dir <directory>]... [--prefix <directory>] [--no-service]"; exit 0;;
+    --allow-http) ALLOW_HTTP=1; shift;;
+    -h|--help) echo "usage: install.sh --server <url> [--token <token> | --update] [--claude-dir <directory>]... [--prefix <directory>] [--no-service] [--allow-http]"; exit 0;;
     *) echo "unknown arg $1" >&2; exit 2;;
   esac
 done
 [ -n "$SERVER" ] || { echo "--server required" >&2; exit 2; }
 SERVER="${SERVER%/}"
+# Plain http would carry the binary, its checksum and the device token in the
+# clear, so anyone on the path could swap the agent. Only this machine itself
+# (localhost, 127.0.0.1, [::1]) is exempt; anything else needs --allow-http.
+case "$SERVER" in
+  https://*) ;;
+  http://localhost|http://localhost:*|http://localhost/*|http://127.0.0.1|http://127.0.0.1:*|http://127.0.0.1/*|http://\[::1\]|http://\[::1\]:*|http://\[::1\]/*) ;;
+  http://*)
+    if [ "$ALLOW_HTTP" != 1 ]; then
+      echo "refusing plain $SERVER: the binary and the device token would cross the network unencrypted. Use https://, or pass --allow-http." >&2
+      exit 2
+    fi
+    echo "warning: plain http server, the binary and the device token are not encrypted" >&2;;
+  *) echo "--server must start with https:// (or http:// for this machine)" >&2; exit 2;;
+esac
 
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 case "$os" in linux|darwin) ;; *) echo "unsupported OS $os" >&2; exit 1;; esac
@@ -82,6 +97,7 @@ echo "installed $PREFIX/ai-usage-agent ($("$PREFIX/ai-usage-agent" version 2>/de
 # token: `install` keeps the one in config.json and re-registers the service.
 set -- install --server "$SERVER"
 [ -n "$TOKEN" ] && set -- "$@" --token "$TOKEN"
+[ "$ALLOW_HTTP" = 1 ] && set -- "$@" --allow-http
 hint=""
 set -f; old_ifs=$IFS; IFS=$nl
 for d in $CLAUDE_DIRS; do set -- "$@" --claude-dir "$d"; hint="$hint --claude-dir '$d'"; done

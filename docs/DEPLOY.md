@@ -10,6 +10,7 @@
 | `DB_PATH` | `--db` | `data/usage.db` | SQLite 파일 (부모 디렉터리는 자동 생성) |
 | `PRICING_PATH` | `--pricing` | `pricing.yaml` | 단가 표. 파싱 실패하면 기동하지 않는다 |
 | `DOWNLOADS_DIR` | `--downloads` | `$KO_DATA_PATH/downloads` (없으면 `cmd/server/kodata/downloads`) | `/downloads/` 로 서빙할 에이전트 바이너리 + `manifest.json` |
+| `PUBLIC_URL` | `--public-url` | (없음: 요청의 Host·X-Forwarded-* 헤더로 추정) | 외부에서 접속하는 서버 주소(예: `https://usage.example.com`). 다운로드 페이지와 서버가 생성하는 `install.sh` 의 기본 주소로 씁니다. 헤더는 클라이언트가 바꿀 수 있으므로 외부에 공개하는 서버에서는 설정을 권장합니다. 로컬에서만 쓸 때는 비워 두면 됩니다 |
 | `ADMIN_TOKEN` | (환경변수 전용) | 없음 | 관리/조회 API 토큰. **없으면 관리 API 는 전부 `503`** |
 
 플래그를 주지 않으면 환경변수가, 둘 다 없으면 기본값이 쓰인다. `--version` 은 버전만 출력한다(`version` 은 ldflags 로 주입).

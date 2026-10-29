@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode/utf8"
 )
 
 // TokenPrefix marks an agent device token.
@@ -39,6 +40,26 @@ type DeviceMeta struct {
 	OS           string `json:"os,omitempty"`
 	Arch         string `json:"arch,omitempty"`
 	AgentVersion string `json:"agent_version,omitempty"`
+}
+
+// maxMetaLen caps each field an agent reports about its device. They are
+// shown in every device list, and a device token holder controls them.
+const maxMetaLen = 256
+
+// Clipped returns m with every reported field cut to maxMetaLen bytes.
+func (m DeviceMeta) Clipped() DeviceMeta {
+	clip := func(s string) string {
+		if len(s) <= maxMetaLen {
+			return s
+		}
+		s = s[:maxMetaLen]
+		for len(s) > 0 && !utf8.ValidString(s) {
+			s = s[:len(s)-1] // do not leave half a character
+		}
+		return s
+	}
+	m.Name, m.OS, m.Arch, m.AgentVersion = clip(m.Name), clip(m.OS), clip(m.Arch), clip(m.AgentVersion)
+	return m
 }
 
 // HashToken is the storage form of a device token.

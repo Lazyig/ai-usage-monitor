@@ -6,11 +6,32 @@
 # (default: $env:CLAUDE_CONFIG_DIR, read by the agent itself).
 # Update an installed agent, keeping its config.json (server, token, folders): -Update instead of -Token,
 # from an elevated PowerShell of the account that installed it.
-param([string]$Server, [string]$Token, [string]$Prefix = "$env:LOCALAPPDATA\ai-usage-agent", [string[]]$ClaudeDir = @(), [switch]$Update)
+#
+# The service runs as LocalSystem, so the binary goes to Program Files and the agent keeps its state in
+# %ProgramData%\ai-usage-agent (SYSTEM and Administrators only): neither may be writable by the user.
+# Installs from before that (binary in %LOCALAPPDATA%, state in %APPDATA%) are moved there by any run of
+# this script; the old binary folder is removed afterwards.
+param([string]$Server, [string]$Token, [string]$Prefix = "$env:ProgramFiles\ai-usage-agent", [string[]]$ClaudeDir = @(), [switch]$Update, [switch]$AllowHttp)
 $ErrorActionPreference = "Stop"
 if (-not $Server) { throw "-Server required" }
-# An update replaces an existing agent in place; none here means the wrong account or -Prefix.
-if ($Update -and -not $Token -and -not (Test-Path (Join-Path $Prefix "ai-usage-agent.exe"))) {
+# Plain http would carry the binary, its checksum and the device token in the clear, so anyone on the
+# path could swap the agent that then runs as LocalSystem. Only this machine itself is exempt.
+$serverUri = [Uri]$Server
+if ($serverUri.Scheme -eq 'http') {
+  if (@('localhost', '127.0.0.1', '[::1]') -notcontains $serverUri.Host.ToLower()) {
+    if (-not $AllowHttp) {
+      throw "refusing plain $Server: the binary and the device token would cross the network unencrypted. Use https://, or pass -AllowHttp."
+    }
+    Write-Warning "plain http server: the binary and the device token are not encrypted"
+  }
+} elseif ($serverUri.Scheme -ne 'https') {
+  throw "-Server must start with https:// (or http:// for this machine)"
+}
+$legacyPrefix = "$env:LOCALAPPDATA\ai-usage-agent"
+$legacyExe = Join-Path $legacyPrefix "ai-usage-agent.exe"
+$migrate = (Test-Path $legacyExe) -and ([IO.Path]::GetFullPath($legacyPrefix) -ne [IO.Path]::GetFullPath($Prefix))
+# An update replaces an existing agent; none here means the wrong account or -Prefix.
+if ($Update -and -not $Token -and -not (Test-Path (Join-Path $Prefix "ai-usage-agent.exe")) -and -not $migrate) {
   throw "-Update: no agent at $Prefix\ai-usage-agent.exe. Run as the account that installed it, pass -Prefix, or install with -Token."
 }
 $Server = $Server.TrimEnd('/')
@@ -51,11 +72,18 @@ Write-Host "installed $dst"
 # An update passes no token: `install` keeps the one in config.json and re-registers the service.
 $agentArgs = @('install', '--server', $Server)
 if ($Token) { $agentArgs += @('--token', $Token) }
+if ($AllowHttp) { $agentArgs += @('--allow-http') }
 foreach ($d in $ClaudeDir) { $agentArgs += @('--claude-dir', $d) }
-if ($Token -or $Update) {
+# Moving an old install must re-register the service (it points at the old binary and state), so it
+# always runs install; the agent carries config.json, cursors and the queue over to %ProgramData%.
+if ($Token -or $Update -or $migrate) {
   & $dst @agentArgs
   # A native command's failure does not trip $ErrorActionPreference.
   if ($LASTEXITCODE -ne 0) { throw "ai-usage-agent install failed (exit code $LASTEXITCODE)" }
+  if ($migrate) {
+    Remove-Item -Recurse -Force $legacyPrefix -ErrorAction SilentlyContinue
+    Write-Host "moved the agent from $legacyPrefix to $Prefix"
+  }
 } else {
   if ($wasRunning) {
     Start-Service -Name ai-usage-agent

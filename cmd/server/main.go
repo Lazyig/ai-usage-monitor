@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -31,6 +32,7 @@ func main() {
 	dbPath := flag.String("db", envOr("DB_PATH", "data/usage.db"), "sqlite file")
 	pricingPath := flag.String("pricing", envOr("PRICING_PATH", "pricing.yaml"), "pricing table")
 	downloadsDir := flag.String("downloads", envOr("DOWNLOADS_DIR", defaultDownloadsDir()), "directory served at /downloads/")
+	publicURLFlag := flag.String("public-url", envOr("PUBLIC_URL", ""), "external base URL for install commands, e.g. https://usage.example.com (default: taken from each request)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
@@ -41,6 +43,15 @@ func main() {
 
 	log := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(log)
+
+	publicURL, err := httpapi.ParsePublicURL(*publicURLFlag)
+	if err != nil {
+		log.Error("config", "err", err)
+		os.Exit(2)
+	}
+	if strings.HasPrefix(publicURL, "http://") {
+		log.Warn("PUBLIC_URL is plain http: agents send their device token unencrypted and refuse it unless installed with --allow-http (loopback excepted)")
+	}
 
 	adminToken := os.Getenv("ADMIN_TOKEN")
 	if adminToken == "" {
@@ -67,6 +78,7 @@ func main() {
 		"pricing", *pricingPath,
 		"rates", len(pricingProvider.Rates()),
 		"downloads", *downloadsDir,
+		"public_url", publicURL,
 		"spa_built", spaBuilt,
 		"admin_token_set", adminToken != "",
 	)
@@ -77,6 +89,7 @@ func main() {
 		AdminToken:   adminToken,
 		Version:      version,
 		DownloadsDir: *downloadsDir,
+		PublicURL:    publicURL,
 		SPA:          spa,
 		SPABuilt:     spaBuilt,
 		Logger:       log,

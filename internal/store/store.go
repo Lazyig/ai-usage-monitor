@@ -51,10 +51,18 @@ type Store struct {
 func Open(path string) (*Store, error) {
 	if path != ":memory:" {
 		if dir := filepath.Dir(path); dir != "" && dir != "." {
-			if err := os.MkdirAll(dir, 0o755); err != nil {
+			if err := os.MkdirAll(dir, 0o700); err != nil {
 				return nil, fmt.Errorf("store: create db dir: %w", err)
 			}
 		}
+		// A new database is created owner-only (it holds project paths and
+		// hostnames); SQLite gives its -wal and -shm files the same mode. An
+		// existing file keeps the mode its operator chose.
+		f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+		if err != nil {
+			return nil, fmt.Errorf("store: create db: %w", err)
+		}
+		f.Close()
 	}
 	dsn := "file:" + path +
 		"?_pragma=busy_timeout(5000)" +
