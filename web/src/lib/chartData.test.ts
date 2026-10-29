@@ -40,7 +40,7 @@ describe('chartBuckets + mergeSeries', () => {
 
   it('puts idle days back as zero rows', () => {
     const s = [series('claude_code', ['2026-09-24', '2026-09-27'])]
-    const buckets = chartBuckets(s, { range: range('7d', '2026-09-24', '2026-09-28'), bucket: 'day' }, now)
+    const buckets = chartBuckets(s, { range: range('last-7', '2026-09-24', '2026-09-28'), bucket: 'day' }, now)
     const { data } = mergeSeries(s, costOfPoint, buckets)
     expect(data.map((r) => [r.t, r.claude_code])).toEqual([
       ['2026-09-24', 1],
@@ -58,9 +58,9 @@ describe('chartBuckets + mergeSeries', () => {
 
   it('draws only the points when one does not fit the expected labels', () => {
     const utc = [series('codex', ['2026-10-21T03:00:00Z'])]
-    expect(chartBuckets(utc, { range: range('today', '2026-10-21', '2026-10-22'), bucket: 'hour' }, now)).toBeUndefined()
+    expect(chartBuckets(utc, { range: range('day-0', '2026-10-21', '2026-10-22'), bucket: 'hour' }, now)).toBeUndefined()
     const outside = [series('codex', ['2026-09-01'])]
-    expect(chartBuckets(outside, { range: range('7d', '2026-10-15', '2026-10-22'), bucket: 'day' }, now)).toBeUndefined()
+    expect(chartBuckets(outside, { range: range('last-7', '2026-10-15', '2026-10-22'), bucket: 'day' }, now)).toBeUndefined()
   })
 })
 

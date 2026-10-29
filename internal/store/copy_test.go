@@ -47,6 +47,9 @@ func fill(t *testing.T, s *Store) (token string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := s.SetPreference(ctx, "dashboard", `{"auto_refresh":true}`); err != nil {
+		t.Fatal(err)
+	}
 	b, _, err := s.CreateDevice(ctx, "old")
 	if err != nil {
 		t.Fatal(err)
@@ -118,6 +121,9 @@ func TestCopyRoundTrip(t *testing.T) {
 	}
 	if got := dumpEvents(t, mid); !reflect.DeepEqual(got, wantEv) {
 		t.Errorf("events differ")
+	}
+	if v, ok, err := mid.Preference(ctx, "dashboard"); err != nil || !ok || v != `{"auto_refresh":true}` {
+		t.Errorf("preferences on the copy: %q %v %v", v, ok, err)
 	}
 	if d, err := mid.DeviceByTokenHash(ctx, HashToken(token)); err != nil || d.Name != "mac" {
 		t.Errorf("token on the copy: %+v %v", d, err)
@@ -333,7 +339,7 @@ func TestCopyColumnsCoverSchema(t *testing.T) {
 	if s.dialect == postgres {
 		q = `SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1`
 	}
-	for table, cols := range map[string]string{"devices": deviceCopyCols, "usage_events": eventCols} {
+	for table, cols := range map[string]string{"devices": deviceCopyCols, "usage_events": eventCols, "preferences": preferenceCols} {
 		rows, err := s.db.Query(q, table)
 		if err != nil {
 			t.Fatal(err)
@@ -354,5 +360,33 @@ func TestCopyColumnsCoverSchema(t *testing.T) {
 		if !slices.Equal(have, want) {
 			t.Errorf("%s: schema %v, copied %v", table, have, want)
 		}
+	}
+}
+
+// A target whose server already saved dashboard settings is still empty for
+// copying: the source's settings replace them.
+func TestCopyReplacesTargetPreferences(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "src.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fill(t, s)
+	s.Close()
+	src, err := OpenSource(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	dst := openTest(t)
+	if err := dst.SetPreference(ctx, "dashboard", `{"auto_refresh":false}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Copy(ctx, src, dst, false); err != nil {
+		t.Fatal(err)
+	}
+	if v, _, _ := dst.Preference(ctx, "dashboard"); v != `{"auto_refresh":true}` {
+		t.Errorf("target preferences after the copy: %s", v)
 	}
 }

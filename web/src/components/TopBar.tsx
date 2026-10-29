@@ -1,16 +1,17 @@
 import { ArrowClockwise20Regular } from '@fluentui/react-icons/headless/svg/arrow-clockwise'
+import { GlobeClock20Regular } from '@fluentui/react-icons/headless/svg/globe-clock'
 import { Navigation20Filled } from '@fluentui/react-icons/headless/svg/navigation'
-import { useState } from 'react'
-import { PRESET_LABELS, TIMEZONE, addDays, type RangePreset } from '../lib/dateRange'
+import { useEffect, useState } from 'react'
+import { TIMEZONE, addDays, type RangePreset } from '../lib/dateRange'
 import { useFilters } from '../state/FiltersContext'
+import { PeriodTabs } from './PeriodTabs'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { DatePicker } from './ui/date-picker'
+import { DropdownMenuCheckItem, DropdownMenuItem } from './ui/dropdown-menu'
 import { Switch } from './ui/switch'
-import { Tab, TabList } from './ui/tabs'
 import { Tooltip } from './ui/tooltip'
 
-const PRESETS: RangePreset[] = ['today', '7d', '30d', 'thisMonth', 'lastMonth', 'all', 'custom']
 
 interface TopBarProps {
   /** Phones have no docked nav pane, so the bar carries the button that opens it. */
@@ -22,10 +23,18 @@ export function TopBar({ onOpenNav }: TopBarProps) {
   const { range, setPreset, setCustomRange, autoRefresh, toggleAutoRefresh, refresh } = useFilters()
   const [customFrom, setCustomFrom] = useState(range.from)
   const [customTo, setCustomTo] = useState(addDays(range.to, -1))
+  // A custom range can also arrive from elsewhere (the server's saved
+  // selection, another tab): the pickers show the range in use.
+  useEffect(() => {
+    if (range.preset !== 'custom') return
+    setCustomFrom(range.from)
+    setCustomTo(addDays(range.to, -1))
+  }, [range.preset, range.from, range.to])
 
   function handlePresetSelect(preset: RangePreset) {
     if (preset === 'custom') {
-      setCustomRange(customFrom, customTo)
+      // Start from the period in view; the pickers follow the range.
+      setCustomRange(range.from, addDays(range.to, -1))
       return
     }
     setPreset(preset)
@@ -49,31 +58,36 @@ export function TopBar({ onOpenNav }: TopBarProps) {
           </Tooltip>
         </div>
       )}
-      <div className="flex flex-wrap items-center gap-3 max-tablet:gap-2">
-        <div className="max-w-full min-w-0 overflow-x-auto [scrollbar-width:none] max-phone:w-full [&::-webkit-scrollbar]:hidden">
-          <TabList aria-label="기간 선택" value={range.preset} onValueChange={(v) => handlePresetSelect(v as RangePreset)}>
-            {PRESETS.map((p) => (
-              <Tab key={p} value={p}>
-                {PRESET_LABELS[p]}
-              </Tab>
-            ))}
-          </TabList>
-        </div>
-        {range.preset === 'custom' && (
-          <div className="flex items-center gap-1.5 max-phone:w-full max-phone:flex-wrap">
-            <DatePicker size="small" value={customFrom} max={customTo} onChange={setCustomFrom} aria-label="시작일" className="max-phone:min-w-0 max-phone:flex-1" />
-            <span>~</span>
-            <DatePicker size="small" value={customTo} min={customFrom} onChange={setCustomTo} aria-label="종료일" className="max-phone:min-w-0 max-phone:flex-1" />
-            <Button size="small" appearance="primary" onClick={() => setCustomRange(customFrom, customTo)}>
-              적용
-            </Button>
-          </div>
-        )}
-        <Tooltip content="모든 기간 경계는 이 시간대 기준입니다">
-          <Badge appearance="outline">{TIMEZONE}</Badge>
-        </Tooltip>
-        <div className="flex-1 max-phone:hidden" />
-        <Switch checked={autoRefresh} onCheckedChange={toggleAutoRefresh} label="자동 새로고침 (60초)" />
+      <div className="flex items-center gap-3 max-tablet:gap-2">
+        <PeriodTabs
+          value={range.preset}
+          onSelect={handlePresetSelect}
+          // Set once and rarely touched: the first to give way on a narrow bar.
+          extras={[
+            {
+              key: 'auto-refresh',
+              node: <Switch checked={autoRefresh} onCheckedChange={toggleAutoRefresh} label="자동 새로고침 (60초)" />,
+              menu: (
+                <DropdownMenuCheckItem checked={autoRefresh} onSelect={toggleAutoRefresh}>
+                  자동 새로고침 (60초)
+                </DropdownMenuCheckItem>
+              ),
+            },
+            {
+              key: 'timezone',
+              node: (
+                <Tooltip content="모든 기간 경계는 이 시간대 기준입니다">
+                  <Badge appearance="outline">{TIMEZONE}</Badge>
+                </Tooltip>
+              ),
+              menu: (
+                <DropdownMenuItem icon={<GlobeClock20Regular />} disabled>
+                  {TIMEZONE} 기준
+                </DropdownMenuItem>
+              ),
+            },
+          ]}
+        />
         {/* Without the docked pane the refresh button lives in the brand row instead. */}
         {!onOpenNav && (
           <Button icon={<ArrowClockwise20Regular />} onClick={refresh}>
@@ -81,6 +95,17 @@ export function TopBar({ onOpenNav }: TopBarProps) {
           </Button>
         )}
       </div>
+      {/* Custom dates get a row of their own, so they never squeeze the periods. */}
+      {range.preset === 'custom' && (
+        <div className="flex items-center gap-1.5 max-phone:w-full max-phone:flex-wrap">
+          <DatePicker size="small" value={customFrom} max={customTo} onChange={setCustomFrom} aria-label="시작일" className="max-phone:min-w-0 max-phone:flex-1" />
+          <span>~</span>
+          <DatePicker size="small" value={customTo} min={customFrom} onChange={setCustomTo} aria-label="종료일" className="max-phone:min-w-0 max-phone:flex-1" />
+          <Button size="small" appearance="primary" onClick={() => setCustomRange(customFrom, customTo)}>
+            적용
+          </Button>
+        </div>
+      )}
     </header>
   )
 }

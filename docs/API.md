@@ -129,6 +129,21 @@
 - `commit`·`commit_time` 은 Go 가 git 체크아웃 안에서 빌드할 때 바이너리에 넣는 VCS 정보다. 없으면 생략된다. `modified: true` 는 커밋되지 않은 변경이 있는 트리에서 빌드했다는 뜻이다.
 - 대시보드 왼쪽 메뉴 아래에 표시된다. 커밋은 정확한 코드 버전을 알려 주므로 인증 없는 `/health` 에는 넣지 않는다.
 
+## 대시보드 설정 (관리자 토큰)
+
+대시보드에서 고른 기간과 자동 새로고침을 서버에 저장해, 다른 브라우저·기기에서 열어도 이어진다.
+
+- `GET /preferences` → 저장된 설정. 아무것도 저장하지 않았으면 `{}`.
+- `PUT /preferences` → 통째로 바꾼다. 응답은 저장된 값.
+
+```json
+{"range":{"preset":"custom","from":"2026-10-01","to":"2026-10-11"},"auto_refresh":true}
+```
+
+- `range.preset`: 오늘부터 거슬러 센 달력 기간 `day-0`(오늘)…`day-6`, `week-0`(이번 주, 월요일 시작)…`week-4`, `month-0`(이번 달)…`month-12`, 오늘까지의 `last-7`·`last-30`·`last-90`, 또는 `all`, `custom`.
+- `range.from`·`range.to`(`YYYY-MM-DD`, `to` 는 포함하지 않음): `custom` 일 때만 저장한다. 다른 값은 오늘 기준이라 불러올 때 다시 계산한다.
+- 모르는 필드, 잘못된 값, 4 KiB 를 넘는 본문은 `400`. 필드를 빼면 기본값(`last-30`, 자동 새로고침 끔)을 쓴다.
+
 ## 헬스 체크 (토큰 불필요)
 
 - `GET /health`, `GET /api/v1/health` → `{"ok":true,"version":"...","events":n,"devices":n,"checks":{"database":"ok","pricing":"ok","frontend":"ok"}}`. 하나라도 실패하면 `503` 이고 해당 항목에 이유가 들어간다. DB 는 `"unavailable"` 만 알리고 오류 내용(호스트·사용자 이름이 들어갈 수 있다)은 서버 로그에 1분에 한 번 남긴다.

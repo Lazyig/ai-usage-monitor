@@ -191,6 +191,18 @@ export interface Device {
 }
 
 /** GET /api/v1/server: the build the server runs. */
+/** GET/PUT /api/v1/preferences — the dashboard's last selections, kept on the
+ * server. Absent fields mean "the default". */
+export interface DashboardPreferences {
+  range?: {
+    preset: string
+    /** Only for "custom": YYYY-MM-DD, `to` exclusive. */
+    from?: string
+    to?: string
+  }
+  auto_refresh?: boolean
+}
+
 export interface ServerBuild {
   /** Release tag, `0.0.0-<sha>` for a main build, `dev` for a local one. */
   version: string

@@ -1,3 +1,4 @@
+import { Checkmark20Regular } from '@fluentui/react-icons/headless/svg/checkmark'
 import { DropdownMenu as MenuPrimitive } from 'radix-ui'
 import type { ComponentProps, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
@@ -67,8 +68,37 @@ function DropdownMenuItem({ className, icon, danger, children, ...props }: Dropd
   )
 }
 
+interface DropdownMenuCheckItemProps extends Omit<ComponentProps<typeof MenuPrimitive.CheckboxItem>, 'onCheckedChange'> {
+  checked: boolean
+}
+
+/** A menu entry with an on/off state (menuitemcheckbox), shown by a check mark
+ * in the icon column. onSelect runs as for a plain item. */
+function DropdownMenuCheckItem({ className, checked, children, ...props }: DropdownMenuCheckItemProps) {
+  return (
+    <MenuPrimitive.CheckboxItem
+      data-slot="dropdown-menu-item"
+      checked={checked}
+      className={cn(
+        'relative box-border flex max-w-[290px] min-h-8 shrink-0 cursor-pointer items-start gap-1 rounded-md bg-bg1 p-1.5 text-300 text-fg2 outline-none select-none',
+        'data-highlighted:bg-(--colorNeutralBackground1Hover) data-highlighted:text-(--colorNeutralForeground2Hover) active:bg-(--colorNeutralBackground1Pressed) active:text-(--colorNeutralForeground2Pressed)',
+        'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--colorStrokeFocus2)',
+        className,
+      )}
+      {...props}
+    >
+      <span data-slot="menu-item-icon" className="inline-flex size-5 shrink-0 items-center justify-center text-[20px] leading-0">
+        <MenuPrimitive.ItemIndicator>
+          <Checkmark20Regular />
+        </MenuPrimitive.ItemIndicator>
+      </span>
+      <span className="grow bg-transparent px-0.5">{children}</span>
+    </MenuPrimitive.CheckboxItem>
+  )
+}
+
 function DropdownMenuSeparator({ className, ...props }: ComponentProps<typeof MenuPrimitive.Separator>) {
   return <MenuPrimitive.Separator data-slot="dropdown-menu-separator" className={cn('mx-[-5px] my-1 border-b border-stroke2', className)} {...props} />
 }
 
-export { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger }
+export { DropdownMenu, DropdownMenuCheckItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger }

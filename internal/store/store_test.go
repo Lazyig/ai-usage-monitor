@@ -345,3 +345,19 @@ func TestPermHintOnlyForPermissionErrors(t *testing.T) {
 		t.Fatalf("permHint(ErrPermission) = %q, want an ownership hint", got)
 	}
 }
+
+func TestPreferences(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	if _, ok, err := s.Preference(ctx, "dashboard"); err != nil || ok {
+		t.Fatalf("before any save: ok=%v err=%v", ok, err)
+	}
+	for _, v := range []string{`{"a":1}`, `{"a":2}`} {
+		if err := s.SetPreference(ctx, "dashboard", v); err != nil {
+			t.Fatal(err)
+		}
+		if got, ok, err := s.Preference(ctx, "dashboard"); err != nil || !ok || got != v {
+			t.Fatalf("after saving %s: %q %v %v", v, got, ok, err)
+		}
+	}
+}

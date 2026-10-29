@@ -90,6 +90,8 @@ func New(st *store.Store, pr *Pricing, opt Options) http.Handler {
 	mux.Handle("DELETE /api/v1/devices/{id}/events", a.admin(http.HandlerFunc(a.handlePurgeDeviceEvents)))
 	mux.Handle("POST /api/v1/devices/{id}/resync", a.admin(http.HandlerFunc(a.handleResyncDevice)))
 	mux.Handle("GET /api/v1/server", a.admin(http.HandlerFunc(a.handleServerInfo)))
+	mux.Handle("GET /api/v1/preferences", a.admin(http.HandlerFunc(a.handleGetPreferences)))
+	mux.Handle("PUT /api/v1/preferences", a.admin(http.HandlerFunc(a.handlePutPreferences)))
 	mux.Handle("GET /api/v1/pricing", a.admin(http.HandlerFunc(a.handlePricing)))
 	mux.Handle("POST /api/v1/pricing/reload", a.admin(http.HandlerFunc(a.handlePricingReload)))
 
