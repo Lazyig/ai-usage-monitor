@@ -279,6 +279,10 @@ func TestNoQuestionMarkPlaceholders(t *testing.T) {
 			t.Fatal(err)
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
+			// sqliteURI builds a file: URI, whose ? starts its query string.
+			if fn, ok := n.(*ast.FuncDecl); ok && fn.Name.Name == "sqliteURI" {
+				return false
+			}
 			lit, ok := n.(*ast.BasicLit)
 			if !ok || lit.Kind != token.STRING {
 				return true
