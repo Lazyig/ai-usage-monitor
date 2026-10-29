@@ -4,6 +4,7 @@ import type {
   BreakdownGroupBy,
   BreakdownResponse,
   CreateDeviceResponse,
+  DashboardPreferences,
   DeleteDeviceResponse,
   Device,
   DevicesResponse,
@@ -67,11 +68,13 @@ function toParams(params: object): Params {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   params?: Params
   body?: unknown
   /** Override the stored token, used only by the login screen to verify a token before storing it. */
   token?: string
+  /** Let the request finish after the page is closed (small bodies only). */
+  keepalive?: boolean
 }
 
 async function safeJson(res: Response): Promise<{ error?: string } | null> {
@@ -98,6 +101,7 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
       ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
     },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
+    keepalive: opts.keepalive,
   })
 
   if (res.status === 401) {
@@ -187,6 +191,14 @@ export function getEvents(
 
 export function getServerBuild(): Promise<ServerBuild> {
   return request('/api/v1/server')
+}
+
+export function getPreferences(): Promise<DashboardPreferences> {
+  return request('/api/v1/preferences')
+}
+
+export function putPreferences(prefs: DashboardPreferences, opts: { keepalive?: boolean; token?: string } = {}): Promise<DashboardPreferences> {
+  return request('/api/v1/preferences', { method: 'PUT', body: prefs, keepalive: opts.keepalive, token: opts.token })
 }
 
 export function getDevices(): Promise<DevicesResponse> {

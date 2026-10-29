@@ -15,12 +15,14 @@ import (
 
 const copyDBUsage = `usage: ai-usage-server copy-db [-from DSN | -from-env VAR] [-to DSN | -to-env VAR] [-allow-empty]
 
-Copies every device and event from one database to another, for example from
-the SQLite file to PostgreSQL. Device tokens are copied as their hashes, so
-enrolled agents keep working against the new database.
+Copies every device, event and dashboard setting from one database to
+another, for example from the SQLite file to PostgreSQL. Device tokens are
+copied as their hashes, so enrolled agents keep working against the new
+database.
 
-The target is created (and migrated) if needed and must hold no data. The
-source is only read, never migrated; it must be at this version's schema
+The target is created (and migrated) if needed and must hold no devices or
+events; its dashboard settings are replaced by the source's. The source is
+only read, never migrated; it must be at this version's schema
 (start this version of the server on it once first). Stop the server while
 copying: events it receives meanwhile would not be copied.
 

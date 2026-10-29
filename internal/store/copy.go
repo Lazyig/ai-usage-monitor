@@ -176,7 +176,7 @@ func Copy(ctx context.Context, src, dst *Store, allowEmpty bool) (CopyReport, er
 		if dst.dialect == postgres {
 			// Nothing else may write while the copy runs (a server already
 			// pointed at the target, say): its rows would break the count check.
-			if _, err := dtx.ExecContext(ctx, `LOCK TABLE devices, usage_events IN EXCLUSIVE MODE`); err != nil {
+			if _, err := dtx.ExecContext(ctx, `LOCK TABLE devices, usage_events, preferences IN EXCLUSIVE MODE`); err != nil {
 				return fmt.Errorf("store: lock target: %w", err)
 			}
 		}
@@ -217,6 +217,9 @@ func Copy(ctx context.Context, src, dst *Store, allowEmpty bool) (CopyReport, er
 			return err
 		}
 		rep.Devices = int64(len(devs))
+		if err := copyPreferences(ctx, stx, w, clean); err != nil {
+			return err
+		}
 
 		rows, err = stx.QueryContext(ctx, `SELECT `+eventCols+` FROM usage_events ORDER BY event_id`)
 		if err != nil {
@@ -280,6 +283,36 @@ func (s *Store) Empty(ctx context.Context) (bool, error) {
 }
 
 const countBoth = `SELECT (SELECT COUNT(*) FROM devices), (SELECT COUNT(*) FROM usage_events)`
+
+const preferenceCols = `name, value, updated_at`
+
+// copyPreferences copies the dashboard preferences (a few small rows). The
+// source's replace any the target has: a server briefly started on the new
+// database saves its selections, and that is no reason to refuse the copy.
+func copyPreferences(ctx context.Context, stx *sql.Tx, w *stmtTx, clean func(string) string) error {
+	if _, err := w.tx.ExecContext(ctx, `DELETE FROM preferences`); err != nil {
+		return fmt.Errorf("store: clear target preferences: %w", err)
+	}
+	rows, err := stx.QueryContext(ctx, `SELECT `+preferenceCols+` FROM preferences ORDER BY name`)
+	if err != nil {
+		return fmt.Errorf("store: read preferences: %w", err)
+	}
+	var out [][]any
+	for rows.Next() {
+		var name, value string
+		var at int64
+		if err := rows.Scan(&name, &value, &at); err != nil {
+			rows.Close()
+			return err
+		}
+		out = append(out, []any{clean(name), clean(value), at})
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	return insertRows(ctx, w, "preferences", preferenceCols, out, 1)
+}
 
 // checkSourceIDs refuses a source whose ids hold NUL or invalid UTF-8: they
 // cannot be stored in PostgreSQL, and cleaning them could merge two ids.
