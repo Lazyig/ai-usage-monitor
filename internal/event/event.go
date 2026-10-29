@@ -88,6 +88,15 @@ func (e UsageEvent) TotalInput() int64 {
 	return e.Input + e.CacheRead + e.CacheWrite5m + e.CacheWrite1h + e.CacheWrite
 }
 
+// Length caps for an event's strings. Real values are far shorter (a model id,
+// a UUID, a working directory); the caps keep one device token from filling
+// the server's disk or every dashboard response with megabyte-long fields.
+const (
+	MaxIDLen      = 128  // event_id, device_id, session_id
+	MaxNameLen    = 256  // source, model, confidence, tool_version
+	MaxProjectLen = 4096 // a path or workspace URI
+)
+
 // MaxTokens bounds every token count of one event. No single model call comes
 // near it (context windows are a few million tokens); it keeps a corrupt or
 // hostile value from overflowing the server's 64-bit sums.
@@ -106,6 +115,12 @@ func (e UsageEvent) Valid() bool {
 		return false
 	case e.Input > MaxTokens || e.Output > MaxTokens || e.CacheRead > MaxTokens || e.CacheWrite > MaxTokens ||
 		e.CacheWrite5m > MaxTokens || e.CacheWrite1h > MaxTokens:
+		return false
+	case len(e.EventID) > MaxIDLen || len(e.DeviceID) > MaxIDLen || len(e.SessionID) > MaxIDLen:
+		return false
+	case len(e.Source) > MaxNameLen || len(e.Model) > MaxNameLen || len(e.Confidence) > MaxNameLen || len(e.ToolVersion) > MaxNameLen:
+		return false
+	case len(e.Project) > MaxProjectLen:
 		return false
 	}
 	return strings.TrimSpace(string(e.Source)) != ""

@@ -280,3 +280,34 @@ func TestUnixInstallerRestartsAServiceItStopped(t *testing.T) {
 		})
 	}
 }
+
+// A plain http server on another machine is refused before anything is
+// downloaded; this machine and --allow-http are not.
+func TestUnixInstallerRefusesPlainHTTP(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix installer; PowerShell has a separate test")
+	}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "install.sh")
+	if err := os.WriteFile(script, []byte(unixInstaller), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run := func(args ...string) (string, error) {
+		cmd := exec.Command("sh", append([]string{script, "--prefix", filepath.Join(dir, "bin"), "--no-service"}, args...)...)
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	if out, err := run("--server", "http://192.0.2.10:8080"); err == nil || !strings.Contains(out, "refusing plain") {
+		t.Fatalf("plain http was accepted: %v %s", err, out)
+	}
+	for _, args := range [][]string{
+		{"--server", "http://192.0.2.10:9", "--allow-http"},
+		{"--server", "http://127.0.0.1:9"},
+		{"--server", "http://localhost:9"},
+	} {
+		// Nothing listens on port 9: getting past the check means a download error.
+		if out, _ := run(args...); strings.Contains(out, "refusing plain") || strings.Contains(out, "must start with") {
+			t.Errorf("%v was refused: %s", args, out)
+		}
+	}
+}

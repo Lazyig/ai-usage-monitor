@@ -195,6 +195,10 @@ ai-usage-agent run --once             # 작업이 끝난 뒤 한 번 수집해 �
 - **기기 토큰**은 서버에 해시만 저장되므로 잃어버리면 재발급해야 합니다. 에이전트 쪽에는 `config.json` 에 평문으로 저장됩니다(Unix 에서 권한 0600). 재발급하면 이전 토큰은 즉시 무효가 되므로 해당 기기에 다시 설치하세요.
 - 인증 없이 열려 있는 경로: `/downloads/`(에이전트 바이너리·설치 스크립트), `/health`, `/api/v1/health`, `/health/live`, `/health/ready`. `/health` 는 서버 버전, 저장된 이벤트 수와 기기 수를 돌려줍니다. 필요하면 리버스 프록시에서 접근 범위를 제한하세요.
 - 외부에 노출할 때는 반드시 HTTPS 리버스 프록시 뒤에 두세요. 서버 자체는 TLS 를 처리하지 않습니다.
+- **평문 http 서버 차단**: 설치 스크립트와 에이전트는 `http://` 서버를 기본으로 거부합니다. 바이너리와 기기 토큰이 암호화되지 않은 채 오가기 때문입니다. 같은 기기(`localhost`, `127.0.0.1`, `[::1]`)는 예외입니다. 그 밖의 http 서버를 꼭 써야 하면 `--allow-http`(Windows `-AllowHttp`)로 설치합니다. 대시보드를 http 로 열면 표시되는 명령에 이 옵션이 붙고 경고가 함께 나옵니다. 이 제한이 생기기 전에 http 서버로 설치된 기기는 업데이트 후에도 계속 동작하며, `status` 가 경고를 보여줍니다. 단, 그런 기기를 설치 스크립트로 업데이트할 때도 `--update --allow-http` 처럼 옵션을 붙여야 합니다.
+- **공개 주소**: 외부에 공개하는 서버는 `PUBLIC_URL`(예: `https://usage.example.com`)을 설정하세요. 다운로드 페이지와 서버가 생성하는 `install.sh` 가 요청 헤더(Host, X-Forwarded-*) 대신 이 주소를 씁니다. 로컬에서만 쓸 때는 비워 둬도 됩니다.
+- **Windows**: 서비스가 LocalSystem 으로 돌기 때문에 바이너리는 `%ProgramFiles%`, 상태(토큰 포함)는 SYSTEM·Administrators 만 접근할 수 있는 `%ProgramData%\ai-usage-agent` 에 둡니다. 예전 위치(`%LOCALAPPDATA%`·`%APPDATA%`)의 설치는 설치 스크립트를 다시 실행하면 옮겨집니다.
+- 대시보드는 CSP 와 `frame-ancestors 'none'` 로 다른 사이트에 끼워 넣거나 외부 스크립트를 실행할 수 없게 합니다.
 
 ## 에이전트 명령
 
@@ -208,7 +212,7 @@ ai-usage-agent install    config.json 작성 + OS 서비스 등록
 ai-usage-agent uninstall | start | stop | restart
 ```
 
-상태(설정·커서·전송 큐·로그)는 Linux `~/.config/ai-usage-agent`, macOS `~/Library/Application Support/ai-usage-agent`, Windows `%APPDATA%\ai-usage-agent` 에 저장됩니다.
+상태(설정·커서·전송 큐·로그)는 Linux `~/.config/ai-usage-agent`, macOS `~/Library/Application Support/ai-usage-agent`, Windows `%ProgramData%\ai-usage-agent`(SYSTEM·Administrators 만 접근) 에 저장됩니다. Windows 바이너리는 `%ProgramFiles%\ai-usage-agent` 에 설치됩니다. 서비스가 LocalSystem 으로 돌기 때문에 사용자가 쓸 수 있는 위치를 쓰지 않습니다. 예전 버전(`%LOCALAPPDATA%`·`%APPDATA%`)으로 설치된 기기는 설치 스크립트를 다시 실행하면(`-Update` 포함) 새 위치로 옮겨집니다. Windows 에서 `status`·`roots` 같은 명령은 관리자 권한 PowerShell 에서 실행하세요.
 
 ## 기기 관리와 제거
 

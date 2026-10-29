@@ -20,14 +20,16 @@ import (
 func cmdService(cmd string, args []string) error {
 	fs := newFlagSet(cmd)
 	var (
-		server   = fs.String("server", "", "server base URL, e.g. https://usage.example.com")
-		token    = fs.String("token", "", "device token issued by the server")
-		name     = fs.String("name", "", "device name (default: this machine's hostname)")
-		interval = fs.Int("interval", 0, "seconds between collection passes (default 60)")
-		stateDir = fs.String("state-dir", "", "state directory (default: $AI_USAGE_STATE_DIR or the per-OS config dir)")
-		claude   stringList
+		server    = fs.String("server", "", "server base URL, e.g. https://usage.example.com")
+		token     = fs.String("token", "", "device token issued by the server")
+		name      = fs.String("name", "", "device name (default: this machine's hostname)")
+		interval  = fs.Int("interval", 0, "seconds between collection passes (default 60)")
+		stateDir  = fs.String("state-dir", "", "state directory (default: $AI_USAGE_STATE_DIR or the per-OS config dir)")
+		claude    stringList
+		allowHTTP bool
 	)
 	if cmd == "install" {
+		fs.BoolVar(&allowHTTP, "allow-http", false, "permit (and remember) a plain http:// server that is not on this machine: the token then crosses the network unencrypted")
 		fs.Var(&claude, "claude-dir", "extra Claude Code config directory to read, repeatable (default: $"+agentcfg.EnvClaudeConfigDir+", comma separated)")
 	}
 	fs.Usage = func() {
@@ -49,7 +51,7 @@ func cmdService(cmd string, args []string) error {
 	dir := resolveStateDir(*stateDir)
 
 	if cmd == "install" {
-		return install(dir, *server, *token, *name, *interval, claude)
+		return install(dir, *server, *token, *name, *interval, claude, allowHTTP)
 	}
 
 	svc, err := newService(dir)
@@ -73,7 +75,14 @@ func cmdService(cmd string, args []string) error {
 	return nil
 }
 
-func install(dir, server, token, name string, interval int, claudeDirs []string) error {
+func install(dir, server, token, name string, interval int, claudeDirs []string, allowHTTP bool) error {
+	// Windows agents before 0.3 kept their state in the installing user's
+	// %APPDATA%, which the LocalSystem service must not trust: carry it over.
+	if from, err := agentcfg.MigrateLegacyState(dir); err != nil {
+		return err
+	} else if from != "" {
+		fmt.Printf("moved the agent state from %s to %s\n", from, dir)
+	}
 	cfg, _, err := agentcfg.Load(dir)
 	if err != nil {
 		return err
@@ -95,6 +104,15 @@ func install(dir, server, token, name string, interval int, claudeDirs []string)
 	}
 	if strings.TrimSpace(cfg.DeviceToken) == "" {
 		return usagef("--token is required (or set %s); get one with `POST /api/v1/devices` on the server", agentcfg.EnvToken)
+	}
+	if allowHTTP {
+		cfg.AllowHTTP = true
+	}
+	if err := agentcfg.CheckServerURL(cfg.ServerURL, cfg.AllowHTTP); err != nil {
+		return &usageError{err: err}
+	}
+	if cfg.AllowHTTP && agentcfg.CheckServerURL(cfg.ServerURL, false) != nil {
+		fmt.Fprintf(os.Stderr, "warning: %s is plain http: the device token crosses the network unencrypted\n", cfg.ServerURL)
 	}
 	if err := addClaudeDirs(&cfg, claudeDirs); err != nil {
 		return err

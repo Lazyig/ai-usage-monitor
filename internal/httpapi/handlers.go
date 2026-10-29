@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -30,6 +31,94 @@ type ingestResponse struct {
 	Resync     bool   `json:"resync,omitempty"` // an operator purged this device: rescan from zero
 }
 
+var (
+	errTooManyEvents = errors.New("too many events")
+	errBodyTooLarge  = errors.New("decompressed body too large")
+)
+
+// decodeIngest reads an ingest body one event at a time and stops at the
+// first event past MaxBatchEvents, so an oversized batch is refused before it
+// is held in memory as a whole.
+func decodeIngest(r io.Reader) (ingestRequest, error) {
+	var req ingestRequest
+	dec := json.NewDecoder(r)
+	if err := expectDelim(dec, '{'); err != nil {
+		return req, err
+	}
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return req, err
+		}
+		switch key, _ := tok.(string); key {
+		case "device":
+			if err := dec.Decode(&req.Device); err != nil {
+				return req, err
+			}
+		case "events":
+			tok, err := dec.Token()
+			if err != nil {
+				return req, err
+			}
+			if tok == nil {
+				continue // "events": null, an empty batch
+			}
+			if d, ok := tok.(json.Delim); !ok || d != '[' {
+				return req, fmt.Errorf("events: want an array, got %v", tok)
+			}
+			for dec.More() {
+				if len(req.Events) == MaxBatchEvents {
+					return req, errTooManyEvents
+				}
+				var e event.UsageEvent
+				if err := dec.Decode(&e); err != nil {
+					return req, err
+				}
+				req.Events = append(req.Events, e)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return req, err
+			}
+		default:
+			var skip json.RawMessage
+			if err := dec.Decode(&skip); err != nil {
+				return req, err
+			}
+		}
+	}
+	return req, expectDelim(dec, '}')
+}
+
+func expectDelim(dec *json.Decoder, want json.Delim) error {
+	tok, err := dec.Token()
+	if err != nil {
+		return err
+	}
+	if d, ok := tok.(json.Delim); !ok || d != want {
+		return fmt.Errorf("want %q, got %v", want, tok)
+	}
+	return nil
+}
+
+// capReader fails once more than left bytes are read, unlike io.LimitReader,
+// which would end the stream quietly and turn a bomb into "invalid JSON".
+type capReader struct {
+	r    io.Reader
+	left int64
+}
+
+func (c *capReader) Read(p []byte) (int, error) {
+	if c.left <= 0 {
+		return 0, errBodyTooLarge
+	}
+	if int64(len(p)) > c.left {
+		p = p[:c.left]
+	}
+	n, err := c.r.Read(p)
+	c.left -= int64(n)
+	return n, err
+}
+
 func (a *api) handleIngest(w http.ResponseWriter, r *http.Request) {
 	dev, _ := deviceFrom(r.Context())
 
@@ -43,28 +132,29 @@ func (a *api) handleIngest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer zr.Close()
-		body = io.LimitReader(zr, MaxBodyBytes*8)
+		// A full batch (5,000 events) is about 2 MiB of JSON; twice the raw
+		// cap leaves room and stops a gzip bomb long before it costs memory.
+		body = &capReader{r: zr, left: MaxBodyBytes * 2}
 	}
 
-	var req ingestRequest
-	dec := json.NewDecoder(body)
-	if err := dec.Decode(&req); err != nil {
+	req, err := decodeIngest(body)
+	if err != nil {
 		var maxErr *http.MaxBytesError
-		if errors.As(err, &maxErr) {
+		switch {
+		case errors.As(err, &maxErr), errors.Is(err, errBodyTooLarge):
 			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
-			return
+		case errors.Is(err, errTooManyEvents):
+			writeError(w, http.StatusBadRequest, "batch too large: at most 5000 events")
+		default:
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
 		}
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 	// The token is the identity. Whatever id the agent put in device.id is
 	// informational: everything is stored under the token's device, and the
 	// response tells the agent which id to use from now on.
 	req.Device.ID = dev.ID
-	if len(req.Events) > MaxBatchEvents {
-		writeError(w, http.StatusBadRequest, "batch too large: at most 5000 events")
-		return
-	}
+	req.Device = req.Device.Clipped()
 
 	// Drop anything a collector should never have produced; the count comes
 	// back so the agent can notice a broken decoder.
@@ -482,7 +572,7 @@ func (a *api) readiness(r *http.Request, withCounts bool) readiness {
 	} else {
 		note("database", "")
 		if withCounts {
-			if c, err := a.store.Counts(r.Context()); err == nil {
+			if c, err := a.cachedCounts(r.Context()); err == nil {
 				rd.counts = c
 			}
 		}
@@ -521,6 +611,29 @@ func (a *api) handleReady(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleHealth is the human-facing summary: readiness plus row counts.
+// countsTTL is how long /health reuses its row counts. /health needs no
+// credentials, and COUNT(*) over millions of events would let anyone keep the
+// small read pool busy.
+const countsTTL = 30 * time.Second
+
+func (a *api) cachedCounts(ctx context.Context) (store.Counts, error) {
+	a.mu.Lock()
+	if !a.countsAt.IsZero() && time.Since(a.countsAt) < countsTTL {
+		c := a.counts
+		a.mu.Unlock()
+		return c, nil
+	}
+	a.mu.Unlock()
+	c, err := a.store.Counts(ctx)
+	if err != nil {
+		return c, err
+	}
+	a.mu.Lock()
+	a.counts, a.countsAt = c, time.Now()
+	a.mu.Unlock()
+	return c, nil
+}
+
 func (a *api) handleHealth(w http.ResponseWriter, r *http.Request) {
 	rd := a.readiness(r, true)
 	status := http.StatusOK

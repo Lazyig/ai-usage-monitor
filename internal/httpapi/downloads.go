@@ -60,7 +60,7 @@ func (a *api) handleDownloadIndex(w http.ResponseWriter, r *http.Request) {
 		manifest
 		Server    string
 		InstallSh string
-	}{manifest: m, Server: baseURL(r), InstallSh: baseURL(r) + "/downloads/install.sh"}
+	}{manifest: m, Server: a.baseURL(r), InstallSh: a.baseURL(r) + "/downloads/install.sh"}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := downloadsHTML.Execute(w, data); err != nil {
 		a.log.Error("render downloads page", "err", err)
@@ -115,6 +115,9 @@ func (a *api) handleDownloadFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
+	if strings.HasSuffix(name, ".sh") || strings.HasSuffix(name, ".ps1") {
+		w.Header().Set("Cache-Control", "no-cache") // always the current installer
+	}
 	switch {
 	case name == "install.sh":
 		w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
@@ -131,13 +134,25 @@ func (a *api) handleDownloadFile(w http.ResponseWriter, r *http.Request) {
 // directory ships no install.sh of its own.
 func (a *api) serveGeneratedInstall(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
-	if _, err := io.WriteString(w, scripts.UnixInstaller(baseURL(r))); err != nil {
+	// The default server URL inside depends on the request when no PublicURL
+	// is set: a shared cache must not hand one client's version to another.
+	w.Header().Set("Cache-Control", "no-store")
+	if _, err := io.WriteString(w, scripts.UnixInstaller(a.baseURL(r))); err != nil {
 		a.log.Error("write install.sh", "err", err)
 	}
 }
 
-// baseURL reconstructs the externally visible server URL for the installer.
-func baseURL(r *http.Request) string {
+// baseURL is the externally visible server URL for the installer: PublicURL
+// when configured, else reconstructed from the request (fine for localhost and
+// a trusted proxy, but the headers are client-controlled).
+func (a *api) baseURL(r *http.Request) string {
+	if a.opt.PublicURL != "" {
+		return a.opt.PublicURL
+	}
+	return requestBaseURL(r)
+}
+
+func requestBaseURL(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"

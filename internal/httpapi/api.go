@@ -8,9 +8,11 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,9 +41,13 @@ type Options struct {
 	AdminToken   string // empty => admin routes answer 503
 	Version      string // reported by /health
 	DownloadsDir string // directory holding agent binaries + manifest.json
-	SPA          fs.FS  // built SPA (web.Dist())
-	SPABuilt     bool   // false => "/" serves the "not built" notice
-	Logger       *slog.Logger
+	// PublicURL, when set, is the server's external base URL (https://usage.example.com).
+	// The downloads page and the generated install.sh use it instead of the
+	// request's Host and X-Forwarded-* headers, which any client can set.
+	PublicURL string
+	SPA       fs.FS // built SPA (web.Dist())
+	SPABuilt  bool  // false => "/" serves the "not built" notice
+	Logger    *slog.Logger
 	// Draining, when set by the process on SIGTERM, makes readiness fail so the
 	// load balancer stops sending new traffic before the listener closes.
 	Draining *atomic.Bool
@@ -61,6 +67,9 @@ type api struct {
 	// Every ingest forgets its device, so the check is per device.
 	devGen   uint64
 	forgotAt map[string]uint64
+
+	counts   store.Counts // /health's cached row counts, see cachedCounts
+	countsAt time.Time
 }
 
 type cachedDevice struct {
@@ -112,7 +121,29 @@ func New(st *store.Store, pr *Pricing, opt Options) http.Handler {
 	// Everything else is the SPA.
 	mux.HandleFunc("/", a.handleSPA)
 
-	return a.logging(noStoreAPI(limitBody(mux)))
+	return a.logging(securityHeaders(noStoreAPI(limitBody(mux))))
+}
+
+// contentSecurityPolicy fits the built SPA: its scripts, styles, fonts and
+// images are all same-origin files; recharts and Radix set inline style
+// attributes; nothing is framed, posted cross-site or loaded from elsewhere.
+const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; " +
+	"base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+
+// securityHeaders goes on every response. The admin token lives in the
+// dashboard's localStorage, so the dashboard must never run in a frame
+// (clickjacking its delete and rotate buttons) or load script from anywhere
+// else.
+func securityHeaders(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hd := w.Header()
+		hd.Set("Content-Security-Policy", contentSecurityPolicy)
+		hd.Set("X-Frame-Options", "DENY")
+		hd.Set("X-Content-Type-Options", "nosniff")
+		hd.Set("Referrer-Policy", "no-referrer")
+		h.ServeHTTP(w, r)
+	})
 }
 
 // --- middleware ------------------------------------------------------------
@@ -312,4 +343,19 @@ func intParam(r *http.Request, name string, def int) int {
 		return def
 	}
 	return n
+}
+
+// ParsePublicURL checks a configured public base URL: http or https with a
+// host and nothing after the path, returned without a trailing slash. An empty
+// value is allowed (the request decides).
+func ParsePublicURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		return "", fmt.Errorf("public URL %q: want http(s)://host[:port][/path]", raw)
+	}
+	return strings.TrimRight(u.String(), "/"), nil
 }

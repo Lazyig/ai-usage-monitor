@@ -139,7 +139,7 @@ func (s Scanner[T, PT]) Scan(ctx context.Context, prev Cursor[T]) (Cursor[T], er
 		if errors.Is(err, os.ErrNotExist) {
 			return Cursor[T]{}, ErrNoRoot
 		}
-		return Cursor[T]{}, fmt.Errorf("%s: walk %s: %w", s.Name, s.Root, err)
+		return Cursor[T]{}, fmt.Errorf("%s: walk %q: %w", s.Name, s.Root, err)
 	}
 
 	next := Cursor[T]{Files: make(map[string]T, len(files))}
@@ -154,7 +154,7 @@ func (s Scanner[T, PT]) Scan(ctx context.Context, prev Cursor[T]) (Cursor[T], er
 		key := cursorKey(root, path)
 		fi, err := os.Stat(path)
 		if err != nil {
-			fileErr = append(fileErr, fmt.Errorf("%s: stat %s: %w", s.Name, path, err))
+			fileErr = append(fileErr, fmt.Errorf("%s: stat %q: %w", s.Name, path, err))
 			continue
 		}
 		ino, hasIno := fileIdentity(fi)
@@ -186,7 +186,7 @@ func (s Scanner[T, PT]) Scan(ctx context.Context, prev Cursor[T]) (Cursor[T], er
 			return s.Line(p, offset, line)
 		})
 		if err != nil {
-			fileErr = append(fileErr, fmt.Errorf("%s: read %s: %w", s.Name, path, err))
+			fileErr = append(fileErr, fmt.Errorf("%s: read %q: %w", s.Name, path, err))
 			if compressed {
 				// A compressed file cannot be resumed mid-stream: forget it so
 				// the next scan reads it again from the start (the server drops

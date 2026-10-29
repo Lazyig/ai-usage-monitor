@@ -48,12 +48,15 @@ func (s *Store) InsertEvents(ctx context.Context, evs []event.UsageEvent) (accep
 		UPDATE usage_events SET
 			ts = ?, input = ?, output = ?, cache_read = ?, cache_write_5m = ?, cache_write_1h = ?, cache_write = ?,
 			reasoning = ?, confidence = ?, tool_version = ?
-		WHERE event_id = ? AND output < ?`)
+		WHERE event_id = ? AND device_id = ? AND output < ?`)
 	if err != nil {
 		return 0, 0, 0, err
 	}
 	defer upd.Close()
-	fill, err := tx.PrepareContext(ctx, `UPDATE usage_events SET model = ? WHERE event_id = ? AND model = ?`)
+	// Both refreshes are limited to the event's own device: ids are global, so
+	// without it one device token could rewrite (or inflate) another
+	// device's stored calls.
+	fill, err := tx.PrepareContext(ctx, `UPDATE usage_events SET model = ? WHERE event_id = ? AND device_id = ? AND model = ?`)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -79,7 +82,7 @@ func (s *Store) InsertEvents(ctx context.Context, evs []event.UsageEvent) (accep
 		res, err = upd.ExecContext(ctx,
 			toMillis(e.Timestamp), e.Input, e.Output, e.CacheRead, e.CacheWrite5m, e.CacheWrite1h, e.CacheWrite,
 			e.Reasoning, string(e.Confidence), e.ToolVersion,
-			e.EventID, e.Output)
+			e.EventID, e.DeviceID, e.Output)
 		if err != nil {
 			return 0, 0, 0, fmt.Errorf("store: refresh event %s: %w", e.EventID, err)
 		}
@@ -87,7 +90,7 @@ func (s *Store) InsertEvents(ctx context.Context, evs []event.UsageEvent) (accep
 			return 0, 0, 0, err
 		}
 		if e.Model != event.UnknownModel {
-			res, err = fill.ExecContext(ctx, e.Model, e.EventID, event.UnknownModel)
+			res, err = fill.ExecContext(ctx, e.Model, e.EventID, e.DeviceID, event.UnknownModel)
 			if err != nil {
 				return 0, 0, 0, fmt.Errorf("store: fill model of %s: %w", e.EventID, err)
 			}

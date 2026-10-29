@@ -491,3 +491,14 @@ func TestRunDoesNotPersistOverrides(t *testing.T) {
 		t.Errorf("device id %q / id scheme %d were not persisted", got.DeviceID, got.IDScheme)
 	}
 }
+
+// run refuses a plain http server on another machine unless allowed.
+func TestRunRefusesPlainHTTP(t *testing.T) {
+	dir := setupState(t)
+	if _, code := runCLI(t, "run", "--once", "--server", "http://192.0.2.10:9", "--token", "tok"); code != 2 {
+		t.Errorf("plain http: exit %d, want 2", code)
+	}
+	if _, err := loadRunConfig(dir, runOverrides{server: "http://192.0.2.10:9", allowHTTP: true}); err != nil {
+		t.Errorf("--allow-http did not permit it: %v", err)
+	}
+}

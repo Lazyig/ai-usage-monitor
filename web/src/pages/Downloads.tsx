@@ -9,7 +9,7 @@ import { Button } from '../components/ui/button'
 import { Tooltip } from '../components/ui/tooltip'
 import { describeError } from '../lib/errors'
 import { formatBytes, formatDateTime } from '../lib/format'
-import { installCommands, uninstallCommands, updateCommands } from '../lib/installCommands'
+import { installCommands, isInsecureOrigin, uninstallCommands, updateCommands } from '../lib/installCommands'
 import { useFilters } from '../state/FiltersContext'
 
 const TOKEN_PLACEHOLDER = '<기기 관리에서 발급받은 토큰>'
@@ -50,6 +50,14 @@ export function Downloads() {
       <div className="mt-2 mb-5 flex flex-wrap items-center justify-between gap-3 [&>h1]:m-0">
         <h1>다운로드</h1>
       </div>
+
+      {isInsecureOrigin(typeof window !== 'undefined' ? window.location.origin : '') && (
+        <p className="mx-0 mt-0 mb-4 rounded-md border border-warning-stroke bg-warning-bg px-3 py-2 text-200 leading-200 [&_strong]:text-warning-fg" role="note">
+          <strong>HTTP 로 접속 중</strong> — 에이전트 바이너리와 기기 토큰이 암호화되지 않고 전송되어, 같은 네트워크의 누군가가 가로채거나 바꿔칠 수 있습니다.
+          설치 스크립트는 이런 서버를 기본으로 거부하므로 아래 명령에는 허용 옵션(<code>--allow-http</code> / <code>-AllowHttp</code>)이 붙어
+          있습니다. 가능하면 HTTPS 리버스 프록시 뒤에서 사용하세요.
+        </p>
+      )}
 
       {state.status === 'not-built' ? (
         <div className="flex items-center justify-center rounded-lg border border-dashed border-stroke2 px-4 py-8 text-center text-fg3 [&_p]:m-0 [&_p]:text-inherit">
@@ -248,7 +256,7 @@ function ClaudeDirsGuideCard() {
           </p>
           <CommandBox command={`${update.unix} --claude-dir ~/work/claude-cfg`} />
           <h3>Windows (관리자 PowerShell)</h3>
-          <CommandBox command={'& "$env:LOCALAPPDATA\\ai-usage-agent\\ai-usage-agent.exe" roots add D:\\claude\\work'} />
+          <CommandBox command={'& "$env:ProgramFiles\\ai-usage-agent\\ai-usage-agent.exe" roots add D:\\claude\\work'} />
           <p>
             <code>roots remove</code> 로 빼고, <code>scan --root</code> 로 저장하지 않고 미리 읽어 볼 수 있습니다.
           </p>
@@ -285,8 +293,8 @@ function UninstallGuideCard() {
           <CommandBox command={cmds.windows} />
           <ol className="mx-0 mt-1 mb-0 list-decimal pl-[18px] text-200 text-fg2 [&_li]:mb-[3px]">
             <li>ai-usage-agent 서비스 중지 및 삭제</li>
-            <li>%LOCALAPPDATA%\ai-usage-agent 삭제</li>
-            <li>%APPDATA%\ai-usage-agent (설정·커서·큐) 삭제</li>
+            <li>%ProgramFiles%\ai-usage-agent 삭제</li>
+            <li>%ProgramData%\ai-usage-agent (설정·커서·큐) 삭제 — 이전 버전의 %LOCALAPPDATA%·%APPDATA% 위치도 함께</li>
           </ol>
           <p className="mx-0 mt-1.5 mb-2 rounded-md border border-warning-stroke bg-warning-bg px-3 py-2 text-200 leading-200 [&_strong]:text-warning-fg" role="note">
             <strong>관리자 권한 필수</strong> — 서비스 삭제에 필요합니다. 로컬 상태를 남기려면 명령 끝에 <code> -KeepState</code> 를 붙이세요.

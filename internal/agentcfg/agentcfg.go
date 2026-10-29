@@ -36,13 +36,18 @@ const DefaultIntervalSeconds = 60
 //	1  Claude Code reads extra config directories: an empty claude_code
 //	   extra_roots, which was the only value older agents ever wrote, gets the
 //	   defaults (DefaultExtraRoots)
-const ConfigVersion = 1
+//	2  plain http:// servers need allow_insecure_http (loopback excepted). A
+//	   config already pointing at one keeps working: the flag is set for it
+const ConfigVersion = 2
 
 // Environment overrides. Command line flags take precedence over these.
 const (
 	EnvServer   = "AI_USAGE_SERVER"
 	EnvToken    = "AI_USAGE_TOKEN"
 	EnvStateDir = "AI_USAGE_STATE_DIR"
+	// EnvAllowHTTP=1 permits a plain http:// server for this process only
+	// (an ephemeral run against a test server); install --allow-http stores it.
+	EnvAllowHTTP = "AI_USAGE_ALLOW_HTTP"
 )
 
 // Sources lists every known collector source in display order. A source that
@@ -76,12 +81,16 @@ func (sc SourceConfig) Roots() []string {
 
 // Config is config.json.
 type Config struct {
-	ServerURL       string                         `json:"server_url"`
-	DeviceToken     string                         `json:"device_token"`
-	DeviceID        string                         `json:"device_id"`
-	DeviceName      string                         `json:"device_name"`
-	IntervalSeconds int                            `json:"interval_seconds"`
-	Sources         map[event.Source]*SourceConfig `json:"sources"`
+	ServerURL       string `json:"server_url"`
+	DeviceToken     string `json:"device_token"`
+	DeviceID        string `json:"device_id"`
+	DeviceName      string `json:"device_name"`
+	IntervalSeconds int    `json:"interval_seconds"`
+	// AllowHTTP permits a plain http:// server that is not on this machine:
+	// the device token and the installed binary would cross the network in
+	// the clear. See CheckServerURL.
+	AllowHTTP bool                           `json:"allow_insecure_http,omitempty"`
+	Sources   map[event.Source]*SourceConfig `json:"sources"`
 
 	// Version is the ConfigVersion this file was migrated to.
 	Version int `json:"config_version"`
@@ -200,19 +209,21 @@ func claudeExtraRoots(home, xdgConfig string) []string {
 //
 //	linux    $XDG_CONFIG_HOME/ai-usage-agent, else ~/.config/ai-usage-agent
 //	darwin   ~/Library/Application Support/ai-usage-agent
-//	windows  %APPDATA%\ai-usage-agent
+//	windows  %ProgramData%\ai-usage-agent (SYSTEM and Administrators only)
 //
-// AI_USAGE_STATE_DIR overrides all of it.
+// AI_USAGE_STATE_DIR overrides all of it. On Windows the service runs as
+// LocalSystem, so its state must not live in a folder the user can write:
+// agents before that used %APPDATA% (see LegacyWindowsStateDir).
 func StateDir() string {
 	if d := strings.TrimSpace(os.Getenv(EnvStateDir)); d != "" {
 		return d
 	}
 	switch runtime.GOOS {
 	case "windows":
-		if ad := os.Getenv("APPDATA"); ad != "" {
-			return filepath.Join(ad, AppName)
+		if pd := os.Getenv("ProgramData"); pd != "" {
+			return filepath.Join(pd, AppName)
 		}
-		return filepath.Join(homeDir(), "AppData", "Roaming", AppName)
+		return filepath.Join(`C:\ProgramData`, AppName)
 	case "darwin":
 		return filepath.Join(homeDir(), "Library", "Application Support", AppName)
 	default:
@@ -370,6 +381,11 @@ func (c *Config) fillDefaults() {
 			}
 		}
 	}
+	if c.Version < 2 && CheckServerURL(c.ServerURL, false) != nil && CheckServerURL(c.ServerURL, true) == nil {
+		// Installed before http was refused: keep delivering rather than
+		// stop on upgrade. `status` keeps pointing it out.
+		c.AllowHTTP = true
+	}
 	if c.Version < ConfigVersion {
 		c.Version = ConfigVersion
 	}
@@ -395,6 +411,10 @@ func (c *Config) applyEnv() {
 	if v := strings.TrimSpace(os.Getenv(EnvToken)); v != "" {
 		c.DeviceToken = v
 	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvAllowHTTP))) {
+	case "1", "true", "yes", "on":
+		c.AllowHTTP = true
+	}
 }
 
 // Save writes config.json atomically with 0600 permissions, creating the state
@@ -403,6 +423,9 @@ func (c *Config) applyEnv() {
 func Save(dir string, cfg Config) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("agentcfg: create %s: %w", dir, err)
+	}
+	if err := SecureStateDir(dir); err != nil {
+		return err
 	}
 	cfg.fillDefaults()
 	raw, err := json.MarshalIndent(cfg, "", "  ")

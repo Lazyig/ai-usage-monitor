@@ -51,6 +51,9 @@ func cmdStatus(args []string) error {
 
 	red := cfg.Redacted()
 	fmt.Fprintf(out, "server     %s\n", orNone(red.ServerURL))
+	if agentcfg.CheckServerURL(red.ServerURL, false) != nil {
+		fmt.Fprintln(out, "           warning: plain http to another machine, the device token is sent unencrypted; reinstall with an https:// server")
+	}
 	fmt.Fprintf(out, "token      %s\n", orNone(red.DeviceToken))
 	fmt.Fprintf(out, "device     %s  %q\n", red.DeviceID, red.DeviceName)
 	fmt.Fprintf(out, "interval   %ds\n\n", red.Interval())

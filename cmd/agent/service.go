@@ -7,11 +7,13 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 
 	"github.com/kardianos/service"
@@ -146,18 +148,76 @@ func runAsService(dir string, sel selected, ov runOverrides) error {
 // Writes to a dead stdout are ignored so they cannot break file logging.
 func setupLogFile(dir string) (closeFn func()) {
 	_ = os.MkdirAll(dir, 0o700)
-	f, err := os.OpenFile(filepath.Join(dir, "agent.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err := openLog(filepath.Join(dir, "agent.log"))
 	if err != nil {
+		log.SetOutput(oneLine{os.Stderr})
+		log.Printf("warn: not logging to a file: %v", err)
 		return func() {}
 	}
 	// Tee to stdout only when it is something other than a plain file: systemd and
 	// launchd capture it, but `nohup agent run >> agent.log` would log twice.
 	if st, err := os.Stdout.Stat(); err == nil && st.Mode().IsRegular() {
-		log.SetOutput(f)
+		log.SetOutput(oneLine{f})
 	} else {
-		log.SetOutput(io.MultiWriter(f, ignoreErrors{os.Stdout}))
+		log.SetOutput(oneLine{io.MultiWriter(f, ignoreErrors{os.Stdout})})
 	}
 	return func() { _ = f.Close() }
+}
+
+// openLog opens path for appending, refusing anything but a regular file: a
+// symlink or device planted there would make the service write wherever it
+// points, with the service's privileges.
+func openLog(path string) (*os.File, error) {
+	if fi, err := os.Lstat(path); err == nil && !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file", path)
+	}
+	return os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY|noFollow, 0o600)
+}
+
+// oneLine keeps every log entry on one line. Entries quote file paths and
+// server replies, which anyone who can name a file in a log folder controls;
+// an embedded newline would let them forge whole lines (a crontab entry, a
+// fake "ok") in a log that other tools trust. The log package writes each
+// entry in one call, ending in its own newline, which is kept.
+type oneLine struct{ w io.Writer }
+
+func (o oneLine) Write(p []byte) (int, error) {
+	body, nl := p, false
+	if n := len(body); n > 0 && body[n-1] == '\n' {
+		body, nl = body[:n-1], true
+	}
+	if !needsEscape(body) {
+		return o.w.Write(p)
+	}
+	var b strings.Builder
+	for _, r := range string(body) {
+		switch {
+		case r == '\n':
+			b.WriteString(`\n`)
+		case r == '\r':
+			b.WriteString(`\r`)
+		case r < 0x20 && r != '\t' || r == 0x7f:
+			fmt.Fprintf(&b, `\x%02x`, r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	if nl {
+		b.WriteByte('\n')
+	}
+	if _, err := io.WriteString(o.w, b.String()); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+func needsEscape(b []byte) bool {
+	for _, c := range b {
+		if c < 0x20 && c != '\t' || c == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 // ignoreErrors makes a writer that never fails (a service's stdout may be closed).
