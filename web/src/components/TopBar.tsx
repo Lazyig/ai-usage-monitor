@@ -1,15 +1,14 @@
 import { ArrowClockwise20Regular } from '@fluentui/react-icons/headless/svg/arrow-clockwise'
-import { Checkmark20Regular } from '@fluentui/react-icons/headless/svg/checkmark'
 import { GlobeClock20Regular } from '@fluentui/react-icons/headless/svg/globe-clock'
 import { Navigation20Filled } from '@fluentui/react-icons/headless/svg/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { TIMEZONE, addDays, type RangePreset } from '../lib/dateRange'
 import { useFilters } from '../state/FiltersContext'
 import { PeriodTabs } from './PeriodTabs'
 import { Badge } from './ui/badge'
 import { Button } from './ui/button'
 import { DatePicker } from './ui/date-picker'
-import { DropdownMenuItem } from './ui/dropdown-menu'
+import { DropdownMenuCheckItem, DropdownMenuItem } from './ui/dropdown-menu'
 import { Switch } from './ui/switch'
 import { Tooltip } from './ui/tooltip'
 
@@ -24,10 +23,18 @@ export function TopBar({ onOpenNav }: TopBarProps) {
   const { range, setPreset, setCustomRange, autoRefresh, toggleAutoRefresh, refresh } = useFilters()
   const [customFrom, setCustomFrom] = useState(range.from)
   const [customTo, setCustomTo] = useState(addDays(range.to, -1))
+  // A custom range can also arrive from elsewhere (the server's saved
+  // selection, another tab): the pickers show the range in use.
+  useEffect(() => {
+    if (range.preset !== 'custom') return
+    setCustomFrom(range.from)
+    setCustomTo(addDays(range.to, -1))
+  }, [range.preset, range.from, range.to])
 
   function handlePresetSelect(preset: RangePreset) {
     if (preset === 'custom') {
-      setCustomRange(customFrom, customTo)
+      // Start from the period in view; the pickers follow the range.
+      setCustomRange(range.from, addDays(range.to, -1))
       return
     }
     setPreset(preset)
@@ -61,9 +68,9 @@ export function TopBar({ onOpenNav }: TopBarProps) {
               key: 'auto-refresh',
               node: <Switch checked={autoRefresh} onCheckedChange={toggleAutoRefresh} label="자동 새로고침 (60초)" />,
               menu: (
-                <DropdownMenuItem icon={autoRefresh ? <Checkmark20Regular /> : <span />} onSelect={toggleAutoRefresh}>
+                <DropdownMenuCheckItem checked={autoRefresh} onSelect={toggleAutoRefresh}>
                   자동 새로고침 (60초)
-                </DropdownMenuItem>
+                </DropdownMenuCheckItem>
               ),
             },
             {

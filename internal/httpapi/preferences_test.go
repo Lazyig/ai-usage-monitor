@@ -47,6 +47,7 @@ func TestPreferences(t *testing.T) {
 		`{"auto_refresh":"yes"}`,
 		`{"theme":"dark"}`,
 		`not json`,
+		`{"auto_refresh":true} {"auto_refresh":false}`,
 		`{"range":{"preset":"last-7"},"pad":"` + strings.Repeat("x", maxPrefsBytes) + `"}`,
 	} {
 		if w := h.do(http.MethodPut, "/api/v1/preferences", adminToken, bad); w.Code != http.StatusBadRequest {

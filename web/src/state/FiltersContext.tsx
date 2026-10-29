@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { getPreferences, putPreferences } from '../api/client'
+import { getPreferences, getStoredToken, putPreferences } from '../api/client'
 import type { DashboardPreferences } from '../api/types'
 import { type DateRange, type RangePreset, customRange, rangeForPreset } from '../lib/dateRange'
 import { fromPreferences, toPreferences } from '../lib/preferences'
@@ -21,39 +21,81 @@ const FiltersContext = createContext<FiltersContextValue | null>(null)
 const AUTO_REFRESH_MS = 60_000
 
 /** This browser's copy of the server's document, so a reload starts with the
- * last selection instead of flashing the default until the server answers. */
+ * last selection instead of flashing the default until the server answers.
+ * `synced: false` marks a change the server has not confirmed yet: it wins
+ * over the server's copy and is sent again on the next load. */
 const CACHE_KEY = 'aum_dashboard_prefs'
 /** Selections are saved this long after the last change, so clicking through
  * presets sends one request. */
 const SAVE_DELAY_MS = 400
 
-function cached(): DashboardPreferences | null {
+interface Cached {
+  prefs: DashboardPreferences
+  synced: boolean
+}
+
+function parseCache(raw: string | null): Cached | null {
   try {
-    return JSON.parse(readStored(CACHE_KEY) ?? 'null')
+    const v = JSON.parse(raw ?? 'null')
+    return v && typeof v === 'object' && 'prefs' in v ? { prefs: v.prefs, synced: v.synced !== false } : null
   } catch {
     return null
   }
 }
 
+const docOf = (c: Cached | null) => (c ? JSON.stringify(c.prefs) : '')
+const writeCache = (doc: string, synced: boolean) => writeStored(CACHE_KEY, JSON.stringify({ prefs: JSON.parse(doc), synced }))
+
 export function FiltersProvider({ children }: { children: ReactNode }) {
-  const [initial] = useState(() => fromPreferences(cached()))
+  const [initial] = useState(() => fromPreferences(parseCache(readStored(CACHE_KEY))?.prefs))
   const [range, setRange] = useState<DateRange>(initial.range)
   const [autoRefresh, setAutoRefresh] = useState(initial.autoRefresh)
   const [refreshKey, setRefreshKey] = useState(0)
-  // Set by the user's own changes: from then on they are saved, and a late
-  // answer from the server no longer overrides them.
+  // Set by the user's own changes: a late answer from the server no longer
+  // overrides them.
   const touched = useRef(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const latest = useRef('')
 
-  // The server's copy wins over this browser's cache: it is what the operator
-  // last chose on any browser.
+  const apply = useCallback((prefs: DashboardPreferences | undefined) => {
+    const s = fromPreferences(prefs)
+    setRange((current) => (current.preset === s.range.preset && current.from === s.range.from && current.to === s.range.to ? current : s.range))
+    setAutoRefresh(s.autoRefresh)
+  }, [])
+
+  /** Sends doc to the server; the cache is marked synced once it lands. */
+  const save = useCallback((doc: string, keepalive = false) => {
+    if (!getStoredToken()) return // logged out: the unsynced cache is sent after the next login
+    putPreferences(JSON.parse(doc), { keepalive })
+      .then(() => {
+        if (docOf(parseCache(readStored(CACHE_KEY))) === doc) writeCache(doc, true)
+      })
+      .catch(() => {
+        // Stays unsynced in this browser and is sent again on the next load.
+      })
+  }, [])
+
+  /** Sends a save still waiting for its delay right away (page hidden, closed, logout). */
+  const flush = useCallback(() => {
+    if (!timer.current) return
+    clearTimeout(timer.current)
+    timer.current = null
+    save(latest.current, true)
+  }, [save])
+
   useEffect(() => {
+    const cache = parseCache(readStored(CACHE_KEY))
+    if (cache && !cache.synced) {
+      // A change the server never got (a reload within the save delay, a
+      // failed request): it is newer than the server's copy.
+      touched.current = true
+      save(docOf(cache))
+      return
+    }
     let cancelled = false
     getPreferences()
       .then((p) => {
-        if (cancelled || touched.current) return
-        const s = fromPreferences(p)
-        setRange((current) => (current.preset === s.range.preset && current.from === s.range.from && current.to === s.range.to ? current : s.range))
-        setAutoRefresh(s.autoRefresh)
+        if (!cancelled && !touched.current) apply(p)
       })
       .catch(() => {
         // Offline or an older server: keep the cached or default selection.
@@ -61,19 +103,48 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [apply, save])
+
+  // Another tab changed the selection: follow it (that tab saves it).
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === CACHE_KEY) apply(parseCache(e.newValue)?.prefs)
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [apply])
 
   const stored = JSON.stringify(toPreferences({ range, autoRefresh }))
   useEffect(() => {
-    writeStored(CACHE_KEY, stored)
-    if (!touched.current) return
-    const id = setTimeout(() => {
-      putPreferences(JSON.parse(stored)).catch(() => {
-        // Not saved on the server; this browser still remembers it.
-      })
+    // Equal to the cache: loaded from it, or another tab's change.
+    if (stored === docOf(parseCache(readStored(CACHE_KEY)))) return
+    if (!touched.current) {
+      writeCache(stored, true) // the server's copy (or the default) just applied
+      return
+    }
+    writeCache(stored, false)
+    latest.current = stored
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = setTimeout(() => {
+      timer.current = null
+      save(stored)
     }, SAVE_DELAY_MS)
-    return () => clearTimeout(id)
-  }, [stored])
+  }, [stored, save])
+
+  // A pending save goes out before the page is hidden, closed or this
+  // provider unmounts (logout, navigating away).
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') flush()
+    }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', onHide)
+      flush()
+    }
+  }, [flush])
 
   const syncRange = useCallback(() => {
     setRange((current) => {

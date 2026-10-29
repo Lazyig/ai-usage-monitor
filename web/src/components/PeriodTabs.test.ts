@@ -65,6 +65,6 @@ describe('calendar presets (Seoul days, end exclusive)', () => {
 
   it('accepts only the offered presets', () => {
     for (const p of ['day-0', 'day-6', 'week-4', 'month-12', 'last-7', 'last-30', 'last-90', 'all', 'custom']) expect(isPreset(p)).toBe(true)
-    for (const p of ['day-7', 'week-5', 'month-13', 'last-14', 'day--1', 'today', '30d', '', 'day-01x']) expect(isPreset(p)).toBe(false)
+    for (const p of ['day-7', 'week-5', 'month-13', 'last-14', 'day--1', 'today', '30d', '', 'day-01x', 'day-01', 'month-00']) expect(isPreset(p)).toBe(false)
   })
 })

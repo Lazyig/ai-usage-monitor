@@ -1,11 +1,10 @@
-import { Checkmark20Regular } from '@fluentui/react-icons/headless/svg/checkmark'
 import { ChevronDown12Regular } from '@fluentui/react-icons/headless/svg/chevron-down'
 import { MoreHorizontal20Regular } from '@fluentui/react-icons/headless/svg/more-horizontal'
 import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { BACK, LAST_DAYS, type PeriodUnit, type RangePreset, parsePreset, presetDetail, presetLabel } from '../lib/dateRange'
 import { Button } from './ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu'
-import { Tab, TabList } from './ui/tabs'
+import { DropdownMenu, DropdownMenuCheckItem, DropdownMenuContent, DropdownMenuSeparator, DropdownMenuTrigger } from './ui/dropdown-menu'
+import { TabButton } from './ui/tabs'
 
 /** One entry of the bar: a tab, and for a group a ▾ menu of its other periods. */
 export interface PeriodItem {
@@ -80,10 +79,10 @@ interface PeriodTabsProps {
 function MenuEntry({ preset, value, onSelect }: { preset: RangePreset; value: RangePreset; onSelect: (p: RangePreset) => void }) {
   const detail = presetDetail(preset)
   return (
-    <DropdownMenuItem icon={preset === value ? <Checkmark20Regular /> : <span />} onSelect={() => onSelect(preset)}>
+    <DropdownMenuCheckItem checked={preset === value} onSelect={() => onSelect(preset)}>
       {presetLabel(preset)}
       {detail && <span className="ml-2 text-fg3">{detail}</span>}
-    </DropdownMenuItem>
+    </DropdownMenuCheckItem>
   )
 }
 
@@ -92,9 +91,9 @@ function MenuEntry({ preset, value, onSelect }: { preset: RangePreset; value: Ra
 function Item({ item, value, onSelect, measuring }: { item: PeriodItem; value: RangePreset; onSelect: (p: RangePreset) => void; measuring?: boolean }) {
   const current = item.options.includes(value) ? value : item.base
   const tab = (
-    <Tab value={current} data-item={measuring && item.options.length === 0 ? item.key : undefined} tabIndex={measuring ? -1 : undefined}>
+    <TabButton pressed={current === value} onClick={() => onSelect(current)} data-item={measuring && item.options.length === 0 ? item.key : undefined}>
       {presetLabel(current)}
-    </Tab>
+    </TabButton>
   )
   if (item.options.length === 0) return tab
   return (
@@ -102,7 +101,7 @@ function Item({ item, value, onSelect, measuring }: { item: PeriodItem; value: R
       {tab}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button size="small" appearance="subtle" icon={<ChevronDown12Regular />} aria-label={item.menuLabel} tabIndex={measuring ? -1 : undefined} className="min-w-0 px-0.5" />
+          <Button size="small" appearance="subtle" icon={<ChevronDown12Regular />} aria-label={item.menuLabel} className="min-w-0 px-0.5" />
         </DropdownMenuTrigger>
         {!measuring && (
           <DropdownMenuContent side="bottom" align="start">
@@ -163,15 +162,16 @@ export function PeriodTabs({ value, onSelect, extras = [] }: PeriodTabsProps) {
   return (
     <div ref={slot} className="relative min-w-[150px] flex-1 basis-0">
       <div className="flex items-center gap-1.5">
-        <TabList aria-label="기간 선택" value={value} onValueChange={(v) => onSelect(v as RangePreset)}>
+        {/* Toggle buttons, not a tablist: each group carries its own ▾ menu. */}
+        <div role="group" aria-label="기간 선택" className="flex shrink-0 items-stretch gap-1.5">
           {PERIOD_ITEMS.filter((i) => shown.includes(i.key)).map((item) => (
             <Item key={item.key} item={item} value={value} onSelect={onSelect} />
           ))}
-        </TabList>
+        </div>
         {(hidden.length > 0 || hiddenExtras.length > 0) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="small" appearance="subtle" icon={<MoreHorizontal20Regular />} aria-label="기간 더 보기" />
+              <Button size="small" appearance="subtle" icon={<MoreHorizontal20Regular />} aria-label="기간·설정 더 보기" />
             </DropdownMenuTrigger>
             <DropdownMenuContent side="bottom" align="start">
               {hidden.map((item, i) => (
@@ -189,28 +189,30 @@ export function PeriodTabs({ value, onSelect, extras = [] }: PeriodTabsProps) {
             </DropdownMenuContent>
           </DropdownMenu>
         )}
-        <div className="flex-1" />
-        {extras
-          .filter((e) => shown.includes(e.key))
-          .map((e) => (
-            <Fragment key={e.key}>{e.node}</Fragment>
-          ))}
+        {/* Pushed to the end; one flex child, so the gaps match visibleItems. */}
+        {extras.some((e) => shown.includes(e.key)) && (
+          <div className="ml-auto flex items-center gap-1.5">
+            {extras
+              .filter((e) => shown.includes(e.key))
+              .map((e) => (
+                <Fragment key={e.key}>{e.node}</Fragment>
+              ))}
+          </div>
+        )}
       </div>
       {/* Every item and the menu button, for measuring; the zero-size box keeps
           the copy from widening the page. */}
       <div aria-hidden className="pointer-events-none invisible absolute top-0 left-0 size-0 overflow-hidden">
         <div ref={measure} className="flex w-max items-center gap-1.5">
-          <TabList value={value} onValueChange={() => {}}>
-            {PERIOD_ITEMS.map((item) => (
-              <Item key={item.key} item={item} value={value} onSelect={() => {}} measuring />
-            ))}
-          </TabList>
+          {PERIOD_ITEMS.map((item) => (
+            <Item key={item.key} item={item} value={value} onSelect={() => {}} measuring />
+          ))}
           {extras.map((e) => (
             <span key={e.key} data-item={e.key} className="flex">
               {e.node}
             </span>
           ))}
-          <Button size="small" appearance="subtle" icon={<MoreHorizontal20Regular />} tabIndex={-1} data-more />
+          <Button size="small" appearance="subtle" icon={<MoreHorizontal20Regular />} data-more />
         </div>
       </div>
     </div>

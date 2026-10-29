@@ -77,6 +77,10 @@ func (a *api) handlePutPreferences(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid preferences: "+err.Error())
 		return
 	}
+	if dec.More() {
+		writeError(w, http.StatusBadRequest, "invalid preferences: data after the JSON object")
+		return
+	}
 	if err := p.validate(); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid preferences: "+err.Error())
 		return

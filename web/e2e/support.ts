@@ -24,24 +24,49 @@ export async function noOpenMenu(page: Page) {
   await expect(page.getByRole('menu')).toHaveCount(0)
 }
 
-/** Picks a date preset: its tab when it shows one, else from its group's ▾
+/** A period button of the top bar's selector. */
+export function period(page: Page, label: string) {
+  return page.getByRole('group', { name: '기간 선택' }).getByRole('button', { name: label, exact: true })
+}
+
+const MORE = '기간·설정 더 보기'
+
+/** Picks a date preset: its button when it shows one, else from its group's ▾
  * menu (named by menu), else from the "⋯" menu of a narrow bar. */
 export async function selectPreset(page: Page, label: string, menu?: string) {
-  const tab = page.getByRole('tab', { name: label, exact: true })
-  if (await tab.isVisible()) return tab.click()
+  await expect(page.getByRole('group', { name: '기간 선택' })).toBeVisible()
+  const button = period(page, label)
+  if (await button.isVisible()) return button.click()
   await noOpenMenu(page)
   const opener = menu ? page.getByRole('button', { name: menu, exact: true }) : null
   if (opener && (await opener.isVisible())) await opener.click()
-  else await page.getByRole('button', { name: '기간 더 보기' }).click()
-  await page.getByRole('menuitem', { name: label }).first().click()
+  else await page.getByRole('button', { name: MORE }).click()
+  await page.getByRole('menuitemcheckbox', { name: label }).first().click()
 }
 
-/** Turns automatic refresh on or off with the switch; on narrow screens the "⋯"
- * menu entry toggles it, so callers alternate on/off from the default (off). */
-export async function setAutoRefresh(page: Page, on: boolean) {
+/** Whether automatic refresh is on, read from the switch or the "⋯" menu. */
+export async function autoRefreshOn(page: Page): Promise<boolean> {
+  await expect(page.getByRole('group', { name: '기간 선택' })).toBeVisible()
   const sw = page.getByRole('switch', { name: '자동 새로고침 (60초)' })
-  if (await sw.isVisible()) return on ? sw.check() : sw.uncheck()
+  if (await sw.isVisible()) return (await sw.getAttribute('aria-checked')) === 'true'
   await noOpenMenu(page)
-  await page.getByRole('button', { name: '기간 더 보기' }).click()
-  await page.getByRole('menuitem', { name: '자동 새로고침 (60초)' }).click()
+  await page.getByRole('button', { name: MORE }).click()
+  const on = (await page.getByRole('menuitemcheckbox', { name: '자동 새로고침 (60초)' }).getAttribute('aria-checked')) === 'true'
+  await page.keyboard.press('Escape')
+  await noOpenMenu(page)
+  return on
+}
+
+/** Turns automatic refresh on or off, with the switch or the "⋯" menu entry. */
+export async function setAutoRefresh(page: Page, on: boolean) {
+  await expect(page.getByRole('group', { name: '기간 선택' })).toBeVisible()
+  const sw = page.getByRole('switch', { name: '자동 새로고침 (60초)' })
+  if (await sw.isVisible()) {
+    await (on ? sw.check() : sw.uncheck())
+    return
+  }
+  if ((await autoRefreshOn(page)) === on) return
+  await page.getByRole('button', { name: MORE }).click()
+  await page.getByRole('menuitemcheckbox', { name: '자동 새로고침 (60초)' }).click()
+  expect(await autoRefreshOn(page)).toBe(on)
 }

@@ -57,7 +57,7 @@ function mondayOf(dateStr: string): string {
 export function parsePreset(v: unknown): { kind: PeriodUnit | 'last'; n: number } | { kind: 'all' | 'custom' } | null {
   if (v === 'all' || v === 'custom') return { kind: v }
   if (typeof v !== 'string') return null
-  const m = /^(day|week|month|last)-(\d{1,2})$/.exec(v)
+  const m = /^(day|week|month|last)-(0|[1-9]\d?)$/.exec(v)
   if (!m) return null
   const kind = m[1] as PeriodUnit | 'last'
   const n = Number(m[2])

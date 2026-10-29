@@ -8,13 +8,15 @@ import { FiltersProvider, useFilters } from './FiltersContext'
 const api = vi.hoisted(() => ({
   serverPrefs: {} as DashboardPreferences,
   saved: [] as DashboardPreferences[],
+  fail: false,
 }))
 
 vi.mock('../api/client', () => ({
+  getStoredToken: () => 'token',
   getPreferences: () => Promise.resolve(api.serverPrefs),
   putPreferences: (p: DashboardPreferences) => {
     api.saved.push(p)
-    return Promise.resolve(p)
+    return api.fail ? Promise.reject(new Error('offline')) : Promise.resolve(p)
   },
 }))
 
@@ -31,6 +33,7 @@ beforeEach(() => {
   localStorage.clear()
   api.serverPrefs = {}
   api.saved = []
+  api.fail = false
   vi.useFakeTimers()
   // Immediately before midnight in Seoul (UTC+9).
   vi.setSystemTime(new Date('2026-10-15T14:59:30Z'))
@@ -145,7 +148,7 @@ describe('selections kept on the server', () => {
   })
 
   it('starts from this browser\'s copy before the server answers, and ignores bad documents', async () => {
-    localStorage.setItem('aum_dashboard_prefs', JSON.stringify({ range: { preset: 'month-0' }, auto_refresh: true }))
+    localStorage.setItem('aum_dashboard_prefs', JSON.stringify({ prefs: { range: { preset: 'month-0' }, auto_refresh: true }, synced: true }))
     api.serverPrefs = { range: { preset: 'nonsense' }, auto_refresh: 'yes' as unknown as boolean }
     act(() => root.unmount())
     root = createRoot(container)
@@ -166,5 +169,47 @@ describe('selections kept on the server', () => {
     act(() => filters.setPreset('day-0'))
     await act(async () => {})
     expect(filters.range.preset).toBe('day-0')
+  })
+
+  it('sends a change made just before a reload on the next load, ahead of the server copy', async () => {
+    api.serverPrefs = { range: { preset: 'last-7' } }
+    // Reloaded within the save delay, and the last-moment send is lost.
+    api.fail = true
+    act(() => filters.setPreset('all'))
+    act(() => root.unmount())
+    await act(async () => {})
+    api.fail = false
+    api.saved = []
+    root = createRoot(container)
+    await act(async () => root.render(<FiltersProvider><Probe /></FiltersProvider>))
+    expect(filters.range.preset).toBe('all')
+    expect(api.saved).toEqual([{ range: { preset: 'all' }, auto_refresh: false }])
+    await act(async () => {})
+    expect(JSON.parse(localStorage.getItem('aum_dashboard_prefs')!).synced).toBe(true)
+  })
+
+  it('keeps a change the server refused to take as unsynced', async () => {
+    api.fail = true
+    act(() => filters.setPreset('week-1'))
+    await act(async () => vi.advanceTimersByTime(400))
+    expect(JSON.parse(localStorage.getItem('aum_dashboard_prefs')!)).toEqual({ prefs: { range: { preset: 'week-1' }, auto_refresh: false }, synced: false })
+  })
+
+  it('sends a pending save at once when the page is hidden', () => {
+    act(() => filters.setPreset('month-2'))
+    act(() => window.dispatchEvent(new Event('pagehide')))
+    expect(api.saved).toEqual([{ range: { preset: 'month-2' }, auto_refresh: false }])
+    act(() => vi.advanceTimersByTime(400))
+    expect(api.saved).toHaveLength(1)
+  })
+
+  it('follows a change made in another tab without saving it again', () => {
+    const doc = { prefs: { range: { preset: 'day-2' }, auto_refresh: true }, synced: true }
+    localStorage.setItem('aum_dashboard_prefs', JSON.stringify(doc))
+    act(() => window.dispatchEvent(new StorageEvent('storage', { key: 'aum_dashboard_prefs', newValue: JSON.stringify(doc) })))
+    expect(filters.range.preset).toBe('day-2')
+    expect(filters.autoRefresh).toBe(true)
+    act(() => vi.advanceTimersByTime(400))
+    expect(api.saved).toEqual([])
   })
 })

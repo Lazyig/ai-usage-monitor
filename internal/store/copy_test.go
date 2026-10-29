@@ -357,3 +357,31 @@ func TestCopyColumnsCoverSchema(t *testing.T) {
 		}
 	}
 }
+
+// A target whose server already saved dashboard settings is still empty for
+// copying: the source's settings replace them.
+func TestCopyReplacesTargetPreferences(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "src.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fill(t, s)
+	s.Close()
+	src, err := OpenSource(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	dst := openTest(t)
+	if err := dst.SetPreference(ctx, "dashboard", `{"auto_refresh":false}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Copy(ctx, src, dst, false); err != nil {
+		t.Fatal(err)
+	}
+	if v, _, _ := dst.Preference(ctx, "dashboard"); v != `{"auto_refresh":true}` {
+		t.Errorf("target preferences after the copy: %s", v)
+	}
+}
