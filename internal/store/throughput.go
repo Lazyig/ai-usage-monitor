@@ -129,10 +129,11 @@ func (s *Store) Throughput(ctx context.Context, f Filter, groupBy string, loc *t
 	}
 	q := newQueryBuilder(fmt.Sprintf(`
 		SELECT %s AS k, ts / %d AS m,
-		       SUM(input), SUM(cache_read), SUM(cache_write_5m + cache_write_1h + cache_write), SUM(output), COUNT(*)
+		       CAST(SUM(input) AS BIGINT), CAST(SUM(cache_read) AS BIGINT),
+		       CAST(SUM(cache_write_5m + cache_write_1h + cache_write) AS BIGINT), CAST(SUM(output) AS BIGINT), COUNT(*)
 		FROM usage_events`, col, minuteMs))
 	f.apply(q)
-	q.tail("GROUP BY k, m")
+	q.tail("GROUP BY k, m ORDER BY k, m")
 
 	rows, err := s.rdb.QueryContext(ctx, q.sql(), q.args...)
 	if err != nil {

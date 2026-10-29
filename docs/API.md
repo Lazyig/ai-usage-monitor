@@ -131,7 +131,7 @@
 
 ## 헬스 체크 (토큰 불필요)
 
-- `GET /health`, `GET /api/v1/health` → `{"ok":true,"version":"...","events":n,"devices":n,"checks":{"database":"ok","pricing":"ok","frontend":"ok"}}`. 하나라도 실패하면 `503`.
+- `GET /health`, `GET /api/v1/health` → `{"ok":true,"version":"...","events":n,"devices":n,"checks":{"database":"ok","pricing":"ok","frontend":"ok"}}`. 하나라도 실패하면 `503` 이고 해당 항목에 이유가 들어간다. DB 는 `"unavailable"` 만 알리고 오류 내용(호스트·사용자 이름이 들어갈 수 있다)은 서버 로그에 1분에 한 번 남긴다.
 - `GET /health/live` → 프로세스 생존만 (liveness probe).
 - `GET /health/ready` → DB 조회·단가표 로드·SPA 번들 포함·종료 중 아님을 모두 만족할 때 `200`, 아니면 `503` 과 `checks` (readiness/startup probe). SIGTERM 을 받으면 `SHUTDOWN_DELAY`(기본 8s) 동안 `503` 을 먼저 돌려 트래픽을 뺀 뒤 리스너를 닫는다.
 

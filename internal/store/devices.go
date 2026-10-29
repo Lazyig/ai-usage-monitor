@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 	"unicode/utf8"
 )
@@ -102,11 +103,11 @@ func (s *Store) CreateDevice(ctx context.Context, name string) (Device, string, 
 	}
 	now := nowMillis()
 	if _, err := s.db.ExecContext(ctx,
-		`INSERT INTO devices(id, name, token_hash, token_created_at) VALUES(?,?,?,?)`,
-		id, name, HashToken(token), now); err != nil {
+		`INSERT INTO devices(id, name, token_hash, token_created_at) VALUES($1, $2, $3, $4)`,
+		id, CleanText(name), HashToken(token), now); err != nil {
 		return Device{}, "", fmt.Errorf("store: create device: %w", err)
 	}
-	return Device{ID: id, Name: name, TokenCreatedAt: fromMillis(now)}, token, nil
+	return Device{ID: id, Name: CleanText(name), TokenCreatedAt: fromMillis(now)}, token, nil
 }
 
 const deviceCols = `d.id, d.name, d.os, d.arch, d.agent_version, d.token_created_at, d.last_seen, d.last_ingest, d.revoked_at, d.hostname`
@@ -133,7 +134,7 @@ func scanDevice(sc interface{ Scan(...any) error }, extra ...any) (Device, error
 // DeviceByTokenHash looks a device up by the hash of its bearer token. Revoked
 // devices are returned too; callers decide (ingest rejects them).
 func (s *Store) DeviceByTokenHash(ctx context.Context, hash string) (Device, error) {
-	row := s.rdb.QueryRowContext(ctx, `SELECT `+deviceCols+` FROM devices d WHERE d.token_hash = ?`, hash)
+	row := s.rdb.QueryRowContext(ctx, `SELECT `+deviceCols+` FROM devices d WHERE d.token_hash = $1`, hash)
 	d, err := scanDevice(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Device{}, ErrNotFound
@@ -143,7 +144,7 @@ func (s *Store) DeviceByTokenHash(ctx context.Context, hash string) (Device, err
 
 // Device returns one device by id (without the event count).
 func (s *Store) Device(ctx context.Context, id string) (Device, error) {
-	row := s.rdb.QueryRowContext(ctx, `SELECT `+deviceCols+` FROM devices d WHERE d.id = ?`, id)
+	row := s.rdb.QueryRowContext(ctx, `SELECT `+deviceCols+` FROM devices d WHERE d.id = $1`, id)
 	d, err := scanDevice(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Device{}, ErrNotFound
@@ -186,7 +187,7 @@ func requireRow(res sql.Result) error {
 }
 
 // flagResyncSQL sets the flag ConsumeResync reads and clears.
-const flagResyncSQL = `UPDATE devices SET resync_requested = 1 WHERE id = ?`
+const flagResyncSQL = `UPDATE devices SET resync_requested = 1 WHERE id = $1`
 
 // RevokeDevice invalidates the device token. Events are kept; the token hash is
 // rewritten to a per-device placeholder so the old token can never be used
@@ -194,8 +195,8 @@ const flagResyncSQL = `UPDATE devices SET resync_requested = 1 WHERE id = ?`
 func (s *Store) RevokeDevice(ctx context.Context, id string) error {
 	now := nowMillis()
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE devices SET revoked_at = COALESCE(revoked_at, ?), token_hash = 'revoked:' || id || ':' || ?
-		 WHERE id = ?`, now, now, id)
+		`UPDATE devices SET revoked_at = COALESCE(revoked_at, $1), token_hash = 'revoked:' || id || ':' || $2
+		 WHERE id = $3`, now, strconv.FormatInt(now, 10), id)
 	if err != nil {
 		return err
 	}
@@ -215,7 +216,7 @@ func (s *Store) RotateToken(ctx context.Context, id string) (string, error) {
 		return "", err
 	}
 	res, err := s.db.ExecContext(ctx,
-		`UPDATE devices SET token_hash = ?, token_created_at = ?, revoked_at = NULL WHERE id = ?`,
+		`UPDATE devices SET token_hash = $1, token_created_at = $2, revoked_at = NULL WHERE id = $3`,
 		HashToken(token), nowMillis(), id)
 	if err != nil {
 		return "", fmt.Errorf("store: rotate token: %w", err)
@@ -230,31 +231,26 @@ func (s *Store) RotateToken(ctx context.Context, id string) (string, error) {
 // the next ingest tells the agent to forget its cursors and send everything
 // again. The device and its token are untouched.
 func (s *Store) PurgeEvents(ctx context.Context, id string) (int64, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	var deleted int64
+	err := s.writeTx(ctx, func(tx *sql.Tx) error {
+		var err error
+		if deleted, err = purgeEventsTx(ctx, tx, id); err != nil {
+			return err
+		}
+		res, err := tx.ExecContext(ctx, flagResyncSQL, id)
+		if err != nil {
+			return fmt.Errorf("store: flag resync: %w", err)
+		}
+		return requireRow(res)
+	})
 	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback()
-
-	deleted, err := purgeEventsTx(ctx, tx, id)
-	if err != nil {
-		return 0, err
-	}
-	res, err := tx.ExecContext(ctx, flagResyncSQL, id)
-	if err != nil {
-		return 0, fmt.Errorf("store: flag resync: %w", err)
-	}
-	if err := requireRow(res); err != nil {
-		return 0, err
-	}
-	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
 	return deleted, nil
 }
 
 func purgeEventsTx(ctx context.Context, tx *sql.Tx, id string) (int64, error) {
-	res, err := tx.ExecContext(ctx, `DELETE FROM usage_events WHERE device_id = ?`, id)
+	res, err := tx.ExecContext(ctx, `DELETE FROM usage_events WHERE device_id = $1`, id)
 	if err != nil {
 		return 0, fmt.Errorf("store: purge events: %w", err)
 	}
@@ -272,24 +268,19 @@ func (s *Store) DeleteDevice(ctx context.Context, id string, purge bool) (int64,
 	if !purge {
 		return 0, s.RevokeDevice(ctx, id)
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	var deleted int64
+	err := s.writeTx(ctx, func(tx *sql.Tx) error {
+		var err error
+		if deleted, err = purgeEventsTx(ctx, tx, id); err != nil {
+			return err
+		}
+		res, err := tx.ExecContext(ctx, `DELETE FROM devices WHERE id = $1`, id)
+		if err != nil {
+			return fmt.Errorf("store: delete device: %w", err)
+		}
+		return requireRow(res)
+	})
 	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback()
-
-	deleted, err := purgeEventsTx(ctx, tx, id)
-	if err != nil {
-		return 0, err
-	}
-	res, err := tx.ExecContext(ctx, `DELETE FROM devices WHERE id = ?`, id)
-	if err != nil {
-		return 0, fmt.Errorf("store: delete device: %w", err)
-	}
-	if err := requireRow(res); err != nil {
-		return 0, err
-	}
-	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
 	return deleted, nil
@@ -308,34 +299,28 @@ func (s *Store) RequestResync(ctx context.Context, id string) error {
 }
 
 // ConsumeResync reports whether a re-sync was requested for the device and
-// clears the flag in the same transaction, so exactly one ingest response ever
+// clears the flag in the same statement, so exactly one ingest response ever
 // carries it: two agent processes (or a retried request) cannot both be told to
-// rescan, and a crash between the two statements cannot lose the request.
+// rescan, whatever the isolation level, and a crash cannot lose the request.
 func (s *Store) ConsumeResync(ctx context.Context, id string) (bool, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	res, err := s.db.ExecContext(ctx, `UPDATE devices SET resync_requested = 0 WHERE id = $1 AND resync_requested <> 0`, id)
+	if err != nil {
+		return false, fmt.Errorf("store: clear resync: %w", err)
+	}
+	n, err := res.RowsAffected()
 	if err != nil {
 		return false, err
 	}
-	defer tx.Rollback()
-
-	var flag int64
-	err = tx.QueryRowContext(ctx, `SELECT resync_requested FROM devices WHERE id = ?`, id).Scan(&flag)
+	if n > 0 {
+		return true, nil
+	}
+	// Nothing was cleared: either no request is pending or there is no such device.
+	var one int
+	err = s.rdb.QueryRowContext(ctx, `SELECT 1 FROM devices WHERE id = $1`, id).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, ErrNotFound
 	}
-	if err != nil {
-		return false, err
-	}
-	if flag == 0 {
-		return false, nil
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE devices SET resync_requested = 0 WHERE id = ?`, id); err != nil {
-		return false, fmt.Errorf("store: clear resync: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return true, nil
+	return false, err
 }
 
 // TouchDevice records agent metadata and heartbeat timestamps. Empty metadata
@@ -350,22 +335,22 @@ func (s *Store) TouchDevice(ctx context.Context, m DeviceMeta, ingest bool, at t
 	}
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE devices SET
-			name          = CASE WHEN name = '' AND ? <> '' THEN ? ELSE name END,
-			hostname      = CASE WHEN ? <> '' THEN ? ELSE hostname END,
-			os            = CASE WHEN ? <> '' THEN ? ELSE os END,
-			arch          = CASE WHEN ? <> '' THEN ? ELSE arch END,
-			agent_version = CASE WHEN ? <> '' THEN ? ELSE agent_version END,
-			last_seen     = ?,
-			last_ingest   = COALESCE(?, last_ingest)
-		WHERE id = ?`,
-		m.Name, m.Name, m.Name, m.Name, m.OS, m.OS, m.Arch, m.Arch, m.AgentVersion, m.AgentVersion,
+			name          = CASE WHEN name = '' AND $1 <> '' THEN $1 ELSE name END,
+			hostname      = CASE WHEN $1 <> '' THEN $1 ELSE hostname END,
+			os            = CASE WHEN $2 <> '' THEN $2 ELSE os END,
+			arch          = CASE WHEN $3 <> '' THEN $3 ELSE arch END,
+			agent_version = CASE WHEN $4 <> '' THEN $4 ELSE agent_version END,
+			last_seen     = $5,
+			last_ingest   = COALESCE($6, last_ingest)
+		WHERE id = $7`,
+		CleanText(m.Name), CleanText(m.OS), CleanText(m.Arch), CleanText(m.AgentVersion),
 		ms, lastIngest, m.ID)
 	return err
 }
 
 // RenameDevice sets the operator-owned display name.
 func (s *Store) RenameDevice(ctx context.Context, id, name string) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE devices SET name = ? WHERE id = ?`, name, id)
+	res, err := s.db.ExecContext(ctx, `UPDATE devices SET name = $1 WHERE id = $2`, CleanText(name), id)
 	if err != nil {
 		return fmt.Errorf("store: rename device: %w", err)
 	}

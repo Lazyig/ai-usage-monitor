@@ -108,3 +108,27 @@ func TestIngestDecoderCompat(t *testing.T) {
 		}
 	}
 }
+
+// An id that holds NUL or invalid UTF-8 is rejected per event (cleaning it
+// could merge two events); free text with such bytes is stored cleaned.
+func TestIngestUncleanText(t *testing.T) {
+	h := newHarness(t, Options{AdminToken: adminToken})
+	id, tok := h.newDevice("mac")
+	ts := time.Now().UTC()
+	badID := sampleEvent("id\x00nul", id, ts, 1, 1)
+	badSession := sampleEvent("ok-session", id, ts, 1, 1)
+	badSession.SessionID = "s\x00"
+	text := sampleEvent("ok-text", id, ts, 1, 1)
+	text.Project = "/p\x00q"
+	res := h.ingest(id, tok, badID, badSession, text)
+	if res.Accepted != 1 || res.Rejected != 2 {
+		t.Fatalf("ingest = %+v, want 1 accepted, 2 rejected", res)
+	}
+	var project string
+	if err := h.store.DB().QueryRowContext(context.Background(), `SELECT project FROM usage_events WHERE event_id = 'ok-text'`).Scan(&project); err != nil {
+		t.Fatal(err)
+	}
+	if project != "/p�q" {
+		t.Errorf("project stored as %q", project)
+	}
+}
