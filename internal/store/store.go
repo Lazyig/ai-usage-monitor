@@ -1,9 +1,12 @@
-// Package store is the SQLite persistence layer: schema migrations, event
-// ingestion and every aggregate query behind docs/API.md.
+// Package store is the persistence layer: schema migrations, event ingestion
+// and every aggregate query behind docs/API.md, on SQLite (the default) or
+// PostgreSQL.
 //
-// A single writer connection serializes writes; a separate read-only pool
-// serves dashboard queries alongside it using WAL. In-memory tests share one
-// connection because their databases are local to that connection.
+// On SQLite a single writer connection serializes writes and a separate
+// read-only pool serves dashboard queries alongside it using WAL; in-memory
+// tests share one connection because their databases are local to it. On
+// PostgreSQL one pool serves both, and writes that touch a device and its
+// events lock the device row first (see InsertEvents and PurgeEvents).
 package store
 
 import (
@@ -13,19 +16,19 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
-	"path/filepath"
+	"math/rand/v2"
+	"path"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
-
-	_ "modernc.org/sqlite" // pure-Go driver, registers "sqlite"
+	"unicode/utf8"
 
 	"ai-usage-monitor/internal/event"
 	"ai-usage-monitor/internal/pricing"
 )
 
-//go:embed migrations/*.sql
+//go:embed migrations/sqlite/*.sql migrations/postgres/*.sql
 var migrationsFS embed.FS
 
 // ErrNotFound is returned when a lookup by id finds nothing.
@@ -40,82 +43,63 @@ type Pricer interface {
 	Thresholds() []int64
 }
 
-// Store owns the SQLite handle.
-type Store struct {
-	db  *sql.DB // the single writer (and the reader for in-memory databases)
-	rdb *sql.DB // read-only pool: WAL lets readers run beside the writer
+// dialect is the database the Store talks to. SQL is written once in the
+// subset both accept; what differs (schema files, locking, pools, retries)
+// branches on this.
+type dialect int
+
+const (
+	sqlite dialect = iota
+	postgres
+)
+
+// String is the dialect's name, which is also its migrations directory.
+func (d dialect) String() string {
+	if d == postgres {
+		return "postgres"
+	}
+	return "sqlite"
 }
 
-// Open opens (creating if needed) the SQLite database at path and applies all
-// embedded migrations. path may be ":memory:" for tests.
-func Open(path string) (*Store, error) {
-	if path != ":memory:" {
-		if dir := filepath.Dir(path); dir != "" && dir != "." {
-			if err := os.MkdirAll(dir, 0o700); err != nil {
-				return nil, fmt.Errorf("store: create db dir: %w%s", err, permHint(err))
-			}
-		}
-		// A new database is created owner-only (it holds project paths and
-		// hostnames); SQLite gives its -wal and -shm files the same mode. An
-		// existing file keeps the mode its operator chose.
-		f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
-		if err != nil {
-			return nil, fmt.Errorf("store: create db: %w%s", err, permHint(err))
-		}
-		f.Close()
-	}
-	dsn := "file:" + path +
-		"?_pragma=busy_timeout(5000)" +
-		"&_pragma=journal_mode(WAL)" +
-		"&_pragma=synchronous(NORMAL)" +
-		"&_pragma=foreign_keys(on)" +
-		// Sorting/grouping spills go to memory instead of a temp file: the container
-		// runs with a read-only root filesystem (SQLITE_IOERR_GETTEMPPATH otherwise).
-		"&_pragma=temp_store(MEMORY)"
-	db, err := sql.Open("sqlite", dsn)
-	if err != nil {
-		return nil, fmt.Errorf("store: open: %w", err)
-	}
-	// One connection: single writer, and every connection shares the same
-	// pragmas and (for ":memory:") the same database.
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-	db.SetConnMaxLifetime(0)
+// Store owns the database handles.
+type Store struct {
+	dialect dialect
+	db      *sql.DB // SQLite: the single writer. PostgreSQL: the one pool for everything
+	rdb     *sql.DB // SQLite: the read-only pool (WAL lets it run beside the writer)
+	ping    *sql.DB // the readiness check's own handle, so it never queues behind requests
 
-	// Reads get their own small pool so a dashboard load (five aggregations at
-	// once) and the readiness probe never queue behind ingest writes or each
-	// other. An in-memory database is per-connection, so tests keep one handle.
-	rdb := db
-	if !strings.Contains(path, ":memory:") && !strings.Contains(path, "mode=memory") {
-		rdb, err = sql.Open("sqlite", dsn+"&_pragma=query_only(1)")
-		if err != nil {
-			db.Close()
-			return nil, fmt.Errorf("store: open reader: %w", err)
-		}
-		rdb.SetMaxOpenConns(4)
-		rdb.SetMaxIdleConns(4)
-		rdb.SetConnMaxLifetime(0)
-	}
+	batch batchSize // statement batching for InsertEvents
 
-	s := &Store{db: db, rdb: rdb}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := s.migrate(ctx); err != nil {
-		s.Close()
+	retries atomic.Int64 // write transactions run again after a deadlock (tests check it stays 0)
+}
+
+// Options tunes Open.
+type Options struct {
+	// MaxConns caps the PostgreSQL pool (default 10). SQLite ignores it.
+	MaxConns int
+}
+
+// ErrConfig marks an error in the database setting itself (a malformed URL, a
+// refused option): retrying the same setting cannot succeed.
+var ErrConfig = errors.New("store: invalid database setting")
+
+// Open opens the database dsn names and applies all embedded migrations. A
+// postgres:// or postgresql:// URL selects PostgreSQL; anything else is a SQLite
+// file path, created if needed (":memory:" for tests).
+func Open(dsn string) (*Store, error) {
+	return OpenContext(context.Background(), dsn, Options{})
+}
+
+// OpenContext is Open with a context that bounds connecting and migrating, and
+// with options.
+func OpenContext(ctx context.Context, dsn string, opt Options) (*Store, error) {
+	if IsPostgresURL(dsn) {
+		return openPostgres(ctx, dsn, opt)
+	}
+	if err := CheckSQLitePath(dsn); err != nil {
 		return nil, err
 	}
-	return s, nil
-}
-
-// permHint explains the usual cause of a permission error: the image runs as
-// uid 65532, but a data volume created by an older (root) image is root-owned.
-func permHint(err error) string {
-	if !errors.Is(err, fs.ErrPermission) {
-		return ""
-	}
-	return fmt.Sprintf(" (running as uid %d: the DB directory and files must be writable by this user; "+
-		"a volume created by an older root-run image needs a one-time chown -R 65532:65532, see docs/DEPLOY.md)",
-		os.Getuid())
+	return openSQLite(ctx, dsn)
 }
 
 // DB exposes the handle to the tests, which check the schema directly.
@@ -123,76 +107,84 @@ func (s *Store) DB() *sql.DB { return s.db }
 
 // Close closes the database.
 func (s *Store) Close() error {
-	if s.rdb != nil && s.rdb != s.db {
-		s.rdb.Close()
+	for _, h := range []*sql.DB{s.rdb, s.ping} {
+		if h != nil && h != s.db {
+			h.Close()
+		}
 	}
 	return s.db.Close()
 }
 
-// Ping is the readiness check: a trivial read on the reader pool, so it reflects
-// whether requests can be served without measuring how busy the writer is.
+// Ping is the readiness check: a trivial read on a handle of its own, so it
+// reflects whether requests can be served without queueing behind them.
 func (s *Store) Ping(ctx context.Context) error {
 	var one int
-	return s.rdb.QueryRowContext(ctx, `SELECT 1`).Scan(&one)
+	return s.ping.QueryRowContext(ctx, `SELECT 1`).Scan(&one)
 }
 
-// migrate applies every migrations/*.sql file, in filename order, exactly once.
+// migrate applies every embedded migration of the dialect, in filename order,
+// exactly once. Each dialect has its own directory with the same file names,
+// and the file name is the version recorded in schema_migrations.
 func (s *Store) migrate(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
-		version    TEXT PRIMARY KEY,
-		applied_at INTEGER NOT NULL
-	)`); err != nil {
-		return fmt.Errorf("store: migrations table: %w", err)
+	if s.dialect == postgres {
+		return s.migratePostgres(ctx)
 	}
-	applied := map[string]bool{}
-	rows, err := s.db.QueryContext(ctx, `SELECT version FROM schema_migrations`)
+	return s.migrateSQLite(ctx)
+}
+
+// migration is one embedded schema change.
+type migration struct {
+	version string
+	body    string
+}
+
+// migrations lists a dialect's embedded files in order.
+func migrations(dir string) ([]migration, error) {
+	entries, err := fs.Glob(migrationsFS, "migrations/"+dir+"/*.sql")
 	if err != nil {
-		return fmt.Errorf("store: read migrations: %w", err)
+		return nil, err
 	}
+	slices.Sort(entries)
+	out := make([]migration, 0, len(entries))
+	for _, name := range entries {
+		body, err := migrationsFS.ReadFile(name)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, migration{version: path.Base(name), body: string(body)})
+	}
+	return out, nil
+}
+
+// appliedVersions reads schema_migrations.
+func appliedVersions(ctx context.Context, q interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}) (map[string]bool, error) {
+	rows, err := q.QueryContext(ctx, `SELECT version FROM schema_migrations`)
+	if err != nil {
+		return nil, fmt.Errorf("store: read migrations: %w", err)
+	}
+	defer rows.Close()
+	applied := map[string]bool{}
 	for rows.Next() {
 		var v string
 		if err := rows.Scan(&v); err != nil {
-			rows.Close()
-			return err
+			return nil, err
 		}
 		applied[v] = true
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
+	return applied, rows.Err()
+}
 
-	entries, err := fs.Glob(migrationsFS, "migrations/*.sql")
-	if err != nil {
-		return err
+// applyMigration runs one migration and records it, inside tx.
+func applyMigration(ctx context.Context, tx *sql.Tx, m migration) error {
+	if _, err := tx.ExecContext(ctx, m.body); err != nil {
+		return fmt.Errorf("store: migration %s: %w", m.version, err)
 	}
-	slices.Sort(entries)
-	for _, name := range entries {
-		version := filepath.Base(name)
-		if applied[version] {
-			continue
-		}
-		body, err := migrationsFS.ReadFile(name)
-		if err != nil {
-			return err
-		}
-		tx, err := s.db.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, string(body)); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("store: migration %s: %w", version, err)
-		}
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)`,
-			version, nowMillis()); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("store: record migration %s: %w", version, err)
-		}
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("store: commit migration %s: %w", version, err)
-		}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO schema_migrations(version, applied_at) VALUES($1, $2)`,
+		m.version, nowMillis()); err != nil {
+		return fmt.Errorf("store: record migration %s: %w", m.version, err)
 	}
 	return nil
 }
@@ -213,6 +205,69 @@ func (s *Store) Counts(ctx context.Context) (Counts, error) {
 		return c, err
 	}
 	return c, nil
+}
+
+// writeTx runs fn in one write transaction, committing when it returns nil.
+// On PostgreSQL a transaction that lost a deadlock or a serialization check is
+// run again from the start (fn must therefore recompute everything it returns);
+// SQLite serializes writers and never needs it.
+func (s *Store) writeTx(ctx context.Context, fn func(*sql.Tx) error) error {
+	for attempt := 0; ; attempt++ {
+		err := s.tryTx(ctx, fn)
+		if err == nil || s.dialect != postgres || attempt == 3 || !retryable(err) {
+			return err
+		}
+		s.retries.Add(1)
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(time.Duration(10+rand.IntN(40)) * time.Millisecond << attempt):
+		}
+	}
+}
+
+func (s *Store) tryTx(ctx context.Context, fn func(*sql.Tx) error) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// unmatchable reports whether a read argument can match no stored value. On
+// PostgreSQL such an argument (NUL, invalid UTF-8) would be an error rather
+// than a miss, so the caller answers "nothing found" without asking. SQLite
+// compares the bytes as they are: older rows may still hold them.
+func (s *Store) unmatchable(args ...string) bool {
+	if s.dialect != postgres {
+		return false
+	}
+	for _, a := range args {
+		if !IsCleanText(a) {
+			return true
+		}
+	}
+	return false
+}
+
+// CleanText makes s storable as text on every backend: invalid UTF-8 and NUL
+// (which PostgreSQL text cannot hold) become U+FFFD. Valid text is returned
+// unchanged.
+func CleanText(s string) string {
+	if IsCleanText(s) {
+		return s
+	}
+	return strings.ReplaceAll(strings.ToValidUTF8(s, "\uFFFD"), "\x00", "\uFFFD")
+}
+
+// IsCleanText reports whether s is valid UTF-8 without NUL bytes, that is,
+// whether CleanText would return it unchanged.
+func IsCleanText(s string) bool {
+	return utf8.ValidString(s) && !strings.ContainsRune(s, 0)
 }
 
 func nowMillis() int64 { return time.Now().UTC().UnixMilli() }

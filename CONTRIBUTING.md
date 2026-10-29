@@ -7,7 +7,10 @@ Go 버전은 `go.mod`, 웹 의존성은 `web/package-lock.json`을 기준으로 
 - 수집기는 로그를 읽고 `UsageEvent`와 커서를 반환합니다. 전송·큐·서비스 관리는 수집기에 넣지 않습니다.
 - 이벤트 ID는 재전송해도 같아야 합니다. 서버 저장은 멱등성을 유지하고, 전송 실패한 데이터는 안전하게 보관한 뒤에만 커서를 진행합니다.
 - 일시 실패(408/429/5xx), 인증 실패, 영구적인 요청 오류를 구분합니다. HTTP 2xx만으로 잘못된 응답을 정상 수신 확인으로 취급하지 않습니다.
-- SQLite SQL과 트랜잭션은 `internal/store`, HTTP 인증·입출력은 `internal/httpapi`에 둡니다. 동적 SQL에는 허용 목록에 있는 컬럼만 사용합니다.
+- SQL과 트랜잭션은 `internal/store`, HTTP 인증·입출력은 `internal/httpapi`에 둡니다. 동적 SQL에는 허용 목록에 있는 컬럼만 사용합니다.
+  - 매개변수는 `$1`, `$2` 처럼 번호로 씁니다(`?` 는 테스트가 막습니다). 넘긴 매개변수는 모두 SQL 에서 써야 합니다. 조건을 조립할 때는 `queryBuilder.arg` 가 번호를 매깁니다.
+  - 마이그레이션은 `internal/store/migrations/sqlite/` 와 `migrations/postgres/` 에 같은 파일 이름으로 하나씩 씁니다. PostgreSQL 쪽은 정수 `BIGINT`, 텍스트 `COLLATE "C"` 입니다. 두 스키마가 같은지 테스트가 확인합니다.
+  - PostgreSQL 에서도 테스트하려면 `AUM_TEST_POSTGRES_URL=postgres://...` 를 주고 `go test ./internal/store/... ./internal/httpapi/...` 를 실행합니다(테스트마다 스키마를 만들고 지웁니다).
 - 웹 JSON 타입은 서버의 실제 응답과 맞춥니다. 요청 경합·페이지네이션 상태는 훅에서, 마크업은 페이지에서 처리합니다. 필터가 바뀌면 성공 응답뿐 아니라 오류와 완료 처리도 이전 요청인지 검사합니다.
 - React 행 키는 모델 이름만으로 만들지 않습니다. 적용 기간 등 행의 실제 식별자를 포함합니다.
 - Unix 설치 스크립트의 원본은 `scripts/install.sh` 하나입니다. 서버 fallback은 이를 embed하며 별도 설치 구현을 추가하지 않습니다. 검증 정보가 없는 파일을 설치하지 않습니다.

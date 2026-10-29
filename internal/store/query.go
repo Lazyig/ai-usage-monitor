@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,28 +33,36 @@ type Filter struct {
 
 func (f Filter) apply(q *queryBuilder) {
 	if !f.From.IsZero() {
-		q.where("ts >= ?", toMillis(f.From))
+		q.where("ts >= " + q.arg(toMillis(f.From)))
 	}
 	if !f.To.IsZero() {
-		q.where("ts < ?", toMillis(f.To))
+		q.where("ts < " + q.arg(toMillis(f.To)))
 	}
 	if f.Source != "" {
-		q.where("source = ?", f.Source)
+		q.where("source = " + q.arg(f.Source))
 	}
 	if f.Device != "" {
-		q.where("device_id = ?", f.Device)
+		q.where("device_id = " + q.arg(f.Device))
 	}
 	if f.Model != "" {
-		q.where("model = ?", f.Model)
+		q.where("model = " + q.arg(f.Model))
 	}
 	if f.Project != "" {
-		q.where("project = ?", f.Project)
+		q.where("project = " + q.arg(f.Project))
 	}
 	if f.Session != "" {
-		q.where("session_id = ?", f.Session)
+		q.where("session_id = " + q.arg(f.Session))
 	}
 }
 
+// texts are the filter's string arguments.
+func (f Filter) texts() []string {
+	return []string{f.Source, f.Device, f.Model, f.Project, f.Session}
+}
+
+// queryBuilder assembles a SELECT from a fixed head, AND-ed conditions and a
+// tail. Parameters are numbered ($1, $2, ...), the one placeholder style both
+// SQLite and PostgreSQL accept; arg hands out the next number.
 type queryBuilder struct {
 	head    string
 	wheres  []string
@@ -63,10 +72,14 @@ type queryBuilder struct {
 
 func newQueryBuilder(head string) *queryBuilder { return &queryBuilder{head: head} }
 
-func (q *queryBuilder) where(cond string, args ...any) {
-	q.wheres = append(q.wheres, cond)
-	q.args = append(q.args, args...)
+// arg records v and returns its placeholder. Every placeholder handed out must
+// end up in the SQL: PostgreSQL rejects a parameter the statement never uses.
+func (q *queryBuilder) arg(v any) string {
+	q.args = append(q.args, v)
+	return "$" + strconv.Itoa(len(q.args))
 }
+
+func (q *queryBuilder) where(cond string) { q.wheres = append(q.wheres, cond) }
 
 func (q *queryBuilder) tail(s string) { q.tailSQL = s }
 
@@ -149,6 +162,9 @@ type aggRow struct {
 // caller (never user input). bucketMs == 0 disables bucketing; offsetSec shifts
 // the timeline so buckets land on local boundaries.
 func (s *Store) aggregate(ctx context.Context, f Filter, keyCol string, bucketMs, offsetSec int64, thresholds []int64) ([]aggRow, error) {
+	if s.unmatchable(f.texts()...) {
+		return nil, nil // folded like any other empty result
+	}
 	keyExpr := "''"
 	if keyCol != "" {
 		keyExpr = keyCol
@@ -173,14 +189,16 @@ func (s *Store) aggregate(ctx context.Context, f Filter, keyCol string, bucketMs
 	}
 	q := newQueryBuilder(fmt.Sprintf(`
 		SELECT %s AS k, source, model, %s AS b, ts / %d AS d, %s AS tier,
-		       SUM(input), SUM(output), SUM(cache_read),
-		       SUM(cache_write_5m), SUM(cache_write_1h), SUM(cache_write), SUM(reasoning),
+		       CAST(SUM(input) AS BIGINT), CAST(SUM(output) AS BIGINT), CAST(SUM(cache_read) AS BIGINT),
+		       CAST(SUM(cache_write_5m) AS BIGINT), CAST(SUM(cache_write_1h) AS BIGINT), CAST(SUM(cache_write) AS BIGINT), CAST(SUM(reasoning) AS BIGINT),
 		       COUNT(*), MIN(ts), MAX(ts)
 		FROM usage_events`, keyExpr, bucketExpr, dayMs, tierExpr))
 	f.apply(q)
 	// Rows are also split per UTC day, because a price applies by the event's
-	// UTC day: a local day or hour bucket can straddle a UTC midnight.
-	q.tail("GROUP BY k, source, model, b, d, tier")
+	// UTC day: a local day or hour bucket can straddle a UTC midnight. The order
+	// fixes the sequence costs are summed in, so float totals do not depend on
+	// how the database happens to return the groups.
+	q.tail("GROUP BY k, source, model, b, d, tier ORDER BY k, source, model, b, d, tier")
 
 	rows, err := s.rdb.QueryContext(ctx, q.sql(), q.args...)
 	if err != nil {

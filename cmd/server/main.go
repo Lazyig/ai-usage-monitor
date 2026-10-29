@@ -1,4 +1,5 @@
-// Command server ingests usage events from agents, stores them in SQLite and serves the API + SPA.
+// Command server ingests usage events from agents, stores them in SQLite or
+// PostgreSQL and serves the API + SPA.
 package main
 
 import (
@@ -28,13 +29,23 @@ import (
 var version = "dev"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "copy-db" {
+		os.Exit(runCopyDB(os.Args[2:], os.Stdout, os.Stderr, os.Getenv))
+	}
 	addr := flag.String("addr", envOr("ADDR", ":8080"), "listen address")
-	dbPath := flag.String("db", envOr("DB_PATH", "data/usage.db"), "sqlite file")
+	// No default shown here: it would print a URL with its password in -h.
+	dbFlag := flag.String("db", "", "database: a SQLite file path or a postgres:// URL (env DB_PATH, then DATABASE_URL; default "+defaultDBPath+")")
 	pricingPath := flag.String("pricing", envOr("PRICING_PATH", "pricing.yaml"), "pricing table")
 	downloadsDir := flag.String("downloads", envOr("DOWNLOADS_DIR", defaultDownloadsDir()), "directory served at /downloads/")
 	publicURLFlag := flag.String("public-url", envOr("PUBLIC_URL", ""), "external base URL for install commands, e.g. https://usage.example.com (default: taken from each request)")
 	showVersion := flag.Bool("version", false, "print version and exit")
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "usage: %s [flags]\n       %s copy-db ...   copy the data to another database (copy-db -h)\n\nflags:\n", os.Args[0], os.Args[0])
+		flag.PrintDefaults()
+	}
 	flag.Parse()
+	dbFlagSet := false
+	flag.Visit(func(f *flag.Flag) { dbFlagSet = dbFlagSet || f.Name == "db" })
 
 	build := httpapi.ReadBuild(version)
 	if *showVersion {
@@ -54,6 +65,20 @@ func main() {
 		log.Warn("PUBLIC_URL is plain http: agents send their device token unencrypted and refuse it unless installed with --allow-http (loopback excepted)")
 	}
 
+	db, err := resolveDB(*dbFlag, dbFlagSet, os.Getenv, fileExists)
+	if err != nil {
+		log.Error("config", "err", err)
+		os.Exit(2)
+	}
+	for _, n := range db.notes {
+		log.Warn(n)
+	}
+	conns, err := maxConns(os.Getenv)
+	if err != nil {
+		log.Error("config", "err", err)
+		os.Exit(2)
+	}
+
 	adminToken := os.Getenv("ADMIN_TOKEN")
 	if adminToken == "" {
 		log.Warn("ADMIN_TOKEN not set; every admin route will answer 503")
@@ -64,9 +89,22 @@ func main() {
 		log.Error("load pricing", "err", err)
 		os.Exit(1)
 	}
-	st, err := store.Open(*dbPath)
+
+	// k8s sends SIGTERM: it ends the wait for the database at startup, and
+	// later drains in-flight requests before the database handle closes.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	backend := "sqlite"
+	if store.IsPostgresURL(db.dsn) {
+		backend = "postgres"
+	}
+	for _, w := range store.PostgresWarnings(db.dsn) {
+		log.Warn(w)
+	}
+	st, err := openStore(ctx, log, db.dsn, store.Options{MaxConns: conns})
 	if err != nil {
-		log.Error("open store", "err", err)
+		log.Error("open store", "backend", backend, "db", store.RedactDSN(db.dsn), "err", err)
 		os.Exit(1)
 	}
 	defer st.Close()
@@ -76,7 +114,9 @@ func main() {
 		"version", version,
 		"commit", build.Commit,
 		"addr", *addr,
-		"db", *dbPath,
+		"db_backend", backend,
+		"db", store.RedactDSN(db.dsn),
+		"db_source", db.source,
 		"pricing", *pricingPath,
 		"rates", len(pricingProvider.Rates()),
 		"downloads", *downloadsDir,
@@ -106,10 +146,6 @@ func main() {
 		WriteTimeout:      120 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
-
-	// k8s sends SIGTERM; drain in-flight requests before the SQLite handle closes.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	errc := make(chan error, 1)
 	go func() {

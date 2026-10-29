@@ -129,25 +129,21 @@ func (s *Store) Throughput(ctx context.Context, f Filter, groupBy string, loc *t
 	}
 	q := newQueryBuilder(fmt.Sprintf(`
 		SELECT %s AS k, ts / %d AS m,
-		       SUM(input), SUM(cache_read), SUM(cache_write_5m + cache_write_1h + cache_write), SUM(output), COUNT(*)
+		       CAST(SUM(input) AS BIGINT), CAST(SUM(cache_read) AS BIGINT),
+		       CAST(SUM(cache_write_5m + cache_write_1h + cache_write) AS BIGINT), CAST(SUM(output) AS BIGINT), COUNT(*)
 		FROM usage_events`, col, minuteMs))
 	f.apply(q)
-	q.tail("GROUP BY k, m")
+	q.tail("GROUP BY k, m ORDER BY k, m")
 
-	rows, err := s.rdb.QueryContext(ctx, q.sql(), q.args...)
+	cells, err := s.minuteRows(ctx, f, q)
 	if err != nil {
 		return Throughput{}, err
 	}
-	defer rows.Close()
 
 	groups := map[string]*tpAcc{}
 	var ord []string
 	total := &tpAcc{minutes: map[int64]*minuteRow{}}
-	for rows.Next() {
-		var r minuteRow
-		if err := rows.Scan(&r.key, &r.minute, &r.input, &r.cacheRead, &r.cacheWrite, &r.output, &r.evs); err != nil {
-			return Throughput{}, err
-		}
+	for _, r := range cells {
 		a, ok := groups[r.key]
 		if !ok {
 			a = &tpAcc{g: ThroughputGroup{Key: r.key, Name: names[r.key]}}
@@ -165,9 +161,6 @@ func (s *Store) Throughput(ctx context.Context, f Filter, groupBy string, loc *t
 			c := r
 			total.minutes[r.minute] = &c
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return Throughput{}, err
 	}
 	for _, m := range total.minutes {
 		total.add(*m)
@@ -189,4 +182,25 @@ func (s *Store) Throughput(ctx context.Context, f Filter, groupBy string, loc *t
 		return a.Key < b.Key
 	})
 	return out, nil
+}
+
+// minuteRows runs the per-minute aggregate q for f.
+func (s *Store) minuteRows(ctx context.Context, f Filter, q *queryBuilder) ([]minuteRow, error) {
+	if s.unmatchable(f.texts()...) {
+		return nil, nil // folded like any other empty result
+	}
+	rows, err := s.rdb.QueryContext(ctx, q.sql(), q.args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []minuteRow
+	for rows.Next() {
+		var r minuteRow
+		if err := rows.Scan(&r.key, &r.minute, &r.input, &r.cacheRead, &r.cacheWrite, &r.output, &r.evs); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }

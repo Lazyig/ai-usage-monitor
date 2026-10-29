@@ -11,10 +11,11 @@ import (
 	"testing"
 
 	"ai-usage-monitor/internal/event"
+	"ai-usage-monitor/internal/store/storetest"
 )
 
 func TestMigrationsIdempotent(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "m.db")
+	path := storetest.DSN(t)
 	s, err := Open(path)
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +44,7 @@ func TestMigrationsIdempotent(t *testing.T) {
 		t.Fatalf("devices after reopen = %d, want 1", len(devs))
 	}
 	// Exactly one row per embedded migration, however many there are by now.
-	files, err := fs.Glob(migrationsFS, "migrations/*.sql")
+	files, err := migrations(s2.dialect.String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +53,7 @@ func TestMigrationsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if n != len(files) {
-		t.Fatalf("schema_migrations rows = %d, want %d (one per migrations/*.sql)", n, len(files))
+		t.Fatalf("schema_migrations rows = %d, want %d (one per embedded migration)", n, len(files))
 	}
 }
 

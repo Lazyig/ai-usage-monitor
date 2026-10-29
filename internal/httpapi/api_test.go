@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 
 	"ai-usage-monitor/internal/event"
 	"ai-usage-monitor/internal/store"
+	"ai-usage-monitor/internal/store/storetest"
 )
 
 const adminToken = "admin-secret"
@@ -49,7 +51,7 @@ func newHarness(t *testing.T, opt Options) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := store.Open(filepath.Join(dir, "usage.db"))
+	st, err := store.Open(storetest.DSN(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -658,5 +660,70 @@ func TestServerInfo(t *testing.T) {
 	h.decode(w, &b)
 	if b.Version != "1.2.3" || b.Commit != "abc123" {
 		t.Errorf("server info = %+v", b)
+	}
+}
+
+// A failing database shows only "unavailable" on the unauthenticated health
+// endpoints; the error text (hosts, users) stays in the server log.
+func TestHealthHidesDatabaseError(t *testing.T) {
+	h := newHarness(t, Options{AdminToken: adminToken})
+	h.store.Close()
+	for _, path := range []string{"/health", "/health/ready"} {
+		w := h.do(http.MethodGet, path, "", nil)
+		var body struct {
+			Checks map[string]string `json:"checks"`
+		}
+		h.decode(w, &body)
+		if w.Code != http.StatusServiceUnavailable || body.Checks["database"] != "unavailable" {
+			t.Errorf("%s = %d %s", path, w.Code, w.Body)
+		}
+	}
+}
+
+// A filter or id holding NUL or invalid UTF-8 finds nothing, with the same
+// response as any other value that matches nothing, on every backend (on
+// PostgreSQL the database could not even compare it).
+func TestUnmatchableArguments(t *testing.T) {
+	h := newHarness(t, Options{AdminToken: adminToken})
+	id, tok := h.newDevice("mac")
+	h.ingest(id, tok, sampleEvent("e1", id, time.Date(2026, 10, 1, 1, 0, 0, 0, time.UTC), 10, 5))
+	const rng = "from=2026-09-30&to=2026-10-03"
+	for _, ep := range []string{"summary?", "breakdown?group_by=project&", "timeseries?bucket=day&", "throughput?group_by=model&", "events?"} {
+		for _, param := range []string{"project", "model", "session", "device", "source"} {
+			want := h.do(http.MethodGet, "/api/v1/"+ep+rng+"&"+param+"=nomatch", adminToken, nil)
+			for _, bad := range []string{"%00x", "%FFx"} {
+				got := h.do(http.MethodGet, "/api/v1/"+ep+rng+"&"+param+"="+bad, adminToken, nil)
+				if got.Code != want.Code || got.Body.String() != want.Body.String() {
+					t.Errorf("%s %s=%s: %d %s\nwant %d %s", ep, param, bad, got.Code, got.Body, want.Code, want.Body)
+				}
+			}
+		}
+	}
+	for _, c := range []struct{ method, path string }{
+		{http.MethodDelete, "/api/v1/devices/%00x"},
+		{http.MethodPatch, "/api/v1/devices/%FFx"},
+		{http.MethodPost, "/api/v1/devices/%00x/rotate"},
+		{http.MethodDelete, "/api/v1/devices/%00x/events"},
+		{http.MethodPost, "/api/v1/devices/%FFx/resync"},
+	} {
+		var body any
+		if c.method == http.MethodPatch {
+			body = map[string]string{"name": "n"}
+		}
+		if w := h.do(c.method, c.path, adminToken, body); w.Code != http.StatusNotFound {
+			t.Errorf("%s %s = %d %s, want 404", c.method, c.path, w.Code, w.Body)
+		}
+	}
+	// A cursor naming an unclean event id is never a server error. SQLite can
+	// page past such an id (older rows may hold one); PostgreSQL cannot hold
+	// it, so the cursor cannot be one it issued.
+	cur := base64.RawURLEncoding.EncodeToString([]byte(`{"ts":1,"e":"\u0000"}`))
+	w := h.do(http.MethodGet, "/api/v1/events?"+rng+"&cursor="+cur, adminToken, nil)
+	want := http.StatusOK
+	if storetest.Postgres() {
+		want = http.StatusBadRequest
+	}
+	if w.Code != want {
+		t.Errorf("unclean cursor = %d %s", w.Code, w.Body)
 	}
 }

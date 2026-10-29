@@ -30,7 +30,10 @@ func (a *api) readiness(r *http.Request, withCounts bool) readiness {
 	pingCtx, cancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
 	defer cancel()
 	if err := a.store.Ping(pingCtx); err != nil {
-		note("database", "unavailable: "+err.Error())
+		// The health endpoints need no credentials, and a database error can
+		// name hosts and users; the details go to the log only.
+		note("database", "unavailable")
+		a.logPingError(err)
 	} else {
 		note("database", "")
 		if withCounts {
@@ -70,6 +73,22 @@ func (a *api) handleReady(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusServiceUnavailable
 	}
 	writeJSON(w, status, map[string]any{"ok": rd.ok, "version": a.opt.Version, "checks": rd.checks})
+}
+
+// pingLogEvery rate-limits the log line for a failing database check: probes
+// hit it every few seconds while the database is down.
+const pingLogEvery = time.Minute
+
+func (a *api) logPingError(err error) {
+	a.mu.Lock()
+	due := time.Since(a.pingLoggedAt) >= pingLogEvery
+	if due {
+		a.pingLoggedAt = time.Now()
+	}
+	a.mu.Unlock()
+	if due {
+		a.log.Error("database check failed", "err", err)
+	}
 }
 
 // countsTTL is how long /health reuses its row counts. /health needs no
