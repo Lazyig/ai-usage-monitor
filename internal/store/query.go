@@ -55,6 +55,11 @@ func (f Filter) apply(q *queryBuilder) {
 	}
 }
 
+// texts are the filter's string arguments.
+func (f Filter) texts() []string {
+	return []string{f.Source, f.Device, f.Model, f.Project, f.Session}
+}
+
 // queryBuilder assembles a SELECT from a fixed head, AND-ed conditions and a
 // tail. Parameters are numbered ($1, $2, ...), the one placeholder style both
 // SQLite and PostgreSQL accept; arg hands out the next number.
@@ -157,6 +162,9 @@ type aggRow struct {
 // caller (never user input). bucketMs == 0 disables bucketing; offsetSec shifts
 // the timeline so buckets land on local boundaries.
 func (s *Store) aggregate(ctx context.Context, f Filter, keyCol string, bucketMs, offsetSec int64, thresholds []int64) ([]aggRow, error) {
+	if s.unmatchable(f.texts()...) {
+		return nil, nil // folded like any other empty result
+	}
 	keyExpr := "''"
 	if keyCol != "" {
 		keyExpr = keyCol

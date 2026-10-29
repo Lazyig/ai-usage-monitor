@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"math"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -39,6 +40,17 @@ func testTable(t *testing.T) *pricing.Table {
 func openTest(t *testing.T) *Store {
 	t.Helper()
 	s, err := Open(storetest.DSN(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	return s
+}
+
+// openSQLiteTest opens a SQLite store whatever backend the suite runs on.
+func openSQLiteTest(t *testing.T) *Store {
+	t.Helper()
+	s, err := Open(filepath.Join(t.TempDir(), "sqlite.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

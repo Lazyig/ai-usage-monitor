@@ -27,6 +27,51 @@ jobs:
         run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test -race ./...
+      - name: agent binary has no server-only dependencies
+        run: |
+          if go list -deps ./cmd/agent | grep -E 'jackc|internal/store'; then
+            echo "cmd/agent must not depend on the server's database code" >&2
+            exit 1
+          fi
+
+  go-postgres:
+    # The store and API suites again, on PostgreSQL: storetest gives every test
+    # its own schema in AUM_TEST_POSTGRES_URL's database. The database is
+    # created with an ICU locale so that a text column missing COLLATE "C"
+    # orders differently and fails the paging tests.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # exec: unnamed statements, the mode recommended behind PgBouncer.
+        mode: [cache_statement, exec]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+      - name: create the test database
+        env:
+          PGPASSWORD: ci
+        run: >-
+          psql -h 127.0.0.1 -U postgres -c
+          "CREATE DATABASE aum_test LOCALE_PROVIDER icu ICU_LOCALE 'en-US' LOCALE 'C.UTF-8' TEMPLATE template0"
+      - run: go test -race ./internal/store/... ./internal/httpapi/... ./cmd/server/...
+        env:
+          AUM_TEST_POSTGRES_URL: postgres://postgres:ci@127.0.0.1:5432/aum_test?sslmode=disable&default_query_exec_mode=${{ matrix.mode }}
 
   web:
     runs-on: ubuntu-latest

@@ -7,10 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"ai-usage-monitor/internal/event"
 )
@@ -43,8 +46,11 @@ func (s *Store) InsertEvents(ctx context.Context, evs []event.UsageEvent) (accep
 	}
 	received := nowMillis()
 	err = s.writeTx(ctx, func(tx *sql.Tx) error {
+		if err := s.lockDevices(ctx, tx, false, deviceIDs(batch)...); err != nil {
+			return err
+		}
 		var err error
-		accepted, duplicates, updated, err = insertEventsTx(ctx, tx, s.batch, batch, received)
+		accepted, duplicates, updated, err = insertEventsTx(ctx, tx, s.batchSize(), batch, received)
 		return err
 	})
 	if err != nil {
@@ -61,22 +67,43 @@ func (s *Store) InsertEvents(ctx context.Context, evs []event.UsageEvent) (accep
 // parameter count, so there one row per prepared INSERT is fastest.
 //
 // prepare reuses each statement text within the transaction: on SQLite,
-// parsing it again is most of the cost. PostgreSQL leaves it off, because a
-// prepared statement there is a named server-side object that transaction
-// pooling (PgBouncer) cannot follow from one connection to another.
+// parsing it again is most of the cost. PostgreSQL leaves it off: there a
+// prepared statement is a named server-side object.
+//
+// unnamed runs the variable-shape statements (one per batch length) without a
+// named server-side statement. pgx otherwise prepares and caches every
+// distinct text per connection, which for these would be one round trip and
+// one cached plan per batch length, never reused.
 type batchSize struct {
 	rows, ids int
 	prepare   bool
+	unnamed   bool
 }
 
 var sqliteBatch = batchSize{rows: 1, ids: 16, prepare: true}
+
+// batchSize is the Store's batching, with options its driver lacks turned off.
+func (s *Store) batchSize() batchSize {
+	b := s.batch
+	b.unnamed = b.unnamed && s.dialect == postgres
+	return b
+}
 
 // stmtTx runs statements in one transaction, preparing each distinct text
 // once when prepare is set.
 type stmtTx struct {
 	tx      *sql.Tx
 	prepare bool
+	unnamed bool
 	stmts   map[string]*sql.Stmt
+}
+
+// mode prefixes args with pgx's per-query exec mode when unnamed is set.
+func (t *stmtTx) mode(args []any) []any {
+	if !t.unnamed {
+		return args
+	}
+	return append([]any{pgx.QueryExecModeExec}, args...)
 }
 
 func (t *stmtTx) stmt(ctx context.Context, q string) (*sql.Stmt, error) {
@@ -139,7 +166,7 @@ type refresh struct {
 }
 
 func insertEventsTx(ctx context.Context, sqlTx *sql.Tx, size batchSize, batch []event.UsageEvent, received int64) (accepted, duplicates, updated int, err error) {
-	tx := &stmtTx{tx: sqlTx, prepare: size.prepare}
+	tx := &stmtTx{tx: sqlTx, prepare: size.prepare, unnamed: size.unnamed}
 	defer tx.close()
 	// The first copy of each id is offered for insertion; later copies in the
 	// same batch, like copies of ids already stored, can only refresh it.
@@ -257,7 +284,7 @@ func insertChunk(ctx context.Context, tx *stmtTx, batch []event.UsageEvent, idx 
 			string(e.Confidence), e.ToolVersion, received)
 	}
 	b.WriteString(" ON CONFLICT(event_id) DO NOTHING RETURNING event_id")
-	rows, err := tx.query(ctx, b.String(), args...)
+	rows, err := tx.query(ctx, b.String(), tx.mode(args)...)
 	if err != nil {
 		return nil, fmt.Errorf("store: insert events: %w", err)
 	}
@@ -297,7 +324,7 @@ func storedEvents(ctx context.Context, tx *stmtTx, chunk int, batch []event.Usag
 			args[n] = id
 		}
 		b.WriteString(")")
-		rows, err := tx.query(ctx, b.String(), args...)
+		rows, err := tx.query(ctx, b.String(), tx.mode(args)...)
 		if err != nil {
 			return nil, fmt.Errorf("store: read stored events: %w", err)
 		}
@@ -354,6 +381,18 @@ func applyRefresh(ctx context.Context, tx *stmtTx, e event.UsageEvent, r refresh
 	return n, nil
 }
 
+// deviceIDs lists the distinct devices of a batch (ingest sends one).
+func deviceIDs(batch []event.UsageEvent) []string {
+	var ids []string
+	for _, e := range batch {
+		if !slices.Contains(ids, e.DeviceID) {
+			ids = append(ids, e.DeviceID)
+		}
+	}
+	slices.Sort(ids)
+	return ids
+}
+
 // cleanEvent makes the agent-supplied free text storable on every backend.
 // The id fields are not touched: ingest rejects events whose ids would need it.
 func cleanEvent(e event.UsageEvent) event.UsageEvent {
@@ -399,10 +438,16 @@ func (s *Store) Events(ctx context.Context, f Filter, limit int, cursor string, 
 		if err != nil {
 			return EventPage{}, err
 		}
+		if s.unmatchable(c.EventID) {
+			return EventPage{}, ErrBadCursor
+		}
 		ts := q.arg(c.TS)
 		q.where(`(ts < ` + ts + ` OR (ts = ` + ts + ` AND event_id < ` + q.arg(c.EventID) + `))`)
 	}
 	q.tail(fmt.Sprintf(`ORDER BY ts DESC, event_id DESC LIMIT %d`, limit+1))
+	if s.unmatchable(f.texts()...) {
+		return EventPage{Events: []EventRow{}}, nil
+	}
 
 	rows, err := s.rdb.QueryContext(ctx, q.sql(), q.args...)
 	if err != nil {
