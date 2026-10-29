@@ -20,7 +20,7 @@ $serverUri = [Uri]$Server
 if ($serverUri.Scheme -eq 'http') {
   if (@('localhost', '127.0.0.1', '[::1]') -notcontains $serverUri.Host.ToLower()) {
     if (-not $AllowHttp) {
-      throw "refusing plain $Server: the binary and the device token would cross the network unencrypted. Use https://, or pass -AllowHttp."
+      throw "refusing plain ${Server}: the binary and the device token would cross the network unencrypted. Use https://, or pass -AllowHttp."
     }
     Write-Warning "plain http server: the binary and the device token are not encrypted"
   }
