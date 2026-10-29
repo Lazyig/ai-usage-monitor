@@ -190,6 +190,19 @@ export interface Device {
   hostname?: string
 }
 
+/** GET /api/v1/server: the build the server runs. */
+export interface ServerBuild {
+  /** Release tag, `0.0.0-<sha>` for a main build, `dev` for a local one. */
+  version: string
+  /** Full git revision, when the binary was built in a checkout. */
+  commit?: string
+  /** RFC 3339 commit time. */
+  commit_time?: string
+  /** Built from a tree with uncommitted changes. */
+  modified?: boolean
+  go_version: string
+}
+
 export interface DevicesResponse {
   devices: Device[]
 }

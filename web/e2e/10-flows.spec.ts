@@ -180,3 +180,14 @@ test('on phones the dropdown and calendar open by tap and fit the screen', async
   await calendar.getByRole('gridcell', { name: '9월 30일' }).tap()
   await expect(page.getByLabel('종료일', { exact: true })).toHaveValue('2026-09-30')
 })
+
+test('the navigation names the server build', async ({ page }) => {
+  await prepare(page)
+  await page.goto('/')
+  if (await page.getByRole('button', { name: '메뉴 열기' }).isVisible()) {
+    await page.getByRole('button', { name: '메뉴 열기' }).click()
+  }
+  const build = page.getByTestId('server-build')
+  await expect(build).toContainText('서버 ')
+  await expect(build).toHaveAttribute('title', /버전 .+/)
+})

@@ -1,4 +1,6 @@
-defaultBaseImage: gcr.io/distroless/static:latest
+# Runs as uid/gid 65532 (nonroot). Pinned to the multi-arch index digest of the
+# :nonroot tag; update both together when bumping the base image.
+defaultBaseImage: gcr.io/distroless/static:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99
 builds:
   - id: server
     main: ./cmd/server

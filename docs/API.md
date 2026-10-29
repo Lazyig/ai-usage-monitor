@@ -119,6 +119,16 @@
 ### POST /pricing/reload
 파일을 다시 읽는다 → `{"ok":true,"rates":n}`. 파싱에 실패하면 `400` 이고 기존 표가 유지된다.
 
+## 서버 정보 (관리자 토큰)
+
+### GET /server
+```json
+{"version":"v0.3.0","commit":"<git revision 40자>","commit_time":"2026-10-29T02:25:01Z","go_version":"go1.27.1"}
+```
+- `version` 은 빌드할 때 넣은 릴리스 버전(태그, main 빌드는 `0.0.0-<짧은 해시>`, 로컬은 `dev`).
+- `commit`·`commit_time` 은 Go 가 git 체크아웃 안에서 빌드할 때 바이너리에 넣는 VCS 정보다. 없으면 생략된다. `modified: true` 는 커밋되지 않은 변경이 있는 트리에서 빌드했다는 뜻이다.
+- 대시보드 왼쪽 메뉴 아래에 표시된다. 커밋은 정확한 코드 버전을 알려 주므로 인증 없는 `/health` 에는 넣지 않는다.
+
 ## 헬스 체크 (토큰 불필요)
 
 - `GET /health`, `GET /api/v1/health` → `{"ok":true,"version":"...","events":n,"devices":n,"checks":{"database":"ok","pricing":"ok","frontend":"ok"}}`. 하나라도 실패하면 `503`.

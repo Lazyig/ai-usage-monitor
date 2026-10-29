@@ -6,6 +6,8 @@
 
 ### 추가
 
+- 대시보드 왼쪽 메뉴 아래에 서버의 릴리스 버전과 커밋 해시를 표시합니다(마우스를 올리면 전체 해시·커밋 시각·Go 버전). 관리자 API `GET /api/v1/server` 로도 볼 수 있고, `ai-usage-server -version` 도 커밋을 함께 출력합니다.
+
 - Claude Code 설정 폴더를 여러 개 읽습니다. `CLAUDE_CONFIG_DIR` 로 `~/.claude` 가 아닌 곳을 쓰거나 한 기기에서 설정을 여러 개 쓰는 경우를 위한 기능입니다.
   - 기본으로 `~/.config/claude/projects` 와 `~/.claude-*/projects` 도 읽습니다. 기존 설치도 업그레이드하면 이 폴더들이 추가됩니다(`config_version` 1).
   - 설치할 때 `--claude-dir`(Windows `-ClaudeDir`)로 폴더를 지정합니다. 지정하지 않으면 설치하는 셸의 `$CLAUDE_CONFIG_DIR` 을 씁니다.
@@ -26,6 +28,10 @@
 - 평문 `http://` 서버를 기본으로 거부합니다(같은 기기는 예외, `--allow-http`·`-AllowHttp` 로 허용). 이전에 http 로 설치된 기기는 계속 동작합니다(`config_version` 2).
 - `PUBLIC_URL`(`--public-url`) 설정: 설치 스크립트의 기본 주소를 클라이언트가 바꿀 수 있는 요청 헤더 대신 이 값으로 정합니다.
 - 새 DB 파일은 0600, 폴더는 0700 으로 만듭니다.
+- 서버 이미지가 root 가 아닌 uid/gid 65532 로 실행됩니다(베이스 이미지 `distroless/static:nonroot`, 다이제스트 고정). **기존 배포는 업그레이드 전에 한 번** 데이터 볼륨의 소유자를 바꿔야 합니다. 이전 이미지가 만든 `usage.db` 는 root 소유라 새 이미지가 열지 못합니다.
+  - Docker: `docker run --rm -v ai-usage-data:/data busybox chown -R 65532:65532 /data`
+  - Kubernetes: `securityContext` 에 `fsGroup: 65532` 를 주면 대부분의 스토리지에서 그대로 열립니다. 예시와 그 밖의 경우는 [docs/DEPLOY.md](docs/DEPLOY.md) 를 봅니다.
+  - 권한 문제로 DB 를 열지 못하면 실행 중인 uid 와 해결 방법을 오류 메시지에 함께 남깁니다.
 - 로그인 후 돌아갈 경로를 앱 안의 경로로만 제한합니다(react-router 권고 GHSA-wrjc-x8rr-h8h6).
 
 ### 수정

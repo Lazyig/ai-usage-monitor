@@ -17,7 +17,9 @@ for (const [name, path] of [
     // Recharts uses JS animation; wait for its default duration to finish.
     await page.waitForTimeout(1800)
     if (process.env.REVIEW_SCREENSHOTS === '1') {
-      await expect(page).toHaveScreenshot(`${name}.png`)
+      // The server build line changes with every commit; it is masked so a
+      // baseline survives builds of other revisions.
+      await expect(page).toHaveScreenshot(`${name}.png`, { mask: [page.getByTestId('server-build')] })
     }
     expect(errors).toEqual([])
   })
