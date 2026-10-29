@@ -18,15 +18,33 @@ import (
 	"ai-usage-monitor/internal/event"
 )
 
-// referenceInsert is InsertEvents as it was before batching: one event at a
-// time, in batch order. The batched version must match it exactly.
-func referenceInsert(ctx context.Context, sqlTx *sql.Tx, evs []event.UsageEvent, received int64) (accepted, duplicates, updated int, err error) {
-	tx := &stmtTx{tx: sqlTx}
+// referenceInsert is InsertEvents as it was before batching, verbatim apart
+// from the placeholders: one event at a time, in batch order, with its own
+// statements. The batched version must match it exactly. INSERT OR IGNORE and
+// ?NNN are SQLite syntax; the comparison runs on SQLite only.
+func referenceInsert(ctx context.Context, tx *sql.Tx, evs []event.UsageEvent, received int64) (accepted, duplicates, updated int, err error) {
+	ins, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO usage_events(`+eventCols+`)
+		VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)`)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defer ins.Close()
+	upd, err := tx.PrepareContext(ctx, `UPDATE usage_events SET
+		ts = ?1, input = ?2, output = ?3, cache_read = ?4, cache_write_5m = ?5, cache_write_1h = ?6, cache_write = ?7,
+		reasoning = ?8, confidence = ?9, tool_version = ?10
+		WHERE event_id = ?11 AND device_id = ?12 AND output < ?13`)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defer upd.Close()
+	fill, err := tx.PrepareContext(ctx, `UPDATE usage_events SET model = ?1 WHERE event_id = ?2 AND device_id = ?3 AND model = ?4`)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defer fill.Close()
 	for _, e := range evs {
 		e = cleanEvent(e)
-		res, err := tx.exec(ctx, `INSERT INTO usage_events(`+eventCols+`)
-			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT(event_id) DO NOTHING`,
-			e.EventID, e.DeviceID, string(e.Source), toMillis(e.Timestamp), e.Model, e.SessionID, e.Project,
+		res, err := ins.ExecContext(ctx, e.EventID, e.DeviceID, string(e.Source), toMillis(e.Timestamp), e.Model, e.SessionID, e.Project,
 			e.Input, e.Output, e.CacheRead, e.CacheWrite5m, e.CacheWrite1h, e.CacheWrite, e.Reasoning,
 			string(e.Confidence), e.ToolVersion, received)
 		if err != nil {
@@ -36,9 +54,19 @@ func referenceInsert(ctx context.Context, sqlTx *sql.Tx, evs []event.UsageEvent,
 			accepted++
 			continue
 		}
-		n, err := applyRefresh(ctx, tx, e, refresh{update: true, fill: e.Model != event.UnknownModel})
+		res, err = upd.ExecContext(ctx, toMillis(e.Timestamp), e.Input, e.Output, e.CacheRead, e.CacheWrite5m, e.CacheWrite1h, e.CacheWrite,
+			e.Reasoning, string(e.Confidence), e.ToolVersion, e.EventID, e.DeviceID, e.Output)
 		if err != nil {
 			return 0, 0, 0, err
+		}
+		n, _ := res.RowsAffected()
+		if e.Model != event.UnknownModel {
+			res, err = fill.ExecContext(ctx, e.Model, e.EventID, e.DeviceID, event.UnknownModel)
+			if err != nil {
+				return 0, 0, 0, err
+			}
+			f, _ := res.RowsAffected()
+			n += f
 		}
 		if n > 0 {
 			updated++
@@ -72,16 +100,17 @@ func dumpEvents(t *testing.T, s *Store) []string {
 }
 
 // Random batches with repeats inside the batch, copies of stored events, other
-// devices' ids, growing output and model placeholders: the batched insert must
-// give the same counts and the same stored rows as the one-by-one reference.
+// devices' ids, growing output, model placeholders and unclean text, under
+// several batch shapes: the batched insert must give the same counts and the
+// same stored rows as the one-by-one reference.
 func TestInsertEventsMatchesReference(t *testing.T) {
 	ctx := context.Background()
-	rng := rand.New(rand.NewPCG(1, 2))
-	models := []string{event.UnknownModel, "claude-opus-5", "", "gpt-5.6-terra"}
-	base := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
-
-	for round := range 40 {
+	rng := rand.New(rand.NewPCG(7, 9))
+	models := []string{event.UnknownModel, "claude-opus-5", "", "m\x00x"}
+	sizes := []batchSize{sqliteBatch, {rows: 3, ids: 2, prepare: true}, {rows: 7, ids: 5}, {rows: 500, ids: 500}}
+	for round := range 120 {
 		batched, ref := openTest(t), openTest(t)
+		batched.batch = sizes[round%len(sizes)]
 		var devices []string
 		for i := range 2 {
 			a, _, err := batched.CreateDevice(ctx, fmt.Sprint("d", i))
@@ -95,44 +124,56 @@ func TestInsertEventsMatchesReference(t *testing.T) {
 			}
 			devices = append(devices, a.ID)
 		}
-		received := int64(1_000)
-		for b := range 4 {
-			n := 1 + rng.IntN(30)
-			evs := make([]event.UsageEvent, n)
+		for b := range 5 {
+			evs := make([]event.UsageEvent, 1+rng.IntN(40))
 			for i := range evs {
 				evs[i] = event.UsageEvent{
-					EventID:   fmt.Sprintf("e%02d", rng.IntN(25)),
-					DeviceID:  devices[rng.IntN(len(devices))],
-					Source:    event.SourceClaudeCode,
-					Timestamp: base.Add(time.Duration(rng.IntN(1000)) * time.Minute),
-					Model:     models[rng.IntN(len(models))],
-					Input:     int64(rng.IntN(100)),
-					Output:    int64(rng.IntN(6)),
+					EventID:      fmt.Sprintf("e%02d", rng.IntN(25)),
+					DeviceID:     devices[rng.IntN(len(devices))],
+					Source:       event.SourceClaudeCode,
+					Timestamp:    time.UnixMilli(int64(rng.IntN(1000))),
+					Model:        models[rng.IntN(len(models))],
+					SessionID:    fmt.Sprint("s", rng.IntN(3)),
+					Project:      fmt.Sprint("p", rng.IntN(3)),
+					Input:        int64(rng.IntN(100)),
+					Output:       int64(rng.IntN(6)),
+					CacheRead:    int64(rng.IntN(9)),
+					CacheWrite5m: int64(rng.IntN(9)),
+					CacheWrite1h: int64(rng.IntN(9)),
+					CacheWrite:   int64(rng.IntN(9)),
+					Reasoning:    int64(rng.IntN(9)),
+					Confidence:   event.Confidence(fmt.Sprint("c", rng.IntN(3))),
+					ToolVersion:  fmt.Sprint("v", rng.IntN(3)),
 				}
 			}
 			var want [3]int
 			err := ref.writeTx(ctx, func(tx *sql.Tx) error {
 				var err error
-				want[0], want[1], want[2], err = referenceInsert(ctx, tx, evs, received)
+				want[0], want[1], want[2], err = referenceInsert(ctx, tx, evs, 1000)
 				return err
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
+			// insertEventsTx directly, so received_at is the same fixed value.
+			clean := make([]event.UsageEvent, len(evs))
+			for i, e := range evs {
+				clean[i] = cleanEvent(e)
+			}
 			var got [3]int
 			err = batched.writeTx(ctx, func(tx *sql.Tx) error {
 				var err error
-				got[0], got[1], got[2], err = insertEventsTx(ctx, tx, batched.batch, evs, received)
+				got[0], got[1], got[2], err = insertEventsTx(ctx, tx, batched.batch, clean, 1000)
 				return err
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
 			if got != want {
-				t.Fatalf("round %d batch %d: counts %v, reference %v\nbatch %+v", round, b, got, want, evs)
+				t.Fatalf("round %d batch %d (%+v): counts %v, reference %v\nbatch %+v", round, b, batched.batch, got, want, evs)
 			}
 			if g, w := dumpEvents(t, batched), dumpEvents(t, ref); !reflect.DeepEqual(g, w) {
-				t.Fatalf("round %d batch %d: stored rows differ\n got %v\nwant %v", round, b, g, w)
+				t.Fatalf("round %d batch %d (%+v): stored rows differ\n got %v\nwant %v", round, b, batched.batch, g, w)
 			}
 		}
 	}
