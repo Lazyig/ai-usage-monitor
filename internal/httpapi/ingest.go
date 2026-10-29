@@ -159,7 +159,9 @@ func (a *api) handleIngest(w http.ResponseWriter, r *http.Request) {
 	rejected := 0
 	for _, e := range req.Events {
 		e.DeviceID = dev.ID
-		if !e.Valid() {
+		// Ids must also be storable as they are: free text is cleaned on the
+		// way in, but cleaning an id could merge two different events.
+		if !e.Valid() || !store.IsCleanText(e.EventID) || !store.IsCleanText(e.SessionID) {
 			rejected++
 			continue
 		}

@@ -42,7 +42,7 @@ func TestMigrationsIdempotent(t *testing.T) {
 		t.Fatalf("devices after reopen = %d, want 1", len(devs))
 	}
 	// Exactly one row per embedded migration, however many there are by now.
-	files, err := fs.Glob(migrationsFS, "migrations/*.sql")
+	files, err := fs.Glob(migrationsFS, "migrations/sqlite/*.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestMigrationsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if n != len(files) {
-		t.Fatalf("schema_migrations rows = %d, want %d (one per migrations/*.sql)", n, len(files))
+		t.Fatalf("schema_migrations rows = %d, want %d (one per migrations/sqlite/*.sql)", n, len(files))
 	}
 }
 

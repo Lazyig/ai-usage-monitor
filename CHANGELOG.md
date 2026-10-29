@@ -17,6 +17,14 @@
 - 기기 관리가 배포 중인 에이전트(`manifest.json`)와 버전이 다른 기기에 **버전 불일치** 표시를 하고, 업데이트 명령을 보여줍니다. 다운로드 페이지에도 업데이트 명령을 추가했습니다.
 - 설치 스크립트에 업데이트 모드를 추가했습니다: `install.sh --update`, `install.ps1 -Update`. 토큰 없이 바이너리를 바꾸고 `config.json` 의 설정으로 서비스를 다시 등록해 시작합니다. 설치된 에이전트가 없으면 아무것도 내려받지 않고 멈춥니다.
 
+### 변경
+
+- 서버 저장소를 PostgreSQL 지원에 맞게 정리했습니다. SQLite 동작과 API 결과는 같습니다.
+  - 수신한 이벤트를 모아서 저장합니다(이미 저장된 이벤트의 재전송은 한 번에 조회).
+  - 이벤트·기기 정보의 자유 텍스트(모델·프로젝트·도구 버전·기기 이름 등)에 든 NUL 문자와 깨진 UTF-8 은 U+FFFD 로 바꿔 저장합니다. `event_id`·`session_id` 에 이런 문자가 있는 이벤트는 그 이벤트만 거부합니다(`rejected` 로 집계).
+  - `/health`·`/health/ready` 는 DB 오류 내용을 보여 주지 않고 `"database":"unavailable"` 만 알립니다. 자세한 오류는 서버 로그에 1분에 한 번 남깁니다.
+  - 재동기화 플래그는 한 문장으로 읽고 지워, 동시에 들어온 수신 중 하나만 받습니다.
+
 ### 보안
 
 - **Windows**: LocalSystem 서비스가 사용자가 쓸 수 있는 곳의 바이너리(`%LOCALAPPDATA%`)와 설정(`%APPDATA%`)을 쓰던 문제(권한 상승). 바이너리는 `%ProgramFiles%\ai-usage-agent`, 상태는 `%ProgramData%\ai-usage-agent`(SYSTEM·Administrators 만 접근)로 옮겼습니다. `install.ps1` 을 다시 실행하면(`-Update` 포함) 기존 설치의 바이너리·설정·커서·큐가 새 위치로 옮겨집니다. `uninstall.ps1` 은 두 위치를 모두 정리합니다.

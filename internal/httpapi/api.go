@@ -59,6 +59,8 @@ type api struct {
 
 	counts   store.Counts // /health's cached row counts, see cachedCounts
 	countsAt time.Time
+
+	pingLoggedAt time.Time // last "database check failed" log line
 }
 
 // New builds the complete handler tree.

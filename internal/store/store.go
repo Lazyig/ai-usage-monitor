@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	_ "modernc.org/sqlite" // pure-Go driver, registers "sqlite"
 
@@ -25,7 +26,7 @@ import (
 	"ai-usage-monitor/internal/pricing"
 )
 
-//go:embed migrations/*.sql
+//go:embed migrations/sqlite/*.sql
 var migrationsFS embed.FS
 
 // ErrNotFound is returned when a lookup by id finds nothing.
@@ -44,6 +45,8 @@ type Pricer interface {
 type Store struct {
 	db  *sql.DB // the single writer (and the reader for in-memory databases)
 	rdb *sql.DB // read-only pool: WAL lets readers run beside the writer
+
+	batch batchSize // statement batching for InsertEvents
 }
 
 // Open opens (creating if needed) the SQLite database at path and applies all
@@ -97,7 +100,7 @@ func Open(path string) (*Store, error) {
 		rdb.SetConnMaxLifetime(0)
 	}
 
-	s := &Store{db: db, rdb: rdb}
+	s := &Store{db: db, rdb: rdb, batch: sqliteBatch}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := s.migrate(ctx); err != nil {
@@ -136,7 +139,7 @@ func (s *Store) Ping(ctx context.Context) error {
 	return s.rdb.QueryRowContext(ctx, `SELECT 1`).Scan(&one)
 }
 
-// migrate applies every migrations/*.sql file, in filename order, exactly once.
+// migrate applies every migrations/sqlite/*.sql file, in filename order, exactly once.
 func (s *Store) migrate(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
 		version    TEXT PRIMARY KEY,
@@ -162,7 +165,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		return err
 	}
 
-	entries, err := fs.Glob(migrationsFS, "migrations/*.sql")
+	entries, err := fs.Glob(migrationsFS, "migrations/sqlite/*.sql")
 	if err != nil {
 		return err
 	}
@@ -185,7 +188,7 @@ func (s *Store) migrate(ctx context.Context) error {
 			return fmt.Errorf("store: migration %s: %w", version, err)
 		}
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)`,
+			`INSERT INTO schema_migrations(version, applied_at) VALUES($1, $2)`,
 			version, nowMillis()); err != nil {
 			tx.Rollback()
 			return fmt.Errorf("store: record migration %s: %w", version, err)
@@ -213,6 +216,35 @@ func (s *Store) Counts(ctx context.Context) (Counts, error) {
 		return c, err
 	}
 	return c, nil
+}
+
+// writeTx runs fn in one write transaction, committing when it returns nil.
+func (s *Store) writeTx(ctx context.Context, fn func(*sql.Tx) error) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// CleanText makes s storable as text on every backend: invalid UTF-8 and NUL
+// (which PostgreSQL text cannot hold) become U+FFFD. Valid text is returned
+// unchanged.
+func CleanText(s string) string {
+	if IsCleanText(s) {
+		return s
+	}
+	return strings.ReplaceAll(strings.ToValidUTF8(s, "\uFFFD"), "\x00", "\uFFFD")
+}
+
+// IsCleanText reports whether s is valid UTF-8 without NUL bytes, that is,
+// whether CleanText would return it unchanged.
+func IsCleanText(s string) bool {
+	return utf8.ValidString(s) && !strings.ContainsRune(s, 0)
 }
 
 func nowMillis() int64 { return time.Now().UTC().UnixMilli() }

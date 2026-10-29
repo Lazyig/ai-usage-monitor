@@ -3,12 +3,12 @@ package store
 import (
 	"context"
 	"math"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"ai-usage-monitor/internal/event"
 	"ai-usage-monitor/internal/pricing"
+	"ai-usage-monitor/internal/store/storetest"
 )
 
 const testPricing = `
@@ -38,7 +38,7 @@ func testTable(t *testing.T) *pricing.Table {
 
 func openTest(t *testing.T) *Store {
 	t.Helper()
-	s, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	s, err := Open(storetest.DSN(t))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -17,6 +17,7 @@ import (
 
 	"ai-usage-monitor/internal/event"
 	"ai-usage-monitor/internal/store"
+	"ai-usage-monitor/internal/store/storetest"
 )
 
 const adminToken = "admin-secret"
@@ -49,7 +50,7 @@ func newHarness(t *testing.T, opt Options) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := store.Open(filepath.Join(dir, "usage.db"))
+	st, err := store.Open(storetest.DSN(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -658,5 +659,22 @@ func TestServerInfo(t *testing.T) {
 	h.decode(w, &b)
 	if b.Version != "1.2.3" || b.Commit != "abc123" {
 		t.Errorf("server info = %+v", b)
+	}
+}
+
+// A failing database shows only "unavailable" on the unauthenticated health
+// endpoints; the error text (hosts, users) stays in the server log.
+func TestHealthHidesDatabaseError(t *testing.T) {
+	h := newHarness(t, Options{AdminToken: adminToken})
+	h.store.Close()
+	for _, path := range []string{"/health", "/health/ready"} {
+		w := h.do(http.MethodGet, path, "", nil)
+		var body struct {
+			Checks map[string]string `json:"checks"`
+		}
+		h.decode(w, &body)
+		if w.Code != http.StatusServiceUnavailable || body.Checks["database"] != "unavailable" {
+			t.Errorf("%s = %d %s", path, w.Code, w.Body)
+		}
 	}
 }
