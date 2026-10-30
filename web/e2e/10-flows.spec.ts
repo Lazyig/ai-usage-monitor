@@ -20,7 +20,7 @@ test('login rejects an invalid token, accepts the test token, and logs out', asy
 test('date presets, custom dates, refresh and automatic refresh remain usable', async ({ page }) => {
   await prepare(page)
   await page.goto('/')
-  await selectPreset(page, '최근 7일', '최근 기간')
+  await selectPreset(page, '최근 7일', '최근 기간 고르기')
   await expect(period(page, '최근 7일')).toHaveAttribute('aria-pressed', 'true')
   await selectPreset(page, '직접 선택')
   await page.getByLabel('시작일', { exact: true }).fill('2026-10-22')
@@ -196,7 +196,7 @@ test('the selected period and auto refresh come back from the server in a fresh 
   const savedPut = (body: string) =>
     page.waitForResponse((r) => r.url().endsWith('/api/v1/preferences') && r.request().method() === 'PUT' && (r.request().postData() ?? '').includes(body) && r.ok())
   let saved = savedPut('"day-1"')
-  await selectPreset(page, '어제', '지난 날짜')
+  await selectPreset(page, '어제', '지난 날짜 고르기')
   await saved
   saved = savedPut('"auto_refresh":true')
   await setAutoRefresh(page, true)
@@ -239,14 +239,14 @@ test('a group menu picks an earlier period and the tab takes its name', async ({
   await prepare(page) // today is Friday 2026-10-23 in Seoul
   await page.goto('/')
   const lastWeek = page.waitForResponse((r) => r.url().includes('/api/v1/summary?') && r.url().includes('from=2026-10-12') && r.url().includes('to=2026-10-19'))
-  await page.getByRole('button', { name: '지난 주', exact: true }).click()
+  await page.getByRole('button', { name: '지난주 고르기', exact: true }).click()
   await expect(page.getByRole('menuitemcheckbox', { name: '지난주' })).toContainText('10/12–10/18')
   await page.getByRole('menuitemcheckbox', { name: '지난주' }).click()
   expect((await lastWeek).ok()).toBe(true)
   await expect(period(page, '지난주')).toHaveAttribute('aria-pressed', 'true')
   // Back to the current week from the same menu.
   await noOpenMenu(page)
-  await page.getByRole('button', { name: '지난 주', exact: true }).click()
+  await page.getByRole('button', { name: '지난주 고르기', exact: true }).click()
   await page.getByRole('menuitemcheckbox', { name: '이번 주' }).click()
   await expect(period(page, '이번 주')).toHaveAttribute('aria-pressed', 'true')
 })

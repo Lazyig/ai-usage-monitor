@@ -190,7 +190,6 @@ export interface Device {
   hostname?: string
 }
 
-/** GET /api/v1/server: the build the server runs. */
 /** GET/PUT /api/v1/preferences — the dashboard's last selections, kept on the
  * server. Absent fields mean "the default". */
 export interface DashboardPreferences {
@@ -203,6 +202,7 @@ export interface DashboardPreferences {
   auto_refresh?: boolean
 }
 
+/** GET /api/v1/server: the build the server runs. */
 export interface ServerBuild {
   /** Release tag, `0.0.0-<sha>` for a main build, `dev` for a local one. */
   version: string

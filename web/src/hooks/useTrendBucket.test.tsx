@@ -39,6 +39,18 @@ it('follows the range until a pick, and drops the pick when the range changes', 
   expect(state.resolve().bucket).toBe('day')
 })
 
+it('keeps a pick when midnight moves a relative period, not when custom dates change', () => {
+  act(() => root.render(<Probe range={{ preset: 'last-90', from: '2026-07-24', to: '2026-10-22' }} />))
+  act(() => state.select('week'))
+  act(() => root.render(<Probe range={{ preset: 'last-90', from: '2026-07-25', to: '2026-10-23' }} />))
+  expect(state.resolve().bucket).toBe('week')
+
+  act(() => root.render(<Probe range={{ preset: 'custom', from: '2026-01-01', to: '2026-06-01' }} />))
+  act(() => state.select('month'))
+  act(() => root.render(<Probe range={{ preset: 'custom', from: '2026-01-01', to: '2026-07-01' }} />))
+  expect(state.resolve().bucket).toBe('week')
+})
+
 it('fetches days for a pick that is folded from them', () => {
   act(() => root.render(<Probe range={rangeForPreset('day-0')} />))
   act(() => state.select('day'))

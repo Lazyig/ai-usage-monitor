@@ -201,10 +201,14 @@ export interface ChartWindow {
  * instead of the preset's far-off start. Returns undefined — draw only the
  * points — when a data point does not fit the expected labels (an older
  * server without tz, or data still from a previous range during a refetch).
+ * Hours over a range too long for them are such leftover data too: today's
+ * hours fit 최근 90일's hourly labels, but filling those would draw thousands
+ * of bars for the one render before the new days arrive.
  */
 export function chartBuckets(series: TimeseriesSeries[], window: ChartWindow, now = kstHourNow()): string[] | undefined {
   const ts = series.flatMap((s) => s.points.map((p) => p.t)).sort()
   if (ts.length === 0) return undefined
+  if (window.bucket === 'hour' && !hourlyAllowed(window.range)) return undefined
   // A folded week label is a Monday, a month label "YYYY-MM"; both stand for
   // the bucket's first day, which is where bucketsBetween starts too.
   const from = window.range.preset === 'all' ? ts[0].slice(0, 10) : window.range.from

@@ -181,6 +181,12 @@ describe('chartBuckets + mergeSeries', () => {
     const outside = [series('codex', ['2026-09-01'])]
     expect(chartBuckets(outside, { range: range('last-7', '2026-10-15', '2026-10-22'), bucket: 'day' }, now)).toBeUndefined()
   })
+
+  it('does not fill hours over a range too long for them (data from the previous range)', () => {
+    const today = [series('codex', ['2026-10-21T09:00:00+09:00'])]
+    expect(chartBuckets(today, { range: range('last-90', '2026-07-24', '2026-10-22'), bucket: 'hour' }, now)).toBeUndefined()
+    expect(chartBuckets(today, { range: range('day-0', '2026-10-21', '2026-10-22'), bucket: 'hour' }, now)).toHaveLength(13)
+  })
 })
 
 describe('kstHourNow', () => {

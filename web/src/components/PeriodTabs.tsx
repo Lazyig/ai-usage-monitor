@@ -20,10 +20,10 @@ export interface PeriodItem {
 const back = (unit: PeriodUnit): RangePreset[] => Array.from({ length: BACK[unit] + 1 }, (_, n) => `${unit}-${n}` as RangePreset)
 
 export const PERIOD_ITEMS: PeriodItem[] = [
-  { key: 'day', base: 'day-0', options: back('day'), menuLabel: '지난 날짜' },
-  { key: 'week', base: 'week-0', options: back('week'), menuLabel: '지난 주' },
-  { key: 'month', base: 'month-0', options: back('month'), menuLabel: '지난 달' },
-  { key: 'last', base: 'last-30', options: LAST_DAYS.map((n) => `last-${n}` as RangePreset), menuLabel: '최근 기간' },
+  { key: 'day', base: 'day-0', options: back('day'), menuLabel: '지난 날짜 고르기' },
+  { key: 'week', base: 'week-0', options: back('week'), menuLabel: '지난주 고르기' },
+  { key: 'month', base: 'month-0', options: back('month'), menuLabel: '지난달 고르기' },
+  { key: 'last', base: 'last-30', options: LAST_DAYS.map((n) => `last-${n}` as RangePreset), menuLabel: '최근 기간 고르기' },
   { key: 'all', base: 'all', options: [] },
   { key: 'custom', base: 'custom', options: [] },
 ]
