@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getBreakdown, getDevices, getTimeseries } from '../api/client'
-import type { BreakdownRow, Device, Source, TimeseriesBucket } from '../api/types'
+import type { BreakdownRow, Device, Source } from '../api/types'
 import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
 import { CompositionChart, CompositionLegend, type CompositionSegment } from '../components/CompositionChart'
@@ -17,9 +17,9 @@ import { costColumn, countColumn, Swatch, tokenColumn } from '../components/colu
 import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import { useApiData } from '../hooks/useApiData'
-import { type Metric, METRIC_OPTIONS, BUCKET_OPTIONS, metricFormat, seriesTokens, topBy } from '../lib/chartData'
+import { useTrendBucket } from '../hooks/useTrendBucket'
+import { type Metric, METRIC_OPTIONS, metricFormat, seriesTokens, topBy } from '../lib/chartData'
 import { SOURCE_COLOR_VARS, SOURCE_ORDER, colorForSlot, labelForKey } from '../lib/colors'
-import { hourlyAllowed } from '../lib/dateRange'
 import { formatCompact, formatDateTime, formatFull, formatRelative, formatUsd, isStale } from '../lib/format'
 import { buildMatrix, fetchSourceDeviceMatrix } from '../lib/matrix'
 import { tokensOf } from '../lib/usage'
@@ -47,10 +47,7 @@ export function DeviceUsage() {
   const [source, setSource] = useState<Source | ''>('')
   const [mixMetric, setMixMetric] = useState<Metric>('cost')
   const [trendMetric, setTrendMetric] = useState<Metric>('cost')
-  const [bucket, setBucket] = useState<TimeseriesBucket>('day')
-
-  const canBucketHourly = hourlyAllowed(range)
-  const effectiveBucket: TimeseriesBucket = canBucketHourly ? bucket : 'day'
+  const trendBucket = useTrendBucket(range)
 
   const devicesState = useApiData(() => getDevices(), [refreshKey])
   const usageState = useApiData(
@@ -58,9 +55,10 @@ export function DeviceUsage() {
     [range.from, range.to, source, refreshKey],
   )
   const trendState = useApiData(
-    () => getTimeseries({ from: range.from, to: range.to, bucket: effectiveBucket, group_by: 'device', source: source || undefined }),
-    [range.from, range.to, effectiveBucket, source, refreshKey],
+    () => getTimeseries({ from: range.from, to: range.to, bucket: trendBucket.fetchBucket, group_by: 'device', source: source || undefined }),
+    [range.from, range.to, trendBucket.fetchBucket, source, refreshKey],
   )
+  const trendView = trendBucket.resolve(trendState.status === 'success' ? trendState.data.series : undefined)
   const mixState = useApiData(
     () => fetchSourceDeviceMatrix({ from: range.from, to: range.to, sources: source ? [source] : SOURCE_ORDER }),
     [range.from, range.to, source, refreshKey],
@@ -203,9 +201,7 @@ export function DeviceUsage() {
         controls={
           <>
             <SegmentedControl ariaLabel="추이 지표 전환" value={trendMetric} onChange={setTrendMetric} options={METRIC_OPTIONS} />
-            {canBucketHourly && (
-              <SegmentedControl ariaLabel="추이 단위 전환" value={effectiveBucket} onChange={setBucket} options={BUCKET_OPTIONS} />
-            )}
+            <SegmentedControl ariaLabel="추이 단위 전환" value={trendView.bucket} onChange={trendBucket.select} options={trendView.options} />
           </>
         }
       >
@@ -223,6 +219,7 @@ export function DeviceUsage() {
                 labelFor={nameOf}
                 colorFor={colorOf}
                 span={{ range, bucket: trendState.data.bucket }}
+                bucket={trendView.bucket}
               />
             )}
           </StateContainer>

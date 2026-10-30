@@ -8,14 +8,16 @@ interface ChartTooltipProps extends TooltipProps<ValueType, NameType> {
   /** Resolves a series key to its display name. Defaults to the source label
    * map; per-device series pass a resolver so UUID keys read as device names. */
   labelFor?: (key: string) => string
+  /** Heading for the hovered bucket's label; the raw label when omitted. */
+  formatLabel?: (label: string) => ReactNode
 }
 
 /** Themed tooltip shared by every trend chart in the app: one swatched line
  * per stacked series, in stack order. */
-export function ChartTooltip({ active, payload, label, formatValue, labelFor = labelForKey }: ChartTooltipProps) {
+export function ChartTooltip({ active, payload, label, formatValue, labelFor = labelForKey, formatLabel }: ChartTooltipProps) {
   if (!active || !payload || payload.length === 0) return null
   return (
-    <TooltipShell label={label} minWidth={0}>
+    <TooltipShell label={formatLabel ? formatLabel(String(label)) : label} minWidth={0}>
       {payload.map((p) => (
         <TooltipRow key={String(p.dataKey)} color={p.color} label={labelFor(String(p.dataKey))}>
           {formatValue(Number(p.value))}
