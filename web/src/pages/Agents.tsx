@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { getBreakdown, getDevices, getThroughput, getTimeseries } from '../api/client'
-import type { BreakdownRow, Source, TimeseriesBucket } from '../api/types'
+import type { BreakdownRow, Source } from '../api/types'
 import { Badge } from '../components/Badge'
 import { Card } from '../components/Card'
 import { CompositionChart, CompositionLegend, type CompositionSegment } from '../components/CompositionChart'
@@ -16,9 +16,9 @@ import { costColumn, countColumn, dateTimeColumn, Swatch, tokenColumn } from '..
 import { Button } from '../components/ui/button'
 import { Select } from '../components/ui/select'
 import { useApiData } from '../hooks/useApiData'
-import { type Metric, METRIC_OPTIONS, BUCKET_OPTIONS, metricFormat } from '../lib/chartData'
+import { useTrendBucket } from '../hooks/useTrendBucket'
+import { type Metric, METRIC_OPTIONS, metricFormat } from '../lib/chartData'
 import { SOURCE_COLOR_VARS, SOURCE_ORDER, colorForSlot, labelForKey } from '../lib/colors'
-import { hourlyAllowed } from '../lib/dateRange'
 import { formatCompact, formatFull, formatPercent, formatUsd } from '../lib/format'
 import { buildMatrix, fetchSourceDeviceMatrix } from '../lib/matrix'
 import { cacheHitRatio, tokensOf } from '../lib/usage'
@@ -26,7 +26,7 @@ import { useFilters } from '../state/FiltersContext'
 
 /**
  * Per-agent view: how the three collectors (Claude Code / Codex / Antigravity)
- * compare in the selected range — headline totals, the daily/hourly trend, the
+ * compare in the selected range — headline totals, the usage trend, the
  * device each agent's usage came from, and the full per-agent table. The device
  * filter narrows every card on the page.
  */
@@ -35,11 +35,8 @@ export function Agents() {
   const [device, setDevice] = useState('')
   const [summaryMetric, setSummaryMetric] = useState<Metric>('cost')
   const [trendMetric, setTrendMetric] = useState<Metric>('cost')
-  const [bucket, setBucket] = useState<TimeseriesBucket>('day')
+  const trendBucket = useTrendBucket(range)
   const [mixMetric, setMixMetric] = useState<Metric>('cost')
-
-  const canBucketHourly = hourlyAllowed(range)
-  const effectiveBucket: TimeseriesBucket = canBucketHourly ? bucket : 'day'
 
   const devicesState = useApiData(() => getDevices(), [refreshKey])
   const summaryState = useApiData(
@@ -47,9 +44,10 @@ export function Agents() {
     [range.from, range.to, device, refreshKey],
   )
   const trendState = useApiData(
-    () => getTimeseries({ from: range.from, to: range.to, bucket: effectiveBucket, group_by: 'source', device: device || undefined }),
-    [range.from, range.to, effectiveBucket, device, refreshKey],
+    () => getTimeseries({ from: range.from, to: range.to, bucket: trendBucket.fetchBucket, group_by: 'source', device: device || undefined }),
+    [range.from, range.to, trendBucket.fetchBucket, device, refreshKey],
   )
+  const trendView = trendBucket.resolve(trendState.status === 'success' ? trendState.data.series : undefined)
   const throughputState = useApiData(
     () => getThroughput({ from: range.from, to: range.to, group_by: 'source', device: device || undefined }),
     [range.from, range.to, device, refreshKey],
@@ -146,9 +144,7 @@ export function Agents() {
         controls={
           <>
             <SegmentedControl ariaLabel="추이 지표 전환" value={trendMetric} onChange={setTrendMetric} options={METRIC_OPTIONS} />
-            {canBucketHourly && (
-              <SegmentedControl ariaLabel="추이 단위 전환" value={effectiveBucket} onChange={setBucket} options={BUCKET_OPTIONS} />
-            )}
+            <SegmentedControl ariaLabel="추이 단위 전환" value={trendView.bucket} onChange={trendBucket.select} options={trendView.options} />
           </>
         }
       >
@@ -165,6 +161,7 @@ export function Agents() {
                 mode={trendMetric}
                 colorFor={(key) => SOURCE_COLOR_VARS[key as Source] ?? colorForSlot(0)}
                 span={{ range, bucket: trendState.data.bucket }}
+                bucket={trendView.bucket}
               />
             )}
           </StateContainer>

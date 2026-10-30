@@ -41,14 +41,14 @@ export function addDays(dateStr: string, days: number): string {
 }
 
 /** The first of the month `months` after dateStr's month (negative: before). */
-function addMonths(dateStr: string, months: number): string {
+export function addMonths(dateStr: string, months: number): string {
   const d = new Date(`${dateStr.slice(0, 7)}-01T00:00:00Z`)
   d.setUTCMonth(d.getUTCMonth() + months)
   return d.toISOString().slice(0, 10)
 }
 
 /** Monday of dateStr's week (weeks start on Monday). */
-function mondayOf(dateStr: string): string {
+export function mondayOf(dateStr: string): string {
   const dow = new Date(`${dateStr}T00:00:00Z`).getUTCDay() // 0 = Sunday
   return addDays(dateStr, -((dow + 6) % 7))
 }
@@ -129,9 +129,9 @@ export function presetDetail(preset: RangePreset, today = kstToday()): string {
   return ''
 }
 
-/** Whole days covered by [from, to) — used to decide whether an hourly
- * bucket would still be readable. */
-function rangeDays(from: string, to: string): number {
+/** Whole days covered by [from, to) — used to decide which chart buckets
+ * would still be readable. */
+export function rangeDays(from: string, to: string): number {
   const ms = Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)
   if (Number.isNaN(ms)) return 1
   return Math.max(1, Math.round(ms / 86_400_000))

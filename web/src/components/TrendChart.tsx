@@ -1,7 +1,19 @@
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { TimeseriesSeries } from '../api/types'
 import { ChartTooltip } from './ChartTooltip'
-import { type ChartWindow, type Metric, chartBuckets, formatBucketLabel, mergeSeries, metricFormat, metricOfPoint } from '../lib/chartData'
+import {
+  type ChartBucket,
+  type ChartWindow,
+  type Metric,
+  chartBuckets,
+  chartSpan,
+  foldSeries,
+  formatBucketLabel,
+  formatBucketTitle,
+  mergeSeries,
+  metricFormat,
+  metricOfPoint,
+} from '../lib/chartData'
 import { labelForKey } from '../lib/colors'
 import { PHONE_QUERY, useMediaQuery } from '../hooks/useMediaQuery'
 
@@ -25,6 +37,9 @@ interface TrendChartProps {
   /** The range and bucket the series were fetched for. With it, idle days
    * (or hours) are drawn as empty buckets instead of being skipped. */
   span?: ChartWindow
+  /** The bucket to draw (see `useTrendBucket`). A daily series is summed into
+   * weeks or months here; any other combination draws the series as fetched. */
+  bucket?: ChartBucket
 }
 
 /**
@@ -32,14 +47,29 @@ interface TrendChartProps {
  * 에이전트, 모델 and 기기 cards. One column (or band) per bucket, one segment
  * per series, with the shared themed tooltip and legend.
  */
-export function TrendChart({ series, mode, labelFor = labelForKey, colorFor, variant = 'bar', height = 288, barStroke = true, span }: TrendChartProps) {
+export function TrendChart({
+  series,
+  mode,
+  labelFor = labelForKey,
+  colorFor,
+  variant = 'bar',
+  height = 288,
+  barStroke = true,
+  span,
+  bucket,
+}: TrendChartProps) {
   const isPhone = useMediaQuery(PHONE_QUERY)
-  const { data, keys } = mergeSeries(series, metricOfPoint(mode), span && chartBuckets(series, span))
+  const drawn: ChartBucket = span?.bucket === 'day' && (bucket === 'week' || bucket === 'month') ? bucket : (span?.bucket ?? 'day')
+  const shown = drawn === 'week' || drawn === 'month' ? foldSeries(series, drawn) : series
+  const chartWindow = span && { range: span.range, bucket: drawn }
+  const { data, keys } = mergeSeries(shown, metricOfPoint(mode), chartWindow && chartBuckets(shown, chartWindow))
   if (data.length === 0) return null
   const format = metricFormat(mode)
   const effectiveHeight = isPhone ? Math.min(height, 220) : height
   const tickFontSize = isPhone ? 10 : 11
   const legendFontSize = isPhone ? 11 : 12
+  const daySpan = span && chartSpan(span.range, series)
+  const formatLabel = daySpan ? (t: string) => formatBucketTitle(t, drawn, daySpan) : undefined
 
   // The two variants share every axis, the grid, the tooltip and the legend;
   // only the chart/mark pair and the tooltip cursor differ.
@@ -48,7 +78,7 @@ export function TrendChart({ series, mode, labelFor = labelForKey, colorFor, var
       <CartesianGrid stroke="var(--border)" vertical={false} />
       <XAxis
         dataKey="t"
-        tickFormatter={formatBucketLabel}
+        tickFormatter={(t: string) => formatBucketLabel(t, drawn)}
         tick={{ fill: 'var(--text-muted)', fontSize: tickFontSize }}
         axisLine={{ stroke: 'var(--border-strong)' }}
         tickLine={false}
@@ -62,7 +92,7 @@ export function TrendChart({ series, mode, labelFor = labelForKey, colorFor, var
         width={isPhone ? 48 : 64}
       />
       <Tooltip
-        content={<ChartTooltip formatValue={format} labelFor={labelFor} />}
+        content={<ChartTooltip formatValue={format} labelFor={labelFor} formatLabel={formatLabel} />}
         cursor={variant === 'area' ? { stroke: 'var(--border-strong)', strokeWidth: 1 } : { fill: 'var(--border)', opacity: 0.4 }}
       />
       <Legend

@@ -13,6 +13,7 @@ import { StateContainer } from '../components/StateContainer'
 import { StatTile } from '../components/StatTile'
 import { TrendChart } from '../components/TrendChart'
 import { type ApiState, useApiData } from '../hooks/useApiData'
+import { useTrendBucket } from '../hooks/useTrendBucket'
 import { type Metric, METRIC_OPTIONS } from '../lib/chartData'
 import { colorForKey, labelForKey } from '../lib/colors'
 import { formatCompact, formatFull, formatUsd } from '../lib/format'
@@ -26,12 +27,14 @@ const COST_KNOWN_THRESHOLD = 0.95
 export function Overview() {
   const { range, refreshKey } = useFilters()
   const [chartMode, setChartMode] = useState<Metric>('cost')
+  const trendBucket = useTrendBucket(range)
 
   const summaryState = useApiData(() => getSummary({ from: range.from, to: range.to }), [range.from, range.to, refreshKey])
   const timeseriesState = useApiData(
-    () => getTimeseries({ from: range.from, to: range.to, bucket: 'day', group_by: 'source' }),
-    [range.from, range.to, refreshKey],
+    () => getTimeseries({ from: range.from, to: range.to, bucket: trendBucket.fetchBucket, group_by: 'source' }),
+    [range.from, range.to, trendBucket.fetchBucket, refreshKey],
   )
+  const trendView = trendBucket.resolve(timeseriesState.status === 'success' ? timeseriesState.data.series : undefined)
 
   const summaryError = summaryState.status === 'error' ? summaryState.message : null
   const totals = summaryState.status === 'success' ? summaryState.data.totals : null
@@ -70,7 +73,12 @@ export function Overview() {
       <Card
         className="mb-6"
         title="소스별 사용량 추이"
-        controls={<SegmentedControl ariaLabel="차트 값 전환" value={chartMode} onChange={setChartMode} options={METRIC_OPTIONS} />}
+        controls={
+          <>
+            <SegmentedControl ariaLabel="차트 값 전환" value={chartMode} onChange={setChartMode} options={METRIC_OPTIONS} />
+            <SegmentedControl ariaLabel="추이 단위 전환" value={trendView.bucket} onChange={trendBucket.select} options={trendView.options} />
+          </>
+        }
       >
         <ErrorBoundary label="차트를 표시할 수 없습니다">
           <StateContainer
@@ -87,6 +95,7 @@ export function Overview() {
                 height={280}
                 barStroke={false}
                 span={{ range, bucket: timeseriesState.data.bucket }}
+                bucket={trendView.bucket}
               />
             )}
           </StateContainer>

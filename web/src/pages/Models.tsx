@@ -32,6 +32,7 @@ import { formatCompact, formatFull, formatPercent, formatUsd } from '../lib/form
 import { readStored, writeStored } from '../lib/storage'
 import { cacheHitRatio, tokensOf } from '../lib/usage'
 import { useApiData } from '../hooks/useApiData'
+import { useTrendBucket } from '../hooks/useTrendBucket'
 import { useFilters } from '../state/FiltersContext'
 
 /** Top-N cutoff for both bar charts when no wider "top N selector" exists yet — see "전체 보기". */
@@ -65,6 +66,7 @@ export function Models() {
   const [metric, setMetric] = useState<MetricMode>(loadMetric)
   const [showAll, setShowAll] = useState(false)
   const [tsMode, setTsMode] = useState<Metric>('tokens')
+  const trendBucket = useTrendBucket(range)
 
   useEffect(() => writeStored(METRIC_STORAGE_KEY, metric), [metric])
 
@@ -73,9 +75,10 @@ export function Models() {
     [range.from, range.to, source, refreshKey],
   )
   const timeseriesState = useApiData(
-    () => getTimeseries({ from: range.from, to: range.to, bucket: 'day', group_by: 'model', source: source || undefined }),
-    [range.from, range.to, source, refreshKey],
+    () => getTimeseries({ from: range.from, to: range.to, bucket: trendBucket.fetchBucket, group_by: 'model', source: source || undefined }),
+    [range.from, range.to, trendBucket.fetchBucket, source, refreshKey],
   )
+  const trendView = trendBucket.resolve(timeseriesState.status === 'success' ? timeseriesState.data.series : undefined)
 
   const throughputState = useApiData(
     () => getThroughput({ from: range.from, to: range.to, group_by: 'model', source: source || undefined }),
@@ -98,7 +101,7 @@ export function Models() {
   const tokenTruncated = !showAll && tokenRows.length > TOP_N
 
   // Same model set/order as the token chart's "top by usage" ranking — the
-  // per-day trend line is only useful for the handful of models that
+  // trend line is only useful for the handful of models that
   // actually dominate the range.
   // The series are per model name (across tools), the rows per (model, tool):
   // a name used by two tools counts once.
@@ -177,7 +180,12 @@ export function Models() {
       <Card
         className="mb-6"
         title={`모델별 사용량 추이 (상위 ${TOP_TIMESERIES_MODELS}개)`}
-        controls={<SegmentedControl ariaLabel="추이 차트 값 전환" value={tsMode} onChange={setTsMode} options={METRIC_OPTIONS} />}
+        controls={
+          <>
+            <SegmentedControl ariaLabel="추이 차트 값 전환" value={tsMode} onChange={setTsMode} options={METRIC_OPTIONS} />
+            <SegmentedControl ariaLabel="추이 단위 전환" value={trendView.bucket} onChange={trendBucket.select} options={trendView.options} />
+          </>
+        }
       >
         <ErrorBoundary label="차트를 표시할 수 없습니다">
           <StateContainer
@@ -194,6 +202,7 @@ export function Models() {
                 variant="area"
                 height={280}
                 span={{ range, bucket: timeseriesState.data.bucket }}
+                bucket={trendView.bucket}
               />
             )}
           </StateContainer>
