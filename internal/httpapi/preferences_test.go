@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -44,6 +45,10 @@ func TestPreferences(t *testing.T) {
 		`{"range":{"preset":"30d"}}`,
 		`{"range":{"preset":"custom","from":"2026-10-11","to":"2026-10-01"}}`,
 		`{"range":{"preset":"custom","from":"yesterday","to":"2026-10-01"}}`,
+		`{"range":{"preset":"custom","from":"0001-01-01","to":"9999-12-31"}}`,
+		`{"range":{"preset":"custom","from":"1969-12-31","to":"2026-10-01"}}`,
+		`{"range":{"preset":"custom","from":"2026-10-01","to":"2201-01-01"}}`,
+		`null`,
 		`{"auto_refresh":"yes"}`,
 		`{"theme":"dark"}`,
 		`not json`,
@@ -58,5 +63,25 @@ func TestPreferences(t *testing.T) {
 	// A refused save leaves the stored document alone.
 	if got := get(); !strings.Contains(got, `"custom"`) {
 		t.Errorf("after refused saves: %s", got)
+	}
+}
+
+// A stored document this version cannot fully read keeps what it can: an
+// unknown range falls back to the default, the rest survives.
+func TestPreferencesStoredByAnotherVersion(t *testing.T) {
+	h := newHarness(t, Options{AdminToken: adminToken})
+	for stored, want := range map[string]string{
+		`{"range":{"preset":"quarter-0"},"auto_refresh":true}`: `{"auto_refresh":true}`,
+		`{"range":{"preset":"week-1"},"theme":"dark"}`:         `{"range":{"preset":"week-1"}}`,
+		`{"auto_refresh":"yes"}`:                               `{}`,
+		`not json`:                                             `{}`,
+	} {
+		if err := h.store.SetPreference(context.Background(), dashboardPrefsName, stored); err != nil {
+			t.Fatal(err)
+		}
+		w := h.do(http.MethodGet, "/api/v1/preferences", adminToken, nil)
+		if got := strings.TrimSpace(w.Body.String()); w.Code != http.StatusOK || got != want {
+			t.Errorf("stored %s: GET = %d %s, want %s", stored, w.Code, got, want)
+		}
 	}
 }

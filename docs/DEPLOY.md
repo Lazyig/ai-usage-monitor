@@ -115,7 +115,7 @@ curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" https://usage.example.com/a
 
 ## PostgreSQL
 
-`DB_PATH`(또는 `--db`)에 `postgres://` URL 을 주거나, 둘 다 없을 때 `DATABASE_URL` 을 주면 PostgreSQL 을 쓴다. 첫 기동 때 스키마(`devices`, `usage_events`, `schema_migrations`)를 만들고, 이후 버전의 마이그레이션도 기동할 때 적용한다. API 와 대시보드는 SQLite 와 같은 결과를 낸다.
+`DB_PATH`(또는 `--db`)에 `postgres://` URL 을 주거나, 둘 다 없을 때 `DATABASE_URL` 을 주면 PostgreSQL 을 쓴다. 첫 기동 때 스키마(`devices`, `usage_events`, `preferences`, `schema_migrations`)를 만들고, 이후 버전의 마이그레이션도 기동할 때 적용한다. API 와 대시보드는 SQLite 와 같은 결과를 낸다.
 
 ```
 postgres://ai_usage@db.example.com:5432/ai_usage?sslmode=verify-full
@@ -180,9 +180,9 @@ readinessProbe:
 
 ### SQLite 에서 옮기기 (`copy-db`)
 
-`ai-usage-server copy-db` 는 기기(토큰 해시 포함)와 이벤트를 다른 DB 로 그대로 복사한다. 기기 토큰이 그대로 옮겨지므로 에이전트는 다시 설치하지 않아도 된다. 반대 방향(PostgreSQL → SQLite)도 된다.
+`ai-usage-server copy-db` 는 기기(토큰 해시 포함)·이벤트·대시보드 설정을 다른 DB 로 그대로 복사한다. 기기 토큰이 그대로 옮겨지므로 에이전트는 다시 설치하지 않아도 된다. 반대 방향(PostgreSQL → SQLite)도 된다.
 
-- 대상은 비어 있어야 한다(없으면 스키마를 만든다). 원본은 읽기만 하고 마이그레이션하지 않으므로, 원본이 이 버전의 스키마가 아니면 먼저 이 버전 서버를 원본으로 한 번 띄운다.
+- 대상에는 기기와 이벤트가 없어야 한다(없으면 스키마를 만든다). 대상의 대시보드 설정은 원본 것으로 바뀐다. 원본은 읽기만 하고 마이그레이션하지 않으므로, 원본이 이 버전의 스키마가 아니면 먼저 이 버전 서버를 원본으로 한 번 띄운다.
 - 원본은 한 스냅샷으로 읽고 대상은 한 트랜잭션으로 쓴다. 끝나면 양쪽 행 수를 비교해 출력한다. 실패하면 대상에는 아무것도 남지 않는다.
 - 복사하는 동안 들어온 이벤트는 옮겨지지 않으므로 **서버를 멈추고** 실행한다. 에이전트는 그동안 보내지 못한 이벤트를 큐에 두었다가 새 서버로 다시 보낸다.
 - `-to` 를 주지 않으면 서버 자신의 설정(`DB_PATH`, 없으면 `DATABASE_URL`)을 대상으로 쓴다. 비밀번호가 `ps` 에 보이지 않도록 URL 은 `-from-env`/`-to-env` 와 `PGPASSWORD` 로 넘긴다.

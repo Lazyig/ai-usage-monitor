@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"regexp"
@@ -30,6 +31,9 @@ const dashboardPrefsName = "dashboard"
 // maxPrefsBytes bounds the stored document; the real one is under 100 bytes.
 const maxPrefsBytes = 4 << 10
 
+// minPrefYear and maxPrefYear bound a saved custom range.
+const minPrefYear, maxPrefYear = 1970, 2200
+
 // rangePreset matches the presets the dashboard offers: a calendar period
 // counted back from today (day-0 today … day-6, week-0 … week-4, month-0 …
 // month-12), a rolling window (last-7, last-30, last-90), all or custom.
@@ -52,6 +56,11 @@ func (p *dashboardPrefs) validate() error {
 	if err1 != nil || err2 != nil || !from.Before(to) {
 		return errors.New("a custom range needs from < to as YYYY-MM-DD")
 	}
+	// A saved range is loaded on every device; one spanning millennia would
+	// fail every chart there until someone picked another period.
+	if from.Year() < minPrefYear || to.Year() > maxPrefYear {
+		return fmt.Errorf("a custom range must lie between %d and %d", minPrefYear, maxPrefYear)
+	}
 	return nil
 }
 
@@ -62,10 +71,14 @@ func (a *api) handleGetPreferences(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var p dashboardPrefs
-	// A document an older version stored but this one cannot read is ignored
-	// rather than breaking the dashboard: it falls back to the defaults.
-	if ok && (json.Unmarshal([]byte(raw), &p) != nil || p.validate() != nil) {
+	// A document another version stored that this one cannot read falls back
+	// to the defaults rather than breaking the dashboard: all of it if it does
+	// not parse, only the range if that is what this version does not know.
+	if ok && json.Unmarshal([]byte(raw), &p) != nil {
 		p = dashboardPrefs{}
+	}
+	if p.validate() != nil {
+		p.Range = nil
 	}
 	writeJSON(w, http.StatusOK, p)
 }
@@ -73,11 +86,17 @@ func (a *api) handleGetPreferences(w http.ResponseWriter, r *http.Request) {
 func (a *api) handlePutPreferences(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxPrefsBytes))
 	dec.DisallowUnknownFields()
-	var p dashboardPrefs
-	if err := dec.Decode(&p); err != nil {
+	var pp *dashboardPrefs
+	if err := dec.Decode(&pp); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid preferences: "+err.Error())
 		return
 	}
+	if pp == nil {
+		// null would otherwise save the defaults over the stored choice.
+		writeError(w, http.StatusBadRequest, "invalid preferences: expected a JSON object")
+		return
+	}
+	p := *pp
 	if err := dec.Decode(&struct{}{}); err != io.EOF {
 		writeError(w, http.StatusBadRequest, "invalid preferences: data after the JSON object")
 		return

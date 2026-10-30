@@ -143,6 +143,9 @@ func TestCopyRoundTrip(t *testing.T) {
 	if got := dumpEvents(t, back); !reflect.DeepEqual(got, wantEv) {
 		t.Errorf("events differ after the way back")
 	}
+	if v, ok, err := back.Preference(ctx, "dashboard"); err != nil || !ok || v != `{"auto_refresh":true}` {
+		t.Errorf("preferences after the way back: %q %v %v", v, ok, err)
+	}
 }
 
 func dumpID(t *testing.T, s *Store, name string) string {
