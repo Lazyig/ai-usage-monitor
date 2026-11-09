@@ -3,6 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DashboardPreferences } from '../api/types'
+import { formatCompact } from '../lib/format'
 import { FiltersProvider, useFilters } from './FiltersContext'
 
 const api = vi.hoisted(() => ({
@@ -133,13 +134,13 @@ describe('selections kept on the server', () => {
     act(() => filters.toggleAutoRefresh())
     expect(api.saved).toEqual([])
     act(() => vi.advanceTimersByTime(400))
-    expect(api.saved).toEqual([{ range: { preset: 'last-7' }, auto_refresh: true }])
+    expect(api.saved).toEqual([{ range: { preset: 'last-7' }, auto_refresh: true, number_units: 'en' }])
   })
 
   it('keeps the dates of a custom range only', () => {
     act(() => filters.setCustomRange('2026-10-01', '2026-10-10'))
     act(() => vi.advanceTimersByTime(400))
-    expect(api.saved).toEqual([{ range: { preset: 'custom', from: '2026-10-01', to: '2026-10-11' }, auto_refresh: false }])
+    expect(api.saved).toEqual([{ range: { preset: 'custom', from: '2026-10-01', to: '2026-10-11' }, auto_refresh: false, number_units: 'en' }])
   })
 
   it('starts from the server copy, with relative presets recomputed for today', async () => {
@@ -188,7 +189,7 @@ describe('selections kept on the server', () => {
     root = createRoot(container)
     await act(async () => root.render(<FiltersProvider><Probe /></FiltersProvider>))
     expect(filters.range.preset).toBe('all')
-    expect(api.saved).toEqual([{ range: { preset: 'all' }, auto_refresh: false }])
+    expect(api.saved).toEqual([{ range: { preset: 'all' }, auto_refresh: false, number_units: 'en' }])
     await act(async () => {})
     expect(JSON.parse(localStorage.getItem('aum_dashboard_prefs')!).synced).toBe(true)
   })
@@ -197,13 +198,13 @@ describe('selections kept on the server', () => {
     api.fail = true
     act(() => filters.setPreset('week-1'))
     await act(async () => vi.advanceTimersByTime(400))
-    expect(JSON.parse(localStorage.getItem('aum_dashboard_prefs')!)).toEqual({ prefs: { range: { preset: 'week-1' }, auto_refresh: false }, synced: false })
+    expect(JSON.parse(localStorage.getItem('aum_dashboard_prefs')!)).toEqual({ prefs: { range: { preset: 'week-1' }, auto_refresh: false, number_units: 'en' }, synced: false })
   })
 
   it('sends a pending save at once when the page is hidden', () => {
     act(() => filters.setPreset('month-2'))
     act(() => window.dispatchEvent(new Event('pagehide')))
-    expect(api.saved).toEqual([{ range: { preset: 'month-2' }, auto_refresh: false }])
+    expect(api.saved).toEqual([{ range: { preset: 'month-2' }, auto_refresh: false, number_units: 'en' }])
     act(() => vi.advanceTimersByTime(400))
     expect(api.saved).toHaveLength(1)
   })
@@ -222,7 +223,7 @@ describe('selections kept on the server', () => {
     act(() => filters.setPreset('day-3'))
     api.token = null // logout clears the token, then the provider unmounts
     act(() => root.unmount())
-    expect(api.saved).toEqual([{ range: { preset: 'day-3' }, auto_refresh: false }])
+    expect(api.saved).toEqual([{ range: { preset: 'day-3' }, auto_refresh: false, number_units: 'en' }])
     root = createRoot(container) // for afterEach
   })
 
@@ -239,5 +240,34 @@ describe('selections kept on the server', () => {
     expect(filters.range.preset).toBe('all')
     // The other tab's unsynced change is left for that tab to save.
     expect(JSON.parse(localStorage.getItem('aum_dashboard_prefs')!)).toEqual(doc)
+  })
+
+  it('saves the number units and applies them to every compact number', () => {
+    expect(filters.numberUnits).toBe('en')
+    expect(formatCompact(47_800_000)).toBe('47.8M')
+    act(() => filters.setNumberUnits('ko'))
+    expect(formatCompact(47_800_000)).toBe('4,780만')
+    act(() => vi.advanceTimersByTime(400))
+    expect(api.saved).toEqual([{ range: { preset: 'last-30' }, auto_refresh: false, number_units: 'ko' }])
+  })
+
+  it('takes the number units from the server copy and falls back to English for unknown ones', async () => {
+    api.serverPrefs = { number_units: 'ko' }
+    await remount()
+    expect(filters.numberUnits).toBe('ko')
+    expect(formatCompact(2_150_000_000)).toBe('21.5억')
+    api.serverPrefs = { number_units: 'jp' as unknown as 'ko' }
+    await remount()
+    expect(filters.numberUnits).toBe('en')
+    expect(formatCompact(2_150_000_000)).toBe('2.2B')
+  })
+
+  it('follows number units changed in another tab', () => {
+    const doc = { prefs: { range: { preset: 'last-30' }, auto_refresh: false, number_units: 'ko' }, synced: true }
+    localStorage.setItem('aum_dashboard_prefs', JSON.stringify(doc))
+    act(() => window.dispatchEvent(new StorageEvent('storage', { key: 'aum_dashboard_prefs', newValue: JSON.stringify(doc) })))
+    expect(filters.numberUnits).toBe('ko')
+    act(() => vi.advanceTimersByTime(400))
+    expect(api.saved).toEqual([])
   })
 })

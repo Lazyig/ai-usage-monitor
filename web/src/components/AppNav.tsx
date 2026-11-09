@@ -7,6 +7,7 @@ import { Desktop20Filled, Desktop20Regular } from '@fluentui/react-icons/headles
 import { DesktopEdit20Filled, DesktopEdit20Regular } from '@fluentui/react-icons/headless/svg/desktop-edit'
 import { Folder20Filled, Folder20Regular } from '@fluentui/react-icons/headless/svg/folder'
 import { Home20Filled, Home20Regular } from '@fluentui/react-icons/headless/svg/home'
+import { Settings20Filled, Settings20Regular } from '@fluentui/react-icons/headless/svg/settings'
 import { SignOut20Regular } from '@fluentui/react-icons/headless/svg/sign-out'
 import { Tag20Filled, Tag20Regular } from '@fluentui/react-icons/headless/svg/tag'
 import { TextBulletListLtr20Filled, TextBulletListLtr20Regular } from '@fluentui/react-icons/headless/svg/text-bullet-list-ltr'
@@ -31,6 +32,7 @@ const ADMIN_ITEMS = [
   { to: '/events', label: '이벤트', icon: bundleIcon(TextBulletListLtr20Filled, TextBulletListLtr20Regular) },
   { to: '/pricing', label: '가격표', icon: bundleIcon(Tag20Filled, Tag20Regular) },
   { to: '/downloads-page', label: '다운로드', icon: bundleIcon(ArrowDownload20Filled, ArrowDownload20Regular) },
+  { to: '/settings', label: '설정', icon: bundleIcon(Settings20Filled, Settings20Regular) },
 ]
 
 /** The nav value for a path: '/' only matches exactly, everything else by prefix. */

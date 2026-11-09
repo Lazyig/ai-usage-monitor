@@ -250,3 +250,33 @@ test('a group menu picks an earlier period and the tab takes its name', async ({
   await page.getByRole('menuitemcheckbox', { name: '이번 주' }).click()
   await expect(period(page, '이번 주')).toHaveAttribute('aria-pressed', 'true')
 })
+
+test('number units chosen in settings apply to every page and follow to a fresh browser', async ({ page, browser }, testInfo) => {
+  await prepare(page)
+  await page.goto('/')
+  const tile = (p: typeof page) => p.getByText('입력 토큰', { exact: true }).locator('xpath=following-sibling::div[1]')
+  await expect(tile(page)).toHaveText(/^[\d.,]+[KMBT]?$/)
+
+  if (await page.getByRole('button', { name: '메뉴 열기' }).isVisible()) {
+    await page.getByRole('button', { name: '메뉴 열기' }).click()
+  }
+  await page.getByRole('link', { name: '설정' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: '설정' })).toBeVisible()
+  const english = page.getByRole('radio', { name: '영어 단위 (K · M · B)' })
+  const korean = page.getByRole('radio', { name: '한국어 단위 (만 · 억 · 조)' })
+  await expect(english).toHaveAttribute('aria-checked', 'true')
+  const saved = page.waitForResponse((r) => r.url().endsWith('/api/v1/preferences') && r.request().method() === 'PUT' && (r.request().postData() ?? '').includes('"number_units":"ko"') && r.ok())
+  await korean.click()
+  await expect(korean).toHaveAttribute('aria-checked', 'true')
+  await saved
+
+  await page.goto('/')
+  await expect(tile(page)).toHaveText(/^[\d.,]+[만억조]?$/)
+
+  const other = await browser.newContext({ ...testInfo.project.use, baseURL: testInfo.project.use.baseURL })
+  const page2 = await other.newPage()
+  await prepare(page2, true, false)
+  await page2.goto('/settings')
+  await expect(page2.getByRole('radio', { name: '한국어 단위 (만 · 억 · 조)' })).toHaveAttribute('aria-checked', 'true')
+  await other.close()
+})

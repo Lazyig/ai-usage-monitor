@@ -16,6 +16,7 @@ import (
 type dashboardPrefs struct {
 	Range       *prefRange `json:"range,omitempty"`
 	AutoRefresh *bool      `json:"auto_refresh,omitempty"`
+	NumberUnits *string    `json:"number_units,omitempty"`
 }
 
 type prefRange struct {
@@ -40,6 +41,13 @@ const minPrefYear, maxPrefYear = 1970, 2200
 var rangePreset = regexp.MustCompile(`^(day-[0-6]|week-[0-4]|month-([0-9]|1[0-2])|last-(7|30|90)|all|custom)$`)
 
 func (p *dashboardPrefs) validate() error {
+	if err := p.validateRange(); err != nil {
+		return err
+	}
+	return p.validateNumberUnits()
+}
+
+func (p *dashboardPrefs) validateRange() error {
 	if p.Range == nil {
 		return nil
 	}
@@ -64,6 +72,13 @@ func (p *dashboardPrefs) validate() error {
 	return nil
 }
 
+func (p *dashboardPrefs) validateNumberUnits() error {
+	if p.NumberUnits != nil && *p.NumberUnits != "en" && *p.NumberUnits != "ko" {
+		return errors.New("unknown number units")
+	}
+	return nil
+}
+
 func (a *api) handleGetPreferences(w http.ResponseWriter, r *http.Request) {
 	raw, ok, err := a.store.Preference(r.Context(), dashboardPrefsName)
 	if err != nil {
@@ -73,12 +88,15 @@ func (a *api) handleGetPreferences(w http.ResponseWriter, r *http.Request) {
 	var p dashboardPrefs
 	// A document another version stored that this one cannot read falls back
 	// to the defaults rather than breaking the dashboard: all of it if it does
-	// not parse, only the range if that is what this version does not know.
+	// not parse, only the invalid fields otherwise.
 	if ok && json.Unmarshal([]byte(raw), &p) != nil {
 		p = dashboardPrefs{}
 	}
-	if p.validate() != nil {
+	if p.validateRange() != nil {
 		p.Range = nil
+	}
+	if p.validateNumberUnits() != nil {
+		p.NumberUnits = nil
 	}
 	writeJSON(w, http.StatusOK, p)
 }

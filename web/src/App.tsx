@@ -11,6 +11,7 @@ import { Models } from './pages/Models'
 import { Overview } from './pages/Overview'
 import { Pricing } from './pages/Pricing'
 import { Projects } from './pages/Projects'
+import { Settings } from './pages/Settings'
 import { AuthProvider } from './state/AuthContext'
 import { FiltersProvider } from './state/FiltersContext'
 
@@ -40,6 +41,7 @@ function App() {
             <Route path="/downloads-page" element={<Downloads />} />
             <Route path="/events" element={<Events />} />
             <Route path="/pricing" element={<Pricing />} />
+            <Route path="/settings" element={<Settings />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

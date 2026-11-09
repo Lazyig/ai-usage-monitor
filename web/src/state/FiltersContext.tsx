@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { getPreferences, getStoredToken, putPreferences } from '../api/client'
 import type { DashboardPreferences } from '../api/types'
 import { type DateRange, type RangePreset, customRange, rangeForPreset } from '../lib/dateRange'
+import { type NumberUnits, setNumberUnits as setFormatUnits } from '../lib/format'
 import { fromPreferences, toPreferences } from '../lib/preferences'
 import { readStored, writeStored } from '../lib/storage'
 
@@ -11,6 +12,9 @@ interface FiltersContextValue {
   setCustomRange: (fromDate: string, toDateInclusive: string) => void
   autoRefresh: boolean
   toggleAutoRefresh: () => void
+  /** How large numbers are shortened everywhere (K·M·B or 만·억·조). */
+  numberUnits: NumberUnits
+  setNumberUnits: (units: NumberUnits) => void
   /** Bump to force every page's data hooks to refetch. */
   refreshKey: number
   refresh: () => void
@@ -50,6 +54,10 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
   const [initial] = useState(() => fromPreferences(parseCache(readStored(CACHE_KEY))?.prefs))
   const [range, setRange] = useState<DateRange>(initial.range)
   const [autoRefresh, setAutoRefresh] = useState(initial.autoRefresh)
+  const [numberUnits, setNumberUnits] = useState(initial.numberUnits)
+  // Set during render, not in an effect: the pages below render in this same
+  // pass and their formatCompact calls must already see the new units.
+  setFormatUnits(numberUnits)
   const [refreshKey, setRefreshKey] = useState(0)
   // Set by the user's own changes: a late answer from the server no longer
   // overrides them.
@@ -67,6 +75,7 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
     const s = fromPreferences(prefs)
     setRange((current) => (current.preset === s.range.preset && current.from === s.range.from && current.to === s.range.to ? current : s.range))
     setAutoRefresh(s.autoRefresh)
+    setNumberUnits(s.numberUnits)
   }, [])
 
   /** Sends doc to the server; the cache is marked synced once it lands. */
@@ -127,7 +136,7 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('storage', onStorage)
   }, [apply])
 
-  const stored = JSON.stringify(toPreferences({ range, autoRefresh }))
+  const stored = JSON.stringify(toPreferences({ range, autoRefresh, numberUnits }))
   useEffect(() => {
     const cache = parseCache(readStored(CACHE_KEY))
     // Equal to the cache: loaded from it, or another tab's change.
@@ -225,10 +234,15 @@ export function FiltersProvider({ children }: { children: ReactNode }) {
         touched.current = true
         setAutoRefresh((v) => !v)
       },
+      numberUnits,
+      setNumberUnits: (units) => {
+        touched.current = true
+        setNumberUnits(units)
+      },
       refreshKey,
       refresh,
     }),
-    [range, autoRefresh, refreshKey, refresh],
+    [range, autoRefresh, numberUnits, refreshKey, refresh],
   )
 
   return <FiltersContext.Provider value={value}>{children}</FiltersContext.Provider>

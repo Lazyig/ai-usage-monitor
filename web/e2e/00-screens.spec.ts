@@ -4,7 +4,7 @@ import { prepare } from './support'
 for (const [name, path] of [
   ['login', '/login'], ['overview', '/'], ['agents', '/agents'], ['models', '/models'],
   ['projects', '/projects'], ['device-usage', '/devices'], ['device-management', '/manage/devices'],
-  ['events', '/events'], ['pricing', '/pricing'], ['downloads', '/downloads-page'],
+  ['events', '/events'], ['pricing', '/pricing'], ['downloads', '/downloads-page'], ['settings', '/settings'],
 ]) {
   test(`${name}: normal rendering and optional exact screenshot`, async ({ page }) => {
     const errors: string[] = []

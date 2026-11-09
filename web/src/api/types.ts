@@ -200,6 +200,8 @@ export interface DashboardPreferences {
     to?: string
   }
   auto_refresh?: boolean
+  /** How large numbers are shortened: "en" (K·M·B) or "ko" (만·억·조). */
+  number_units?: 'en' | 'ko'
 }
 
 /** GET /api/v1/server: the build the server runs. */

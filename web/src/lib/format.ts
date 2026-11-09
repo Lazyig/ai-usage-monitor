@@ -1,11 +1,49 @@
 // Number, currency, and relative-time formatting helpers shared by every page.
 
-const compactFormatter = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
-const fullFormatter = new Intl.NumberFormat('en-US')
+/** How large numbers are shortened: English K·M·B, or Korean 만·억·조. */
+export type NumberUnits = 'en' | 'ko'
 
-/** 1.2M / 340K style compact token count. Pass the full value as a title attr separately. */
+export const DEFAULT_NUMBER_UNITS: NumberUnits = 'en'
+
+export function isNumberUnits(v: unknown): v is NumberUnits {
+  return v === 'en' || v === 'ko'
+}
+
+const compactFormatters: Record<NumberUnits, Intl.NumberFormat> = {
+  en: new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }),
+  // Grouped, so 12,345,678 reads 1,234.6만 rather than 1234.6만.
+  ko: new Intl.NumberFormat('ko-KR', { notation: 'compact', maximumFractionDigits: 1, useGrouping: true }),
+}
+const fullFormatter = new Intl.NumberFormat('en-US')
+// Same one decimal as the compact forms: per-minute averages are fractional.
+const koSmallFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 })
+
+/** Korean counts in 만 (10⁴): below it a number is written out ("1,234"),
+ * which reads more naturally than "1.2천". */
+const KO_FIRST_UNIT = 10_000
+
+// The operator's choice, set by FiltersProvider while it renders so every
+// formatCompact call below it uses the same units. A module value rather than
+// a parameter because table columns and chart axes format far from any hook;
+// the provider's context change re-renders them.
+let currentUnits: NumberUnits = DEFAULT_NUMBER_UNITS
+
+export function setNumberUnits(units: NumberUnits): void {
+  currentUnits = units
+}
+
+/** Compact token count in the operator's units: 1.2M / 340K, or 1,234.6만 /
+ * 1.2억. Pass the full value as a title attr separately. Takes one argument
+ * only: it is handed to chart axes as is, which pass the tick index second. */
 export function formatCompact(n: number): string {
-  return compactFormatter.format(n)
+  return formatCompactIn(n, currentUnits)
+}
+
+/** formatCompact in the given units, whatever the operator chose. */
+export function formatCompactIn(n: number, units: NumberUnits): string {
+  // Compared as shown (one decimal), so 9,999.96 becomes 1만, not 10,000.
+  if (units === 'ko' && Math.abs(Math.round(n * 10) / 10) < KO_FIRST_UNIT) return koSmallFormatter.format(n)
+  return compactFormatters[units].format(n)
 }
 
 /** Full value with thousands separators, for title/hover attributes. */
