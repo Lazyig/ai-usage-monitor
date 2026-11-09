@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-09
+
 ### 추가
 
 - 왼쪽 메뉴의 **설정** 페이지에서 토큰 수 같은 큰 숫자의 단위를 고릅니다: **영어 단위**(8.4K · 356K · 47.8M · 2.2B, 기본값) 또는 **한국어 단위**(8,420 · 35.6만 · 4,780만 · 21.5억). 1만 미만은 그대로 씁니다. 통계 타일·표·차트 축과 툴팁에 모두 적용되고, 정확한 값은 지금처럼 마우스를 올리면 보입니다.
@@ -162,7 +164,8 @@
 
 첫 공개 릴리스입니다. Claude Code · Codex CLI · Antigravity CLI 사용량을 모으는 에이전트, SQLite · JSON API 서버, 내장 웹 대시보드를 포함합니다.
 
-[Unreleased]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.2.0...v0.2.1
