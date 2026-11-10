@@ -14,7 +14,7 @@ func TestRealTableCoversObservedModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, m := range []string{"claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-fable-5-1", "claude-opus-5-5", "claude-opus-5-5-20260922", "claude-opus-5.5", "claude-5-5", "claude-5.5", "claude-sonnet-5-5", "claude-sonnet-5-5-20260928", "claude-sonnet-5.5", "claude-haiku-4-5", "claude-haiku-4-5-20251001", "gpt-6", "gpt-6-astra", "gpt-6-sol", "gpt-6-sol-2026-09-22", "gpt-6-luna", "gpt-6-luna-2026-09-22", "gpt-6.1-sol", "gpt-6.1-sol-2026-09-29", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna", "codex-auto-review", "gemini-4-argon", "gemini-4-argon-low", "gemini-3.8-flash", "gemini-3.8-flash-control", "gemini-3.7-flash", "gemini-3.7-flash-control", "gemini-default", "gemini-3-flash-a", "gemini-3-flash-c", "gemini-3.6-flash", "gemini-3.6-flash-exp-a", "gemini-3.1-pro-low", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "antigravity-internal"} {
+	for _, m := range []string{"claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-fable-5-1", "claude-fable-5-2", "claude-fable-5-2-20261109", "claude-opus-5-5", "claude-opus-5-5-20260922", "claude-opus-5.5", "claude-5-5", "claude-5.5", "claude-sonnet-5-5", "claude-sonnet-5-5-20260928", "claude-sonnet-5.5", "claude-haiku-4-5", "claude-haiku-4-5-20251001", "gpt-6", "gpt-6-astra", "gpt-6-sol", "gpt-6-sol-2026-09-22", "gpt-6-luna", "gpt-6-luna-2026-09-22", "gpt-6.1-sol", "gpt-6.1-sol-2026-09-29", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna", "codex-auto-review", "gemini-4-argon", "gemini-4-argon-low", "gemini-3.8-flash", "gemini-3.8-flash-control", "gemini-3.7-flash", "gemini-3.7-flash-control", "gemini-default", "gemini-3-flash-a", "gemini-3-flash-c", "gemini-3.6-flash", "gemini-3.6-flash-exp-a", "gemini-3.1-pro-low", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "antigravity-internal"} {
 		c := tb.Cost(event.UsageEvent{Model: m, Timestamp: time.Now(), Input: 1e6, Output: 1e6, CacheRead: 1e6})
 		if !c.Known {
 			t.Errorf("%s: no price", m)
@@ -134,5 +134,57 @@ func TestRealTableHaiku55Pricing(t *testing.T) {
 	}
 	if _, ok := tb.Lookup("claude-haiku-5-unknown", at); ok {
 		t.Fatal("unlisted Haiku models must remain unknown")
+	}
+}
+
+// Fable 5.2 standard rates cover all token classes, including both cache TTLs,
+// across the full context window. Earlier Fable models retain their own rates.
+func TestRealTableFable52Pricing(t *testing.T) {
+	tb, err := pricing.Load("../../pricing.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)
+	for _, model := range []string{"claude-fable-5-2", "claude-fable-5-2-20261109"} {
+		for _, tc := range []struct {
+			name string
+			e    event.UsageEvent
+			want float64
+		}{
+			{"input", event.UsageEvent{Input: 100_000}, 0.80},
+			{"output", event.UsageEvent{Output: 100_000}, 4.00},
+			{"cache_read", event.UsageEvent{CacheRead: 100_000}, 0.02},
+			{"cache_write_5m", event.UsageEvent{CacheWrite5m: 100_000}, 1.00},
+			{"cache_write_1h", event.UsageEvent{CacheWrite1h: 100_000}, 1.60},
+			{"mixed_large_prompt", event.UsageEvent{Input: 100_000, Output: 100_000, CacheRead: 100_000, CacheWrite5m: 100_000, CacheWrite1h: 100_000}, 7.42},
+		} {
+			t.Run(model+"/"+tc.name, func(t *testing.T) {
+				tc.e.Model, tc.e.Timestamp = model, at
+				c := tb.Cost(tc.e)
+				if !c.Known || math.Abs(c.USD-tc.want) > 1e-9 {
+					t.Fatalf("cost = %+v, want %v known", c, tc.want)
+				}
+				if c.Estimated != (model != "claude-fable-5-2") {
+					t.Fatalf("estimated = %v for %s", c.Estimated, model)
+				}
+			})
+		}
+	}
+	for _, tc := range []struct {
+		model string
+		want  float64
+	}{
+		{"claude-fable-5", 9.35},
+		{"claude-fable-5-1", 9.275},
+	} {
+		e := event.UsageEvent{Model: tc.model, Timestamp: at, Input: 100_000, Output: 100_000, CacheRead: 100_000, CacheWrite5m: 100_000, CacheWrite1h: 100_000}
+		if c := tb.Cost(e); !c.Known || c.Estimated || math.Abs(c.USD-tc.want) > 1e-9 {
+			t.Errorf("%s cost = %+v, want %v known and exact", tc.model, c, tc.want)
+		}
+	}
+	for _, model := range []string{"claude-fable-5-20", "claude-fable-5-2x", "claude-fable-5-3"} {
+		if _, ok := tb.Lookup(model, at); ok {
+			t.Errorf("unlisted model %s must remain unknown", model)
+		}
 	}
 }

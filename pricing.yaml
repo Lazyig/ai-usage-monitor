@@ -48,10 +48,23 @@
 - match: "claude-sonnet-5.5*"
   provider: anthropic
   alias_of: "claude-sonnet-5-5"
+# Fable 5.2 launched 2026-11-09. Standard prices verified 2026-11-10 against
+# https://platform.claude.com/docs/en/models/fable-5-2/overview
+# Fast mode is not distinguished in collected usage (standard rates below).
+- match: "claude-fable-5-2"
+  provider: anthropic
+  input: 8.00
+  cache_read: 0.20
+  cache_write_5m: 10.00
+  cache_write_1h: 16.00
+  output: 40.00
+- match: "claude-fable-5-2-*"     # dated snapshots / reasoning suffixes
+  provider: anthropic
+  alias_of: "claude-fable-5-2"
 - match: "claude-fable-5-1"       # launched 2026-09-01
   provider: anthropic
   input: 10.00
-  cache_read: 0.25                # 0.025x, unique to Fable/Mythos 5.1
+  cache_read: 0.25                # 0.025x on Fable/Mythos 5.1 and 5.2
   cache_write_5m: 12.50
   cache_write_1h: 20.00
   output: 50.00
