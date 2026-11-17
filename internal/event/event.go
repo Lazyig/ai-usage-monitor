@@ -46,8 +46,11 @@ type UsageEvent struct {
 	Source    Source    `json:"source"`
 	Timestamp time.Time `json:"ts"` // UTC
 	Model     string    `json:"model"`
-	SessionID string    `json:"session_id,omitempty"`
-	Project   string    `json:"project,omitempty"` // cwd or workspace URI
+	// ServiceTier is the selected/requested processing tier, not proof of the
+	// tier actually served or billed. Empty means the log did not establish it.
+	ServiceTier string `json:"service_tier,omitempty"`
+	SessionID   string `json:"session_id,omitempty"`
+	Project     string `json:"project,omitempty"` // cwd or workspace URI
 
 	Input        int64 `json:"input"`
 	Output       int64 `json:"output"`
@@ -118,10 +121,25 @@ func (e UsageEvent) Valid() bool {
 		return false
 	case len(e.EventID) > MaxIDLen || len(e.DeviceID) > MaxIDLen || len(e.SessionID) > MaxIDLen:
 		return false
-	case len(e.Source) > MaxNameLen || len(e.Model) > MaxNameLen || len(e.Confidence) > MaxNameLen || len(e.ToolVersion) > MaxNameLen:
+	case len(e.Source) > MaxNameLen || len(e.Model) > MaxNameLen || len(e.ServiceTier) > MaxNameLen || len(e.Confidence) > MaxNameLen || len(e.ToolVersion) > MaxNameLen:
 		return false
 	case len(e.Project) > MaxProjectLen:
 		return false
 	}
 	return strings.TrimSpace(string(e.Source)) != ""
+}
+
+// NormalizeServiceTier keeps provider tiers independent of model identity.
+// Missing/automatic routing cannot establish Standard or Fast processing.
+func NormalizeServiceTier(tier string) string {
+	switch v := strings.ToLower(strings.TrimSpace(tier)); v {
+	case "priority", "fast":
+		return "fast"
+	case "standard", "default":
+		return "default"
+	case "unknown":
+		return ""
+	default:
+		return v
+	}
 }

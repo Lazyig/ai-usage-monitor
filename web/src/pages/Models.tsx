@@ -13,6 +13,7 @@ import { ErrorBoundary } from '../components/ErrorBoundary'
 import { PageHeader } from '../components/PageHeader'
 import { SegmentedControl } from '../components/SegmentedControl'
 import { StateContainer } from '../components/StateContainer'
+import { ServiceTierBadge, ServiceTierFilter, serviceTierLabel } from '../components/ServiceTier'
 import { ThroughputCard } from '../components/ThroughputCard'
 import { TrendChart } from '../components/TrendChart'
 import { Button } from '../components/ui/button'
@@ -63,6 +64,7 @@ const TOKEN_SEGMENTS: CompositionSegment[] = TOKEN_CLASS_ORDER.map((cls) => ({
 export function Models() {
   const { range, refreshKey } = useFilters()
   const [source, setSource] = useState<Source | ''>('')
+  const [serviceTier, setServiceTier] = useState('')
   const [metric, setMetric] = useState<MetricMode>(loadMetric)
   const [showAll, setShowAll] = useState(false)
   const [tsMode, setTsMode] = useState<Metric>('tokens')
@@ -71,18 +73,18 @@ export function Models() {
   useEffect(() => writeStored(METRIC_STORAGE_KEY, metric), [metric])
 
   const state = useApiData(
-    () => getBreakdown({ from: range.from, to: range.to, group_by: 'model', source: source || undefined, limit: 100 }),
-    [range.from, range.to, source, refreshKey],
+    () => getBreakdown({ from: range.from, to: range.to, group_by: 'model', source: source || undefined, service_tier: serviceTier || undefined, limit: 100 }),
+    [range.from, range.to, source, serviceTier, refreshKey],
   )
   const timeseriesState = useApiData(
-    () => getTimeseries({ from: range.from, to: range.to, bucket: trendBucket.fetchBucket, group_by: 'model', source: source || undefined }),
-    [range.from, range.to, trendBucket.fetchBucket, source, refreshKey],
+    () => getTimeseries({ from: range.from, to: range.to, bucket: trendBucket.fetchBucket, group_by: 'model', source: source || undefined, service_tier: serviceTier || undefined }),
+    [range.from, range.to, trendBucket.fetchBucket, source, serviceTier, refreshKey],
   )
   const trendView = trendBucket.resolve(timeseriesState.status === 'success' ? timeseriesState.data.series : undefined)
 
   const throughputState = useApiData(
-    () => getThroughput({ from: range.from, to: range.to, group_by: 'model', source: source || undefined }),
-    [range.from, range.to, source, refreshKey],
+    () => getThroughput({ from: range.from, to: range.to, group_by: 'model', source: source || undefined, service_tier: serviceTier || undefined }),
+    [range.from, range.to, source, serviceTier, refreshKey],
   )
 
   const allRows = state.status === 'success' ? state.data.rows : []
@@ -127,7 +129,10 @@ export function Models() {
             options={[{ value: '', label: '전체' }, ...SOURCE_ORDER.map((s) => ({ value: s, label: labelForKey(s) }))]}
           />
         </RowField>
+        <ServiceTierFilter id="model-service-tier" value={serviceTier} onChange={setServiceTier} />
       </div>
+
+      {(!source || source === 'codex') && <CodexServiceTiers serviceTier={serviceTier} />}
 
       <Card
         className="mb-6"
@@ -230,6 +235,30 @@ export function Models() {
         {state.status === 'success' && <ModelsTable rows={state.data.rows} />}
       </StateContainer>
     </div>
+  )
+}
+
+function CodexServiceTiers({ serviceTier }: { serviceTier: string }) {
+  const { range, refreshKey } = useFilters()
+  const state = useApiData(
+    () => getBreakdown({ from: range.from, to: range.to, source: 'codex', group_by: 'service_tier', service_tier: serviceTier || undefined, limit: 100 }),
+    [range.from, range.to, serviceTier, refreshKey],
+  )
+  const rows = state.status === 'success' ? state.data.rows : []
+  const total = rows.reduce((sum, row) => sum + tokensOf(row), 0)
+  const columns: Column<BreakdownRow>[] = [
+    { key: 'tier', header: '서비스 등급', render: (r) => <ServiceTierBadge tier={r.key} />, sortValue: (r) => serviceTierLabel(r.key) },
+    tokenColumn('tokens', '토큰', tokensOf),
+    { key: 'share', header: '토큰 비중', align: 'right', render: (r) => formatPercent(total > 0 ? tokensOf(r) / total : 0, 1), sortValue: tokensOf },
+    countColumn('events', '이벤트', (r) => r.events),
+    costColumn('cost', 'Standard 환산 비용', (r) => r.cost_usd, { ratio: (r) => r.cost_known_ratio }),
+  ]
+  return (
+    <Card className="mb-6" title="Codex 서비스 등급별 사용량" subtitle="로그에 기록된 선택 설정 기준입니다. 등급이 기록되지 않은 사용량은 알 수 없음으로 표시합니다.">
+      <StateContainer loading={state.status === 'loading'} error={state.status === 'error' ? state.message : null} onRetry={state.reload} empty={state.status === 'success' && rows.length === 0}>
+        <DataTable columns={columns} rows={rows} rowKey={(r) => r.key} initialSortKey="tokens" />
+      </StateContainer>
+    </Card>
   )
 }
 

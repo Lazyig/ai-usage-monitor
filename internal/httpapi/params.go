@@ -48,13 +48,14 @@ func parseParams(r *http.Request) (params, error) {
 	}
 
 	p.filter = store.Filter{
-		From:    from,
-		To:      to,
-		Source:  q.Get("source"),
-		Device:  q.Get("device"),
-		Model:   q.Get("model"),
-		Project: q.Get("project"),
-		Session: q.Get("session"),
+		From:        from,
+		To:          to,
+		Source:      q.Get("source"),
+		Device:      q.Get("device"),
+		Model:       q.Get("model"),
+		Project:     q.Get("project"),
+		Session:     q.Get("session"),
+		ServiceTier: q.Get("service_tier"),
 	}
 	return p, nil
 }

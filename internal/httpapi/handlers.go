@@ -9,7 +9,7 @@ import (
 
 // groupByChoices is the 400 wording for the endpoints that accept every
 // group_by column.
-const groupByChoices = "source, device, model, project or session"
+const groupByChoices = "source, device, model, project, session or service_tier"
 
 func (a *api) handleSummary(w http.ResponseWriter, r *http.Request) {
 	p, ok := query(w, r)
@@ -58,7 +58,7 @@ func (a *api) handleBreakdown(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	group, ok := groupBy(w, r, "model", "model, project, device, session or source")
+	group, ok := groupBy(w, r, "model", groupByChoices)
 	if !ok {
 		return
 	}

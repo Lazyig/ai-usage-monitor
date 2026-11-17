@@ -10,6 +10,9 @@
 - 기간 파라미터: `from`, `to` (`to` 는 exclusive). RFC3339 는 절대 시각, `YYYY-MM-DD` 는 `tz` 기준 자정. 기본 구간은 `to` = 지금, `from` = `to` 가 속한 날짜의 자정에서 29일 전(로컬 기준 최근 30일).
 - `tz` (IANA, 기본 `Asia/Seoul`) 는 날짜 해석과 일·시 버킷 경계에만 쓴다.
 - 모든 `/api/*` 응답에 `Cache-Control: no-store`. 요청 본문은 8 MiB 까지(초과 시 `413`).
+- 모든 사용량 조회에 `service_tier` 필터를 사용할 수 있다. `default`=명시적 Standard, `fast`=Fast (`priority`도 같은 필터), `unknown`=등급 정보 없음. `auto`, `flex`, `ultrafast` 및 기타 원본 등급도 필터 가능. 미상은 Standard로 취급하지 않으며, 다른 수집기의 등급 없는 이벤트도 미상에 포함된다.
+- UsageEvent의 선택적 `service_tier`는 **선택/요청 설정**이다. `priority`/`fast`는 `fast`로 정규화하며, 정보가 없으면 생략한다. 실제 처리·청구 등급을 보장하지 않는다. 비용은 등급별 할증을 반영하지 않은 기존 Standard API 단가 환산액이다.
+- `breakdown`, `timeseries`, `throughput`은 `group_by=service_tier`를 지원한다. 등급 미상 그룹의 `key`는 `unknown`이다. 기존 `group_by=model` 및 `/summary.by_model`은 등급을 합친 원본 모델 기준 합계를 유지한다.
 
 ## 에이전트용 (기기 토큰)
 
@@ -26,6 +29,7 @@
 - `Content-Encoding: gzip` 본문 허용. 압축을 푼 본문은 16 MiB 까지(초과 시 `413`). 배치 최대 5,000건(초과 시 `400 {"error":"batch too large: at most 5000 events"}`, 5,001번째 이벤트에서 읽기를 멈춘다). 빈 배치는 하트비트로 쓰인다(유휴 에이전트는 5분마다).
 - `device.id` 는 참고용이다. 이벤트는 항상 토큰에 묶인 기기로 저장되고, 응답의 `device_id` 가 에이전트가 앞으로 쓸 기기 ID 를 알려준다.
 - `rejected` 는 `event.Valid()` 실패 또는 `device_id` 불일치로 버려진 이벤트 수. 나머지는 그대로 저장한다.
+- 같은 기기가 보낸 동일 이벤트에 저장된 등급이 미상이면, 토큰 수 증가 없이도 알려진 `service_tier`로 보완하고 `updated`로 센다. 기존에 알려진 등급은 다른 값이나 구버전의 누락값으로 덮어쓰지 않는다. 이벤트 ID는 바뀌지 않는다.
 - `event_id = sha256(source|native key...)` 로 **기기와 무관**하므로 같은 호출은 어느 기기·설치에서 올려도 한 번만 저장된다. 이미 있는 `event_id` 는 무시(`duplicates`)하되, 들어온 사본의 `output` 이 저장된 값보다 **크면** 토큰 수·`ts`·`reasoning`·`confidence`·`tool_version` 을 그 사본으로 갱신하고 `updated` 로 센다(기기·소스·모델·세션·`received_at` 은 유지). 스트리밍 응답의 첫 줄이 먼저 전송되고 완성된 줄이 뒤따라오는 경우를 위한 것이다.
 - 운영자가 재수집을 요청한 기기(`DELETE /devices/{id}/events`, `POST /devices/{id}/resync`)에는 다음 응답 한 번에만 `"resync":true` 가 붙는다. 에이전트는 이를 받으면 커서와 오프라인 큐를 버리고 처음부터 다시 수집한다.
 

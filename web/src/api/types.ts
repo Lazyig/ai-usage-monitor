@@ -52,7 +52,7 @@ export interface SummaryModelRow extends SummaryRowBase {
 }
 
 export type TimeseriesBucket = 'day' | 'hour'
-export type GroupBy = 'source' | 'device' | 'model' | 'project' | 'session'
+export type GroupBy = 'source' | 'device' | 'model' | 'project' | 'session' | 'service_tier'
 
 export interface TimeseriesPoint {
   t: string
@@ -81,7 +81,7 @@ export interface TimeseriesResponse {
   tz?: string
 }
 
-export type BreakdownGroupBy = 'model' | 'project' | 'device' | 'session' | 'source'
+export type BreakdownGroupBy = GroupBy
 
 export interface BreakdownRow {
   /** For group_by=device this is the device UUID (see `name`). */
@@ -154,6 +154,8 @@ export interface UsageEventDTO {
   source: Source
   ts: string
   model: string
+  /** Selected/requested tier; omitted when the log has no evidence. */
+  service_tier?: string
   session_id?: string
   project?: string
   input: number

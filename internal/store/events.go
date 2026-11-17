@@ -26,6 +26,8 @@ import (
 // scanned mid-stream has already shipped the first, nearly empty line. Output
 // only grows while a response streams, so "more output" identifies the later,
 // more complete copy without any notion of ordering between agents or runs.
+// A missing service tier or unknown model can also be filled in by the same
+// device without changing tokens. Established metadata is never overwritten.
 //
 // It returns how many rows were new (accepted), how many were already present
 // and unchanged (duplicates) and how many were refreshed (updated). The whole
@@ -61,7 +63,7 @@ func (s *Store) InsertEvents(ctx context.Context, evs []event.UsageEvent) (accep
 
 // batchSize is how many rows one multi-row INSERT carries and how many ids one
 // IN list holds. Over the network every statement is a round trip, so
-// PostgreSQL takes large batches (500 x 17 parameters stays below its limit of
+// PostgreSQL takes large batches (500 x 18 parameters stays below its limit of
 // 65535). SQLite has no round trip, and its driver matches each numbered
 // parameter against every argument, a cost that grows with the square of the
 // parameter count, so there one row per prepared INSERT is fastest.
@@ -151,18 +153,18 @@ func (t *stmtTx) close() {
 
 const eventCols = `event_id, device_id, source, ts, model, session_id, project,
 	input, output, cache_read, cache_write_5m, cache_write_1h, cache_write, reasoning,
-	confidence, tool_version, received_at`
+	confidence, tool_version, received_at, service_tier`
 
 // storedEvent is what the refresh decision needs to know about a stored row.
 type storedEvent struct {
-	device, model string
-	output        int64
+	device, model, serviceTier string
+	output                     int64
 }
 
 // refresh is the planned work for one incoming copy of an already stored event.
 type refresh struct {
-	idx          int // position in the batch
-	update, fill bool
+	idx                    int // position in the batch
+	update, fill, fillTier bool
 }
 
 func insertEventsTx(ctx context.Context, sqlTx *sql.Tx, size batchSize, batch []event.UsageEvent, received int64) (accepted, duplicates, updated int, err error) {
@@ -213,8 +215,8 @@ func insertEventsTx(ctx context.Context, sqlTx *sql.Tx, size batchSize, batch []
 	// Replay the copies in batch order against the stored state to see which
 	// ones change the row. device_id, source, model, session, project and
 	// received_at stay as first recorded: the identity of the event does not
-	// change, only its final size. The one exception is the model placeholder
-	// (event.UnknownModel), filled in when a later copy names the model. Both
+	// change, only its final size. Unknown models and service tiers can be
+	// filled in when a later copy establishes them. All
 	// refreshes are limited to the event's own device: ids are global, so
 	// without that one device token could rewrite (or inflate) another
 	// device's stored calls.
@@ -226,8 +228,9 @@ func insertEventsTx(ctx context.Context, sqlTx *sql.Tx, size batchSize, batch []
 			duplicates++
 			continue
 		}
-		r := refresh{idx: i, update: st.output < e.Output, fill: e.Model != event.UnknownModel && st.model == event.UnknownModel}
-		if !r.update && !r.fill {
+		r := refresh{idx: i, update: st.output < e.Output, fill: e.Model != event.UnknownModel && st.model == event.UnknownModel,
+			fillTier: st.serviceTier == "" && e.ServiceTier != ""}
+		if !r.update && !r.fill && !r.fillTier {
 			duplicates++
 			continue
 		}
@@ -236,6 +239,9 @@ func insertEventsTx(ctx context.Context, sqlTx *sql.Tx, size batchSize, batch []
 		}
 		if r.fill {
 			st.model = e.Model
+		}
+		if r.fillTier {
+			st.serviceTier = e.ServiceTier
 		}
 		stored[e.EventID] = st
 		plan = append(plan, r)
@@ -263,7 +269,7 @@ func insertEventsTx(ctx context.Context, sqlTx *sql.Tx, size batchSize, batch []
 // that were new.
 func insertChunk(ctx context.Context, tx *stmtTx, batch []event.UsageEvent, idx []int, received int64) ([]string, error) {
 	var b strings.Builder
-	args := make([]any, 0, len(idx)*17)
+	args := make([]any, 0, len(idx)*18)
 	b.WriteString("INSERT INTO usage_events(" + eventCols + ") VALUES ")
 	for n, i := range idx {
 		e := batch[i]
@@ -271,7 +277,7 @@ func insertChunk(ctx context.Context, tx *stmtTx, batch []event.UsageEvent, idx 
 			b.WriteString(",")
 		}
 		b.WriteString("(")
-		for c := range 17 {
+		for c := range 18 {
 			if c > 0 {
 				b.WriteString(",")
 			}
@@ -281,7 +287,7 @@ func insertChunk(ctx context.Context, tx *stmtTx, batch []event.UsageEvent, idx 
 		args = append(args,
 			e.EventID, e.DeviceID, string(e.Source), toMillis(e.Timestamp), e.Model, e.SessionID, e.Project,
 			e.Input, e.Output, e.CacheRead, e.CacheWrite5m, e.CacheWrite1h, e.CacheWrite, e.Reasoning,
-			string(e.Confidence), e.ToolVersion, received)
+			string(e.Confidence), e.ToolVersion, received, e.ServiceTier)
 	}
 	b.WriteString(" ON CONFLICT(event_id) DO NOTHING RETURNING event_id")
 	rows, err := tx.query(ctx, b.String(), tx.mode(args)...)
@@ -315,7 +321,7 @@ func storedEvents(ctx context.Context, tx *stmtTx, chunk int, batch []event.Usag
 		part := ids[start:min(start+chunk, len(ids))]
 		var b strings.Builder
 		args := make([]any, len(part))
-		b.WriteString("SELECT event_id, device_id, output, model FROM usage_events WHERE event_id IN (")
+		b.WriteString("SELECT event_id, device_id, output, model, service_tier FROM usage_events WHERE event_id IN (")
 		for n, id := range part {
 			if n > 0 {
 				b.WriteString(",")
@@ -331,7 +337,7 @@ func storedEvents(ctx context.Context, tx *stmtTx, chunk int, batch []event.Usag
 		for rows.Next() {
 			var id string
 			var st storedEvent
-			if err := rows.Scan(&id, &st.device, &st.output, &st.model); err != nil {
+			if err := rows.Scan(&id, &st.device, &st.output, &st.model, &st.serviceTier); err != nil {
 				rows.Close()
 				return nil, err
 			}
@@ -378,6 +384,19 @@ func applyRefresh(ctx context.Context, tx *stmtTx, e event.UsageEvent, r refresh
 		}
 		n += filled
 	}
+	if r.fillTier {
+		res, err := tx.exec(ctx,
+			`UPDATE usage_events SET service_tier = $1 WHERE event_id = $2 AND device_id = $3 AND service_tier = ''`,
+			e.ServiceTier, e.EventID, e.DeviceID)
+		if err != nil {
+			return 0, fmt.Errorf("store: fill service tier of %s: %w", e.EventID, err)
+		}
+		filled, err := res.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
+		n += filled
+	}
 	return n, nil
 }
 
@@ -398,6 +417,7 @@ func deviceIDs(batch []event.UsageEvent) []string {
 func cleanEvent(e event.UsageEvent) event.UsageEvent {
 	e.Source = event.Source(CleanText(string(e.Source)))
 	e.Model = CleanText(e.Model)
+	e.ServiceTier = event.NormalizeServiceTier(CleanText(e.ServiceTier))
 	e.Project = CleanText(e.Project)
 	e.ToolVersion = CleanText(e.ToolVersion)
 	e.Confidence = event.Confidence(CleanText(string(e.Confidence)))
@@ -430,7 +450,7 @@ func (s *Store) Events(ctx context.Context, f Filter, limit int, cursor string, 
 	q := newQueryBuilder(`
 		SELECT event_id, device_id, source, ts, model, session_id, project,
 		       input, output, cache_read, cache_write_5m, cache_write_1h, cache_write, reasoning,
-		       confidence, tool_version, received_at
+		       confidence, tool_version, received_at, service_tier
 		FROM usage_events`)
 	f.apply(q)
 	if cursor != "" {
@@ -464,7 +484,7 @@ func (s *Store) Events(ctx context.Context, f Filter, limit int, cursor string, 
 		)
 		if err := rows.Scan(&r.EventID, &r.DeviceID, &src, &ts, &r.Model, &r.SessionID, &r.Project,
 			&r.Input, &r.Output, &r.CacheRead, &r.CacheWrite5m, &r.CacheWrite1h, &r.CacheWrite, &r.Reasoning,
-			&conf, &r.ToolVersion, &recvAt); err != nil {
+			&conf, &r.ToolVersion, &recvAt, &r.ServiceTier); err != nil {
 			return EventPage{}, err
 		}
 		r.Source = event.Source(src)
