@@ -143,6 +143,8 @@ export interface RangeParams {
 export interface FilterParams {
   source?: string
   device?: string
+  model?: string
+  service_tier?: string
 }
 
 /**

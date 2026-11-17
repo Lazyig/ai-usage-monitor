@@ -39,10 +39,12 @@ func (c *Collector) Name() event.Source { return event.SourceCodex }
 type fileState struct {
 	jsonlscan.FileState
 
-	SessionID  string `json:"session_id,omitempty"`
-	CWD        string `json:"cwd,omitempty"`
-	CLIVersion string `json:"cli_version,omitempty"`
-	Model      string `json:"model,omitempty"` // most recent turn_context model
+	SessionID      string `json:"session_id,omitempty"`
+	CWD            string `json:"cwd,omitempty"`
+	CLIVersion     string `json:"cli_version,omitempty"`
+	Model          string `json:"model,omitempty"` // most recent turn_context model
+	ServiceTier    string `json:"service_tier,omitempty"`
+	ContextVersion int    `json:"context_version,omitempty"`
 }
 
 type (
@@ -50,7 +52,17 @@ type (
 	cursorState = jsonlscan.Cursor[fileState]
 )
 
-func decodeCursor(raw []byte) cursorState { return jsonlscan.DecodeCursor[fileState](raw) }
+func decodeCursor(raw []byte) cursorState {
+	cur := jsonlscan.DecodeCursor[fileState](raw)
+	// Old cursors have already skipped the settings records. Re-read once to
+	// recover tiers, preserving the original event IDs for metadata backfill.
+	for path, st := range cur.Files {
+		if st.ContextVersion < 1 {
+			delete(cur.Files, path)
+		}
+	}
+	return cur
+}
 
 // line is the envelope shared by every rollout record.
 type line struct {
@@ -91,7 +103,8 @@ func (m sessionMeta) startModel() string {
 }
 
 type turnContext struct {
-	Model string `json:"model"`
+	Model       string          `json:"model"`
+	ServiceTier json.RawMessage `json:"service_tier"`
 }
 
 // eventMsg covers the token_count payload.
@@ -111,9 +124,11 @@ type turnContext struct {
 // turn_context at all.
 type eventMsg struct {
 	Type           string     `json:"type"`
+	ThreadID       string     `json:"thread_id"`
 	Info           *tokenInfo `json:"info"` // null on some token_count lines
 	ThreadSettings *struct {
-		Model string `json:"model"`
+		Model       string `json:"model"`
+		ServiceTier string `json:"service_tier"`
 	} `json:"thread_settings"`
 }
 
@@ -164,6 +179,10 @@ func (c *Collector) Scan(ctx context.Context, deviceID string, cur collector.Cur
 	case err != nil:
 		return events, cur, err
 	}
+	for path, st := range next.Files {
+		st.ContextVersion = 1
+		next.Files[path] = st
+	}
 
 	encoded, err := json.Marshal(next)
 	if err != nil {
@@ -201,8 +220,18 @@ func decodeLine(raw []byte, offset int64, deviceID string, st *fileState) (event
 		// The model can change between turns; the most recent turn_context wins
 		// for every token_count that follows it.
 		var tc turnContext
-		if err := json.Unmarshal(l.Payload, &tc); err == nil && tc.Model != "" {
-			st.Model = tc.Model
+		if err := json.Unmarshal(l.Payload, &tc); err == nil {
+			if tc.Model != "" {
+				st.Model = tc.Model
+			}
+			// turn_context versions without this field provide no tier update.
+			// An explicit null clears the preference instead of retaining Fast.
+			if len(tc.ServiceTier) != 0 {
+				var tier string
+				if json.Unmarshal(tc.ServiceTier, &tier) == nil {
+					st.ServiceTier = event.NormalizeServiceTier(tier)
+				}
+			}
 		}
 		return event.UsageEvent{}, false
 
@@ -212,9 +241,17 @@ func decodeLine(raw []byte, offset int64, deviceID string, st *fileState) (event
 			return event.UsageEvent{}, false
 		}
 		if em.Type == "thread_settings_applied" {
+			if em.ThreadID != "" && st.SessionID != "" && em.ThreadID != st.SessionID {
+				return event.UsageEvent{}, false // copied snapshot owned by another thread
+			}
 			// Like turn_context: the latest applied model covers what follows.
-			if em.ThreadSettings != nil && em.ThreadSettings.Model != "" {
-				st.Model = em.ThreadSettings.Model
+			if em.ThreadSettings != nil {
+				if em.ThreadSettings.Model != "" {
+					st.Model = em.ThreadSettings.Model
+				}
+				// This is a complete snapshot, not a sparse patch. Omission
+				// must not carry a previous explicit Fast preference forward.
+				st.ServiceTier = event.NormalizeServiceTier(em.ThreadSettings.ServiceTier)
 			}
 			return event.UsageEvent{}, false
 		}
@@ -250,6 +287,7 @@ func decodeLine(raw []byte, offset int64, deviceID string, st *fileState) (event
 			Source:      event.SourceCodex,
 			Timestamp:   ts.UTC(),
 			Model:       model,
+			ServiceTier: st.ServiceTier,
 			SessionID:   st.SessionID,
 			Project:     st.CWD,
 			Input:       input,

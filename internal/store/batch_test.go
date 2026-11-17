@@ -18,13 +18,12 @@ import (
 	"ai-usage-monitor/internal/event"
 )
 
-// referenceInsert is InsertEvents as it was before batching, verbatim apart
-// from the placeholders: one event at a time, in batch order, with its own
+// referenceInsert handles one event at a time, in batch order, with its own
 // statements. The batched version must match it exactly. INSERT OR IGNORE and
 // ?NNN are SQLite syntax; the comparison runs on SQLite only.
 func referenceInsert(ctx context.Context, tx *sql.Tx, evs []event.UsageEvent, received int64) (accepted, duplicates, updated int, err error) {
 	ins, err := tx.PrepareContext(ctx, `INSERT OR IGNORE INTO usage_events(`+eventCols+`)
-		VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)`)
+		VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)`)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -42,11 +41,16 @@ func referenceInsert(ctx context.Context, tx *sql.Tx, evs []event.UsageEvent, re
 		return 0, 0, 0, err
 	}
 	defer fill.Close()
+	fillTier, err := tx.PrepareContext(ctx, `UPDATE usage_events SET service_tier = ?1 WHERE event_id = ?2 AND device_id = ?3 AND service_tier = ''`)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defer fillTier.Close()
 	for _, e := range evs {
 		e = cleanEvent(e)
 		res, err := ins.ExecContext(ctx, e.EventID, e.DeviceID, string(e.Source), toMillis(e.Timestamp), e.Model, e.SessionID, e.Project,
 			e.Input, e.Output, e.CacheRead, e.CacheWrite5m, e.CacheWrite1h, e.CacheWrite, e.Reasoning,
-			string(e.Confidence), e.ToolVersion, received)
+			string(e.Confidence), e.ToolVersion, received, e.ServiceTier)
 		if err != nil {
 			return 0, 0, 0, err
 		}
@@ -62,6 +66,14 @@ func referenceInsert(ctx context.Context, tx *sql.Tx, evs []event.UsageEvent, re
 		n, _ := res.RowsAffected()
 		if e.Model != event.UnknownModel {
 			res, err = fill.ExecContext(ctx, e.Model, e.EventID, e.DeviceID, event.UnknownModel)
+			if err != nil {
+				return 0, 0, 0, err
+			}
+			f, _ := res.RowsAffected()
+			n += f
+		}
+		if e.ServiceTier != "" {
+			res, err = fillTier.ExecContext(ctx, e.ServiceTier, e.EventID, e.DeviceID)
 			if err != nil {
 				return 0, 0, 0, err
 			}
@@ -86,8 +98,8 @@ func dumpEvents(t *testing.T, s *Store) []string {
 	defer rows.Close()
 	var out []string
 	for rows.Next() {
-		vals := make([]any, 17)
-		ptrs := make([]any, 17)
+		vals := make([]any, 18)
+		ptrs := make([]any, 18)
 		for i := range vals {
 			ptrs[i] = &vals[i]
 		}
@@ -136,6 +148,7 @@ func TestInsertEventsMatchesReference(t *testing.T) {
 						Source:       event.SourceClaudeCode,
 						Timestamp:    time.UnixMilli(int64(rng.IntN(1000))),
 						Model:        models[rng.IntN(len(models))],
+						ServiceTier:  []string{"", "default", "priority", "fast", "auto"}[rng.IntN(5)],
 						SessionID:    fmt.Sprint("s", rng.IntN(3)),
 						Project:      fmt.Sprint("p", rng.IntN(3)),
 						Input:        int64(rng.IntN(100)),

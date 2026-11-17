@@ -22,13 +22,14 @@ const hourMs = int64(60 * 60 * 1000)
 
 // Filter is the common WHERE clause of every query. The range is [From, To).
 type Filter struct {
-	From    time.Time
-	To      time.Time
-	Source  string
-	Device  string
-	Model   string
-	Project string
-	Session string
+	From        time.Time
+	To          time.Time
+	Source      string
+	Device      string
+	Model       string
+	Project     string
+	Session     string
+	ServiceTier string // "unknown" selects records with no observed tier
 }
 
 func (f Filter) apply(q *queryBuilder) {
@@ -53,11 +54,14 @@ func (f Filter) apply(q *queryBuilder) {
 	if f.Session != "" {
 		q.where("session_id = " + q.arg(f.Session))
 	}
+	if f.ServiceTier != "" {
+		q.where("service_tier = " + q.arg(event.NormalizeServiceTier(f.ServiceTier)))
+	}
 }
 
 // texts are the filter's string arguments.
 func (f Filter) texts() []string {
-	return []string{f.Source, f.Device, f.Model, f.Project, f.Session}
+	return []string{f.Source, f.Device, f.Model, f.Project, f.Session, f.ServiceTier}
 }
 
 // queryBuilder assembles a SELECT from a fixed head, AND-ed conditions and a
@@ -441,6 +445,8 @@ func GroupColumn(groupBy string) (col string, ok bool) {
 		return "device_id", true
 	case "model":
 		return "model", true
+	case "service_tier":
+		return "COALESCE(NULLIF(service_tier, ''), 'unknown')", true
 	case "project":
 		return "project", true
 	case "session":

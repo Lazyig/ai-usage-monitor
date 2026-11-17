@@ -235,15 +235,15 @@ func Copy(ctx context.Context, src, dst *Store, allowEmpty bool) (CopyReport, er
 		}
 		for rows.Next() {
 			var (
-				id, dev, src, model, sess, proj, conf, tool string
-				ts, in, out, cr, w5, w1, wg, reason, recv   int64
+				id, dev, src, model, sess, proj, conf, tool, tier string
+				ts, in, out, cr, w5, w1, wg, reason, recv         int64
 			)
 			if err := rows.Scan(&id, &dev, &src, &ts, &model, &sess, &proj, &in, &out, &cr, &w5, &w1, &wg, &reason,
-				&conf, &tool, &recv); err != nil {
+				&conf, &tool, &recv, &tier); err != nil {
 				return err
 			}
 			batch = append(batch, []any{id, dev, clean(src), ts, clean(model), sess, clean(proj), in, out, cr, w5, w1, wg, reason,
-				clean(conf), clean(tool), recv})
+				clean(conf), clean(tool), recv, clean(tier)})
 			if len(batch) == 1000 {
 				if err := flush(); err != nil {
 					return err

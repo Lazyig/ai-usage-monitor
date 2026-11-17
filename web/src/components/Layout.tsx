@@ -23,6 +23,9 @@ export function Layout() {
           <ErrorBoundary key={location.pathname} label="이 페이지를 표시할 수 없습니다">
             <Outlet />
           </ErrorBoundary>
+          <p className="mt-6 text-200 text-fg3">
+            비용은 Standard API 단가 기준 환산액입니다. Fast 등의 등급별 할증과 구독 한도·크레딧 소모는 반영하지 않습니다.
+          </p>
         </main>
       </div>
     </div>

@@ -5,6 +5,7 @@ import { type Column, DataTable } from '../components/DataTable'
 import { PageHeader } from '../components/PageHeader'
 import { RowField } from '../components/RowField'
 import { StateContainer } from '../components/StateContainer'
+import { ServiceTierBadge, ServiceTierFilter } from '../components/ServiceTier'
 import { costColumn, Swatch, tokenColumn, unsorted } from '../components/columns'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -19,11 +20,13 @@ export function Events() {
   const [source, setSource] = useState<Source | ''>('')
   const [device, setDevice] = useState('')
   const [model, setModel] = useState('')
+  const [serviceTier, setServiceTier] = useState('')
   const [devices, setDevices] = useState<Device[]>([])
 
   const { events, nextCursor, status, error, loadingMore, loadMoreError, loadMore } = useEventFeed({
     from: range.from, to: range.to,
     source: source || undefined, device: device || undefined, model: model || undefined,
+    service_tier: serviceTier || undefined,
   }, refreshKey)
 
   useEffect(() => {
@@ -40,6 +43,7 @@ export function Events() {
     { key: 'source', header: '소스', media: (e) => <Swatch color={colorForKey(e.source, 0)} />, render: (e) => labelForKey(e.source) },
     { key: 'device', header: '기기', render: (e) => devices.find((d) => d.id === e.device_id)?.name ?? e.device_id.slice(0, 8) },
     { key: 'model', header: '모델', render: (e) => e.model },
+    { key: 'service_tier', header: '서비스 등급 (선택 설정)', render: (e) => e.source === 'codex' || e.service_tier ? <ServiceTierBadge tier={e.service_tier} /> : '—' },
     { key: 'project', header: '프로젝트', render: (e) => <span title={e.project}>{e.project ?? '-'}</span> },
     unsorted(tokenColumn<UsageEventDTO>('input', '입력', (e) => e.input)),
     unsorted(tokenColumn<UsageEventDTO>('output', '출력', (e) => e.output)),
@@ -71,6 +75,7 @@ export function Events() {
         <RowField label="모델">
           <Input id="ev-model" value={model} onChange={(e) => setModel(e.target.value)} placeholder="모델명 필터" />
         </RowField>
+        <ServiceTierFilter id="ev-service-tier" value={serviceTier} onChange={setServiceTier} />
       </div>
 
       <StateContainer loading={status === 'loading'} error={status === 'error' ? error : null} empty={status === 'success' && events.length === 0}>

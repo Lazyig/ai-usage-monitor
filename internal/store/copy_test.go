@@ -72,7 +72,7 @@ func fill(t *testing.T, s *Store) (token string) {
 		evs = append(evs, event.UsageEvent{EventID: fmt.Sprintf("e%05d", i), DeviceID: dev, Source: event.SourceClaudeCode,
 			Timestamp: time.UnixMilli(int64(i) * 1000), Model: "claude-opus-5", SessionID: fmt.Sprint("s", i%5),
 			Project: "/p", Input: int64(i), Output: 2, CacheRead: 3, CacheWrite5m: 4, CacheWrite1h: 5, CacheWrite: 6,
-			Reasoning: 1, Confidence: event.ConfidenceExact, ToolVersion: "2.1"})
+			Reasoning: 1, Confidence: event.ConfidenceExact, ToolVersion: "2.1", ServiceTier: []string{"", "default", "fast"}[i%3]})
 	}
 	if _, _, _, err := s.InsertEvents(ctx, evs); err != nil {
 		t.Fatal(err)
