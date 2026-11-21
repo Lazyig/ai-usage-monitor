@@ -261,6 +261,25 @@
 - match: "gemini-4-argon-*"
   provider: google
   alias_of: "gemini-4-argon"
+# Gemini 4 Neon and Hydrogen: standard paid-tier prices verified 2026-11-21 against
+# https://aistudio.google.com/docs/pricing (ai.google.dev redirects there). No long-context
+# tier, implicit caching only. Batch/Flex (half) and Priority (1.8x) are not distinguished.
+- match: "gemini-4-neon"          # GA 2026-11-18. Not on the free tier.
+  provider: google
+  input: 3.00
+  cache_read: 0.15
+  output: 15.00
+- match: "gemini-4-neon-*"
+  provider: google
+  alias_of: "gemini-4-neon"
+- match: "gemini-4-hydrogen"      # GA 2026-11-12. Also on the free tier (priced here at paid rates).
+  provider: google
+  input: 1.50
+  cache_read: 0.075
+  output: 7.50
+- match: "gemini-4-hydrogen-*"
+  provider: google
+  alias_of: "gemini-4-hydrogen"
 - match: "gemini-3.8-flash"       # GA 2026-09-02, Antigravity's default since 2026-09; intro price ends 2026-12-31
   provider: google
   effective_from: 2027-01-01

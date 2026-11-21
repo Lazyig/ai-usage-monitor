@@ -34,6 +34,8 @@ func TestRealTableCoversObservedModels(t *testing.T) {
 		{"gemini-3.6-flash-exp-a", "2026-07-25", 1.50},
 		{"gemini-4-argon", "2026-10-13", 2.00}, {"gemini-4-argon", "2026-11-30", 2.00}, {"gemini-4-argon", "2026-12-01", 4.00},
 		{"gemini-4-argon-low", "2026-12-01", 4.00},
+		{"gemini-4-neon", "2026-11-18", 3.00}, {"gemini-4-neon-low", "2026-12-01", 3.00},
+		{"gemini-4-hydrogen", "2026-11-12", 1.50}, {"gemini-4-hydrogen-trial", "2026-12-01", 1.50},
 		{"gemini-3.7-flash-control", "2026-09-01", 0.75}, {"gemini-default", "2027-02-01", 1.50},
 		{"gpt-5.6-sol", "2026-08-01", 5.00}, {"gpt-5.6-sol", "2026-08-21", 4.00}, {"codex-auto-review", "2026-08-01", 5.00},
 		{"gpt-5.6-terra", "2026-07-15", 2.50}, {"gpt-5.6-terra", "2026-07-30", 2.00},
