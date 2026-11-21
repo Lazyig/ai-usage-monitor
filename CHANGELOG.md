@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-11-21
+
 ### 추가
 
 - Gemini 4 Neon(입력 $3 · 출력 $15 / 1M 토큰)과 Gemini 4 Hydrogen(입력 $1.50 · 출력 $7.50) 단가를 추가했습니다.
@@ -180,7 +182,8 @@
 
 첫 공개 릴리스입니다. Claude Code · Codex CLI · Antigravity CLI 사용량을 모으는 에이전트, SQLite · JSON API 서버, 내장 웹 대시보드를 포함합니다.
 
-[Unreleased]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.3.0...v0.3.1
