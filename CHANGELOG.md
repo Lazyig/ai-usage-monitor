@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-11-21
+
+### 추가
+
+- **Codex Fast 모드**를 모델과 별도의 서비스 등급(`service_tier`)으로 집계합니다. **모델** 화면에서 Codex 의 Standard · Fast · 알 수 없음별 토큰과 비중을 보고 등급으로 필터링할 수 있고, **이벤트** 화면에도 등급이 표시됩니다. 자세한 내용은 [docs/CODEX-FAST-MODE.md](docs/CODEX-FAST-MODE.md)에 있습니다.
+  - 로그의 `priority` 와 `fast` 는 `fast` 로 합칩니다. 선택한 설정을 나타내므로 실제 처리·청구 등급과 다를 수 있고, 등급이 기록되지 않은 과거 사용량은 「알 수 없음」입니다.
+  - 비용은 등급별 할증을 반영하지 않은 Standard API 단가 환산액 그대로입니다.
+  - API: 모든 사용량 조회에 `service_tier` 필터, `breakdown`·`timeseries`·`throughput` 에 `group_by=service_tier` 가 생겼습니다([docs/API.md](docs/API.md)).
+  - 에이전트는 업데이트 후 Codex 기록을 한 번 다시 읽어 등급을 보완합니다. 이벤트 ID 가 같아 사용량이 중복 집계되지 않습니다.
+- Claude Fable 5.2 단가를 추가했습니다(입력 $8 · 출력 $40 / 1M 토큰).
+- 비대화형 `codex exec` 사용량이 빠지는 경우를 진단해 문서로 정리했습니다. 세션 기록이 남는 호출은 수집되고, `--ephemeral` 은 세션 파일이 없어 집계할 수 없습니다([docs/CODEX-EXEC.md](docs/CODEX-EXEC.md)).
+
 ## [0.3.2] - 2026-11-09
 
 ### 추가
@@ -164,7 +176,8 @@
 
 첫 공개 릴리스입니다. Claude Code · Codex CLI · Antigravity CLI 사용량을 모으는 에이전트, SQLite · JSON API 서버, 내장 웹 대시보드를 포함합니다.
 
-[Unreleased]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Lazyig/ai-usage-monitor/compare/v0.2.1...v0.3.0
